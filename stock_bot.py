@@ -18,31 +18,22 @@ STOCK_DICT = {
 
 }
 
-# === 3. 價量分析模組 (加入成交量防騙機制) ===
-def get_stock_analysis(symbol):
+# === 3. 進階分析模組：包含今日與昨日對比 ===
+def get_advanced_analysis(symbol):
     try:
         stock = yf.Ticker(symbol)
         hist = stock.history(period="3mo")
+        if len(hist) < 21: return None # 確保資料夠算 20MA
         
-        if hist.empty:
-            return None
-        
-        # 取得最新收盤價與今日成交量
-        current_price = hist['Close'].iloc[-1]
-        current_vol = hist['Volume'].iloc[-1]
-        
-        # 計算價格均線 (MA)
+        # 計算技術指標
         hist['5MA'] = hist['Close'].rolling(window=5).mean()
         hist['20MA'] = hist['Close'].rolling(window=20).mean()
         
-        # 計算成交量均線 (VMA)：過去 5 天的平均成交量
-        hist['5VMA'] = hist['Volume'].rolling(window=5).mean()
+        # 抓取今天 (Last) 與 昨天 (Last-1) 的資料
+        today = hist.iloc[-1]
+        yesterday = hist.iloc[-2]
         
-        ma5 = hist['5MA'].iloc[-1]
-        ma20 = hist['20MA'].iloc[-1]
-        vma5 = hist['5VMA'].iloc[-1]
-        
-        return current_price, ma5, ma20, current_vol, vma5
+        return today, yesterday
     except Exception as e:
         return None
 
@@ -52,49 +43,57 @@ def send_telegram_msg(msg):
     payload = {"chat_id": TG_CHAT_ID, "text": msg}
     requests.post(url, json=payload)
 
-# === 5. 執行主程式：組合量價早報 ===
-message = "📊 【量價分析雷達】老闆早安！\n\n"
+# === 5. 執行主程式：加入預警邏輯 ===
+message = "🚨 【量價與轉折預警報告】\n\n"
 
-print("開始執行量價分析掃描...")
+print("開始執行全自動趨勢監控...")
 
 for symbol, name in STOCK_DICT.items():
-    data = get_stock_analysis(symbol)
+    data = get_advanced_analysis(symbol)
     
     if data is not None:
-        price, ma5, ma20, vol, vma5 = data
+        td, yd = data # 今日與昨日資料
         
-        # 判斷成交量是否放大 (今日成交量 > 5日平均成交量)
-        is_vol_up = vol > vma5
+        # 判斷趨勢狀態
+        # 強勢定義：股價 > 5MA > 20MA
+        is_strong_today = td['Close'] > td['5MA'] > td['20MA']
+        is_strong_yesterday = yd['Close'] > yd['5MA'] > yd['20MA']
         
-        # 進階趨勢與防騙線判斷邏輯
-        if price > ma5 and ma5 > ma20:
-            if is_vol_up:
-                trend = "🔥 強勢多頭【量增】(價量齊揚，趨勢明確)"
-            else:
-                trend = "⚠️ 強勢多頭【量縮】(小心主力騙線假突破)"
-                
-        elif price < ma5 and ma5 < ma20:
-            if is_vol_up:
-                trend = "🧊 弱勢空頭【量增】(恐慌殺盤，賣壓沉重)"
-            else:
-                trend = "📉 弱勢空頭【量縮】(無量陰跌，人氣退潮)"
-                
-        else:
-            trend = "🔄 盤整震盪 (趨勢不明，建議觀望)"
-            
+        # 判斷是否有「轉弱預警」
+        alert = ""
+        if is_strong_yesterday and not is_strong_today:
+            if td['Close'] < td['5MA']:
+                alert = "⚠️【由強轉弱】股價跌破5日線，短線支撐轉弱！"
+            if td['5MA'] < td['20MA'] and yd['5MA'] >= yd['20MA']:
+                alert = "❌【危險訊號】發生死亡交叉！趨勢可能正式反轉！"
+        
+        # 組合訊息
         message += f"🔸 {name} ({symbol})\n"
-        message += f"   現價: {price:.2f}\n"
-        # 為了版面簡潔，我們就不顯示冗長的成交量數字，直接顯示結論
-        message += f"   分析: {trend}\n\n"
-        print(f"{name} 分析完成")
+        message += f"   現價: {td['Close']:.2f}\n"
+        
+        # 顯示目前狀態
+        if is_strong_today:
+            status = "🔥 趨勢仍強 (多頭排列)"
+        elif td['Close'] < td['5MA'] < td['20MA']:
+            status = "🧊 趨勢疲弱 (空頭排列)"
+        else:
+            status = "🔄 盤整震盪中"
+            
+        message += f"   狀態: {status}\n"
+        
+        # 如果有預警訊息，加粗顯示
+        if alert:
+            message += f"   🛑 預警: {alert}\n"
+            
+        message += "\n"
+        print(f"{name} 掃描完成")
     else:
         message += f"🔸 {name} ({symbol}) : 資料抓取失敗 ❌\n\n"
-        print(f"{name} 抓取失敗")
 
-message += "系統提示：已啟動成交量防禦機制，過濾虛假突破。投資有風險，下單請謹慎！🛡️"
+message += "老網管提醒：預警訊號出現時建議減碼或觀察，切勿盲目追高！🛡️"
 
 try:
     send_telegram_msg(message)
-    print("✅ 量價分析早報發送成功！")
+    print("✅ 預警報告發送成功！")
 except Exception as e:
     print(f"❌ 傳送 Telegram 失敗: {e}")
