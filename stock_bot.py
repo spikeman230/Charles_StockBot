@@ -1,6 +1,7 @@
 import yfinance as yf
 import requests
 import os
+import datetime
 
 # === 1. 從 GitHub 保險箱抓取機密 ===
 TG_TOKEN = os.environ.get("TG_TOKEN")
@@ -28,7 +29,6 @@ def get_advanced_analysis(symbol):
         hist['20MA'] = hist['Close'].rolling(window=20).mean()
         hist['5VMA'] = hist['Volume'].rolling(window=5).mean()
         
-        # RSI 計算
         delta = hist['Close'].diff()
         gain = delta.clip(lower=0)
         loss = -1 * delta.clip(upper=0)
@@ -37,7 +37,13 @@ def get_advanced_analysis(symbol):
         rs = ema_gain / ema_loss
         hist['RSI'] = 100 - (100 / (1 + rs))
         
-        return hist.iloc[-1], hist.iloc[-2]
+        td = hist.iloc[-1]
+        yd = hist.iloc[-2]
+        
+        # 抓取這筆資料的「真實交易日期」
+        last_trade_date = hist.index[-1].date()
+        
+        return td, yd, last_trade_date
     except Exception as e:
         return None
 
@@ -47,61 +53,98 @@ def send_telegram_msg(msg):
     payload = {"chat_id": TG_CHAT_ID, "text": msg}
     requests.post(url, json=payload)
 
-# === 5. 執行主程式：轉折偵測邏輯 ===
-message = "🚨 【老網管：全方位轉折預警儀表板】\n\n"
-print("開始執行深度量價掃描...")
+# === 5. 執行主程式 ===
+# 設定手錶為台灣時間 (UTC+8)
+tw_tz = datetime.timezone(datetime.timedelta(hours=8))
+current_tw_date = datetime.datetime.now(tw_tz).date()
+
+message_list = []
+has_new_data = False 
+
+print(f"今天是台灣時間 {current_tw_date}，開始執行掃描...")
 
 for symbol, name in STOCK_DICT.items():
     data = get_advanced_analysis(symbol)
-    if data is None: continue
     
-    td, yd = data # 今日與昨日
-    vol_up = td['Volume'] > td['5VMA'] * 1.2
-    
-    # 趨勢判定
-    td_strong = td['Close'] > td['5MA'] > td['20MA']
-    yd_strong = yd['Close'] > yd['5MA'] > yd['20MA']
-    td_weak = td['Close'] < td['5MA'] < td['20MA']
-    
-    # --- 核心訊號邏輯 ---
-    alert = ""
-    
-    # A. 恐慌殺盤偵測
-    if td_weak and vol_up:
-        alert = "💀【恐慌殺盤】跌勢加速且帶量！主力倒貨中，切勿徒手接刀！"
-    
-    # B. 由弱轉強 (反轉) 偵測
-    elif yd['Close'] < yd['5MA'] and td['Close'] > td['5MA']:
-        if vol_up:
-            alert = "🚀【強力反轉】帶量站回5日線！系統重啟，底部轉強訊號！"
+    if data is not None:
+        td, yd, last_trade_date = data
+        
+        # --- 🛡️ 假日防禦邏輯 ---
+        is_market_open = False
+        if ".TW" in symbol:
+            if last_trade_date == current_tw_date:
+                is_market_open = True
         else:
-            alert = "📈【弱勢反彈】站回5日線但量能不足，暫視為反彈。"
+            if last_trade_date >= current_tw_date - datetime.timedelta(days=1):
+                is_market_open = True
+                
+        if not is_market_open:
+            print(f"{name} ({symbol}) 今日無新交易數據，判定為休市。")
+            continue 
             
-    # C. 黃金交叉偵測
-    elif yd['5MA'] < yd['20MA'] and td['5MA'] > td['20MA']:
-        alert = "🌟【黃金交叉】長短線趋势翻轉向上！"
+        has_new_data = True 
         
-    # D. 由強轉弱預警
-    elif yd_strong and not td_strong:
-        alert = "⚠️【警戒】趨勢由強轉弱，支撐失守，建議減碼觀察。"
+        # --- 📊 取得指標數據 ---
+        rsi_value = td['RSI']
+        vol_today = td['Volume']
+        vma5 = td['5VMA']
         
-    # E. RSI 超跌/過熱 (保底監控)
-    elif td['RSI'] < 30:
-        alert = "🟢【超跌】RSI低於30，雖然還在跌，但隨時可能跌深反彈。"
-    elif td['RSI'] > 70:
-        alert = "🔴【過熱】RSI高於70，系統過熱，隨時有修正風險。"
+        td_strong = td['Close'] > td['5MA'] > td['20MA']
+        yd_strong = yd['Close'] > yd['5MA'] > yd['20MA']
+        td_weak = td['Close'] < td['5MA'] < td['20MA']
+
+        # --- A. 量能判定 ---
+        if vol_today > vma5 * 1.2: vol_status = "📈 出量 (大於5日均量)"
+        elif vol_today < vma5 * 0.8: vol_status = "📉 量縮 (交投清淡)"
+        else: vol_status = "➖ 量平 (維持均量)"
+
+        # --- B. 狀態判定 (成功補回！) ---
+        if td_strong:
+            status = "🔥 多頭排列 (趨勢強勢)"
+        elif td_weak:
+            status = "🧊 空頭排列 (趨勢疲弱)"
+        else:
+            status = "🔄 盤整震盪"
+        
+        # --- C. 訊號判定 ---
+        alert = ""
+        if td_weak and vol_today > vma5 * 1.2:
+            alert = "💀【恐慌殺盤】主力倒貨中，切勿徒手接刀！"
+        elif yd['Close'] < yd['5MA'] and td['Close'] > td['5MA']:
+            if vol_today > vma5 * 1.2: alert = "🚀【強力反轉】帶量站回5日線！底部轉強訊號！"
+            else: alert = "📈【弱勢反彈】站回5日線但量能不足。"
+        elif yd['5MA'] < yd['20MA'] and td['5MA'] > td['20MA']:
+            alert = "🌟【黃金交叉】長短線趨勢翻轉向上！"
+        elif yd_strong and not td_strong:
+            alert = "⚠️【警戒】趨勢由強轉弱，支撐失守。"
+        elif rsi_value < 30:
+            alert = "🟢【超跌】RSI低於30，隨時可能反彈。"
+        elif rsi_value > 70:
+            alert = "🔴【過熱】RSI高於70，注意修正風險。"
+        else:
+            alert = "✅ 狀態穩定，無特殊轉折訊號。"
+
+        # --- D. 單檔股票排版 (4行標準格式) ---
+        stock_msg = f"🔸 {name} ({symbol})\n"
+        stock_msg += f"   現價: {td['Close']:.2f} | RSI: {rsi_value:.1f}\n"
+        stock_msg += f"   量能: {vol_status}\n"
+        stock_msg += f"   狀態: {status}\n"
+        stock_msg += f"   訊號: {alert}\n\n"
+        message_list.append(stock_msg)
+        print(f"{name} 掃描完成")
     else:
-        alert = "✅ 狀態穩定，目前無特殊轉折訊號。"
+        print(f"{name} 抓取失敗")
 
-    # 排版
-    message += f"🔸 {name} ({symbol})\n"
-    message += f"   現價: {td['Close']:.2f} | RSI: {td['RSI']:.1f}\n"
-    message += f"   訊號: {alert}\n\n"
-
-message += "老網管碎碎念：看到 💀 跑得快，看到 🚀 慢慢買。轉折點是致富關鍵，也是破產開端，請冷靜執行！🛡️"
-
-try:
-    send_telegram_msg(message)
-    print("✅ 終極轉折報告發送成功！")
-except Exception as e:
-    print(f"❌ 傳送失敗: {e}")
+# === 最終檢查：發送 Telegram ===
+if has_new_data and len(message_list) > 0:
+    final_message = "📡 【老網管終極儀表板：全方位轉折預警】\n\n"
+    final_message += "".join(message_list)
+    final_message += "老網管提醒：休市日防禦機制已上線，假日安心補眠！🛡️"
+    
+    try:
+        send_telegram_msg(final_message)
+        print("✅ 交易日報告發送成功！")
+    except Exception as e:
+        print(f"❌ 傳送失敗: {e}")
+else:
+    print("😴 今日台美股均判定為休市(或國定假日)，暫停發送報告。")
