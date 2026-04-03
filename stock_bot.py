@@ -34,13 +34,12 @@ def get_analysis_and_draw_chart(symbol, name):
         if len(hist) < 30: return None
         
         # 繪製 K線圖並存成圖片檔
-        # mplfinance 會自動幫我們畫出 K線、成交量，以及我們指定的均線(5, 20)
         chart_filename = f"{symbol}_chart.png"
         mpf.plot(hist, type='candle', style='yahoo', volume=True, 
                  mav=(5, 20), title=f"{name} ({symbol})", 
                  savefig=chart_filename)
         
-        # 數據計算 (與之前相同)
+        # 數據計算
         hist['5MA'] = hist['Close'].rolling(window=5).mean()
         hist['20MA'] = hist['Close'].rolling(window=20).mean()
         hist['5VMA'] = hist['Volume'].rolling(window=5).mean()
@@ -74,10 +73,8 @@ def send_email_report(subject, text_body, image_files):
     msg['To'] = EMAIL_TO
     msg['Subject'] = subject
 
-    # 加入文字內容
     msg.attach(MIMEText(text_body, 'plain'))
 
-    # 將剛才畫好的圖表一張一張夾帶進去
     for img_file in image_files:
         if os.path.exists(img_file):
             with open(img_file, 'rb') as f:
@@ -85,7 +82,6 @@ def send_email_report(subject, text_body, image_files):
             image = MIMEImage(img_data, name=os.path.basename(img_file))
             msg.attach(image)
 
-    # 透過 Gmail 的 SMTP 伺服器發送
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
@@ -97,6 +93,7 @@ def send_email_report(subject, text_body, image_files):
         print(f"❌ Email 發送失敗: {e}")
 
 # === 6. 執行主程式 ===
+# 設定手錶為台灣時間 (UTC+8)
 tw_tz = datetime.timezone(datetime.timedelta(hours=8))
 current_tw_date = datetime.datetime.now(tw_tz).date()
 
@@ -112,7 +109,7 @@ for symbol, name in STOCK_DICT.items():
     if data is not None:
         td, yd, last_trade_date, chart_file = data
         
-        # 假日防禦
+        # --- 🛡️ 假日防禦邏輯 ---
         is_market_open = False
         if ".TW" in symbol:
             if last_trade_date == current_tw_date: is_market_open = True
@@ -120,12 +117,13 @@ for symbol, name in STOCK_DICT.items():
             if last_trade_date >= current_tw_date - datetime.timedelta(days=1): is_market_open = True
                 
         if not is_market_open:
+            print(f"{name} ({symbol}) 今日無新交易數據，判定為休市。")
             continue 
             
         has_new_data = True 
-        generated_charts.append(chart_file) # 把畫好的圖表記錄下來
+        generated_charts.append(chart_file) 
         
-        # 數據判定
+        # --- 📊 取得指標數據 ---
         rsi_value = td['RSI']
         vol_today = td['Volume']
         vma5 = td['5VMA']
@@ -134,37 +132,58 @@ for symbol, name in STOCK_DICT.items():
         yd_strong = yd['Close'] > yd['5MA'] > yd['20MA']
         td_weak = td['Close'] < td['5MA'] < td['20MA']
 
-        if vol_today > vma5 * 1.2: vol_status = "📈 出量"
-        elif vol_today < vma5 * 0.8: vol_status = "📉 量縮"
-        else: vol_status = "➖ 量平"
+        # --- A. 量能判定 ---
+        if vol_today > vma5 * 1.2: vol_status = "📈 出量 (大於5日均量)"
+        elif vol_today < vma5 * 0.8: vol_status = "📉 量縮 (交投清淡)"
+        else: vol_status = "➖ 量平 (維持均量)"
 
-        if td_strong: status = "🔥 多頭排列"
-        elif td_weak: status = "🧊 空頭排列"
-        else: status = "🔄 盤整震盪"
+        # --- B. 狀態判定 ---
+        if td_strong:
+            status = "🔥 多頭排列 (趨勢強勢)"
+        elif td_weak:
+            status = "🧊 空頭排列 (趨勢疲弱)"
+        else:
+            status = "🔄 盤整震盪"
         
+        # --- C. 訊號判定 (完整生動版修復) ---
         alert = ""
-        if td_weak and vol_today > vma5 * 1.2: alert = "💀【恐慌殺盤】切勿接刀！"
+        if td_weak and vol_today > vma5 * 1.2:
+            alert = "💀【恐慌殺盤】跌勢加速且帶量！主力倒貨中，切勿徒手接刀！"
         elif yd['Close'] < yd['5MA'] and td['Close'] > td['5MA']:
-            if vol_today > vma5 * 1.2: alert = "🚀【強力反轉】帶量站回5日線！"
-            else: alert = "📈【弱勢反彈】站回5日線但無量。"
-        elif yd['5MA'] < yd['20MA'] and td['5MA'] > td['20MA']: alert = "🌟【黃金交叉】"
-        elif yd_strong and not td_strong: alert = "⚠️【警戒】由強轉弱。"
-        elif rsi_value < 30: alert = "🟢【超跌】RSI低於30。"
-        elif rsi_value > 70: alert = "🔴【過熱】RSI高於70。"
-        else: alert = "✅ 穩定運行中"
+            if vol_today > vma5 * 1.2:
+                alert = "🚀【強力反轉】帶量站回5日線！系統重啟，底部轉強訊號！"
+            else:
+                alert = "📈【弱勢反彈】站回5日線但量能不足，暫視為反彈。"
+        elif yd['5MA'] < yd['20MA'] and td['5MA'] > td['20MA']:
+            alert = "🌟【黃金交叉】長短線趨勢翻轉向上！"
+        elif yd_strong and not td_strong:
+            alert = "⚠️【警戒】趨勢由強轉弱，支撐失守，建議減碼觀察。"
+        elif rsi_value < 30:
+            alert = "🟢【超跌】RSI低於30，隨時可能跌深反彈。"
+        elif rsi_value > 70:
+            alert = "🔴【過熱】RSI高於70，系統過熱，隨時有修正風險。"
+        else:
+            alert = "✅ 狀態穩定，目前無特殊轉折訊號。"
 
-        # 排版
-        stock_msg = f"🔸 {name} ({symbol})\n   現價: {td['Close']:.2f} | RSI: {rsi_value:.1f}\n   量能: {vol_status}\n   狀態: {status}\n   訊號: {alert}\n\n"
+        # --- D. 單檔股票排版 (4行標準格式) ---
+        stock_msg = f"🔸 {name} ({symbol})\n"
+        stock_msg += f"   現價: {td['Close']:.2f} | RSI: {rsi_value:.1f}\n"
+        stock_msg += f"   量能: {vol_status}\n"
+        stock_msg += f"   狀態: {status}\n"
+        stock_msg += f"   訊號: {alert}\n\n"
         message_list.append(stock_msg)
+        print(f"{name} 掃描完成")
 
+# === 最終檢查：發送 Telegram 與 Email ===
 if has_new_data and len(message_list) > 0:
     final_text = "📡 【老網管 NOC 戰情室：全方位轉折預警】\n\n" + "".join(message_list)
+    final_text += "老網管提醒：休市日防禦機制已上線，詳細技術線圖已寄至您的 Email！🛡️"
     
-    # 1. 發送簡短文字到 Telegram 讓你第一時間知道
-    send_telegram_msg(final_text + "💡 詳細技術線圖已寄至您的 Email。")
+    # 發送 Telegram
+    send_telegram_msg(final_text)
     
-    # 2. 發送包含「文字 + 實體 K 線圖附件」到 Email
+    # 發送 Email
     email_subject = f"📊 理財儀表板戰情日報 ({current_tw_date})"
     send_email_report(email_subject, final_text, generated_charts)
 else:
-    print("😴 判定為休市，暫停發送報告。")
+    print("😴 今日台美股均判定為休市(或國定假日)，暫停發送報告。")
