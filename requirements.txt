@@ -1,2 +1,4 @@
 yfinance
 requests
+mplfinance
+matplotlib
