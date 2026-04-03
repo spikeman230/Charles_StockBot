@@ -2,8 +2,8 @@ name: Daily Stock Reporter
 
 on:
   schedule:
-    - cron: '30 2 * * *'
-  workflow_dispatch: # 就是這行魔法指令，會讓「Run workflow」按鈕出現！
+    - cron: '30 2 * * 1-5'
+  workflow_dispatch:
 
 jobs:
   run-stock-bot:
