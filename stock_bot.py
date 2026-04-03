@@ -15,14 +15,12 @@ STOCK_DICT = {
     "8431.TWO": "匯鑽科",
     "AAPL": "蘋果 (Apple)",
     "NVDA": "輝達 (NVIDIA)"
-
 }
 
-# === 3. 旗艦分析模組：包含均線與 RSI 計算 ===
+# === 3. 旗艦分析模組 (抓取歷史數據並計算指標) ===
 def get_advanced_analysis(symbol):
     try:
         stock = yf.Ticker(symbol)
-        # 為了算 RSI，我們改抓 6 個月的資料比較準確
         hist = stock.history(period="6mo")
         if len(hist) < 30: return None 
         
@@ -30,11 +28,10 @@ def get_advanced_analysis(symbol):
         hist['5MA'] = hist['Close'].rolling(window=5).mean()
         hist['20MA'] = hist['Close'].rolling(window=20).mean()
         
-        # 計算 14日 RSI (經典參數)
+        # 計算 14日 RSI
         delta = hist['Close'].diff()
         gain = delta.clip(lower=0)
         loss = -1 * delta.clip(upper=0)
-        # 使用指數移動平均計算 RSI
         ema_gain = gain.ewm(com=13, adjust=False).mean()
         ema_loss = loss.ewm(com=13, adjust=False).mean()
         rs = ema_gain / ema_loss
@@ -53,51 +50,59 @@ def send_telegram_msg(msg):
     payload = {"chat_id": TG_CHAT_ID, "text": msg}
     requests.post(url, json=payload)
 
-# === 5. 執行主程式：抄底與避險全監控 ===
-message = "📡 【老網管理財雷達：轉折與抄底監控】\n\n"
-print("開始執行 RSI 超跌監控...")
+# === 5. 執行主程式：狀態與訊號全合併 ===
+message = "📡 【老網管終極儀表板：趨勢與轉折監控】\n\n"
+print("開始執行全方位掃描...")
 
 for symbol, name in STOCK_DICT.items():
     data = get_advanced_analysis(symbol)
     
     if data is not None:
         td, yd = data
-        
-        # 判斷 RSI 狀態
         rsi_value = td['RSI']
         
-        # 判斷趨勢預警
+        # --- A. 判斷【狀態】(均線多空排列) ---
         is_strong_today = td['Close'] > td['5MA'] > td['20MA']
         is_strong_yesterday = yd['Close'] > yd['5MA'] > yd['20MA']
         
+        if is_strong_today:
+            status = "🔥 趨勢仍強 (多頭排列)"
+        elif td['Close'] < td['5MA'] < td['20MA']:
+            status = "🧊 趨勢疲弱 (空頭排列)"
+        else:
+            status = "🔄 盤整震盪中"
+
+        # --- B. 判斷【訊號】(RSI 與 轉折預警) ---
         alert = ""
-        # 1. 抄底訊號 (優先顯示)
+        # 1. RSI 抄底或過熱 (優先級最高)
         if rsi_value < 30:
-            alert = f"🟢【超跌買點】RSI 降至 {rsi_value:.1f}，市場極度恐慌，可關注抄底機會！"
+            alert = "🟢【超跌買點】市場極度恐慌，關注抄底機會！"
         elif rsi_value > 70:
-            alert = f"🔴【過熱警報】RSI 飆至 {rsi_value:.1f}，隨時可能回檔，請勿追高！"
-        # 2. 轉弱預警
+            alert = "🔴【過熱警報】隨時可能回檔，請勿盲目追高！"
+        # 2. 由強轉弱預警
         elif is_strong_yesterday and not is_strong_today:
-            alert = "⚠️【由強轉弱】跌破短線支撐，請注意風險。"
+            if td['Close'] < td['5MA']:
+                alert = "⚠️【由強轉弱】跌破5日線，短線支撐轉弱！"
+            if td['5MA'] < td['20MA'] and yd['5MA'] >= yd['20MA']:
+                alert = "❌【危險訊號】發生死亡交叉！趨勢可能反轉！"
+        # 3. 無特殊狀況
+        else:
+            alert = "✅ 數值正常，穩定運行中"
             
-        # 組合訊息
+        # --- C. 組合完美的排版訊息 ---
         message += f"🔸 {name} ({symbol})\n"
         message += f"   現價: {td['Close']:.2f} | RSI: {rsi_value:.1f}\n"
+        message += f"   狀態: {status}\n"
+        message += f"   訊號: {alert}\n\n"
         
-        if alert:
-            message += f"   🎯 訊號: {alert}\n"
-        else:
-            message += f"   🎯 訊號: 數值正常，穩定運行中。\n"
-            
-        message += "\n"
         print(f"{name} 掃描完成")
     else:
         message += f"🔸 {name} ({symbol}) : 資料抓取失敗 ❌\n\n"
 
-message += "老網管碎碎念：超跌有時候還會更跌，RSI 低於 30 只是把它放入『觀察名單』，千萬不要一次把資金 All-in 啊！🛡️"
+message += "老網管提醒：指標皆為歷史數據計算，請搭配實體量能與市場消息綜合判斷！🛡️"
 
 try:
     send_telegram_msg(message)
-    print("✅ 抄底預警報告發送成功！")
+    print("✅ 終極報告發送成功！")
 except Exception as e:
     print(f"❌ 傳送 Telegram 失敗: {e}")
