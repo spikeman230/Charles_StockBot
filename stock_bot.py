@@ -23,7 +23,7 @@ STOCK_DICT = {
     "009816.TW": "凱基台灣TOP50",
     "8431.TWO": "匯鑽科",
     "AAPL": "蘋果 (Apple)",
-    "NVDA": "輝達 (NVIDIA)"
+    "NVDA": "輝達 (NVIDIA)",
     "MU"  : "美光 (Micron)", 
     "2408.TW": "南亞科 (DRAM製造)",
     "2344.TW": "華邦電 (利基記憶體)",
