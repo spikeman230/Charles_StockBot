@@ -203,8 +203,9 @@ if __name__ == "__main__":
                 message_list.append(stock_msg)
 
     if has_new_data and len(message_list) > 0:
-        final_text = "📡 【老網管 NOC 指揮中心：分區直球對決行動清單】\n\n" + "".join(message_list)
-        final_text += "老網管提醒：收到指令請馬上動作，猶豫就會敗北！🛡️"
+        # 老網管加入 Timestamp 模組：把 current_tw_date 變數塞進標題下方
+        final_text = f"📡 【老網管 NOC 指揮中心：行動清單】\n📅 系統時間：{current_tw_date}\n━━━━━━━━━━━━━━\n" + "".join(message_list)
+        final_text += "⚠️ 老網管提醒：收到指令請馬上動作，猶豫就會敗北！"
         
         send_telegram_msg(final_text)
         # 若設定好 Email 環境變數，可開啟下行發送 K 線圖
