@@ -1,10 +1,12 @@
 name: Daily Stock Reporter
 
 on:
+#  schedule:
+#    - cron: '30 2 * * 1-5'
   schedule:
-    - cron: '30 2 * * 1-5'
-  workflow_dispatch:
-
+    # 這裡的設定代表：每週一到週五的 UTC 02:00 (台灣 10:00) 與 05:00 (台灣 13:00) 觸發
+    - cron: '0 2,5 * * 1-5' 
+    workflow_dispatch:
 jobs:
   run-stock-bot:
     runs-on: ubuntu-latest
