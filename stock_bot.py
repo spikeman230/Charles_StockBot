@@ -210,5 +210,12 @@ if __name__ == "__main__":
         send_telegram_msg(final_text)
         # 若設定好 Email 環境變數，可開啟下行發送 K 線圖
         # send_email_report(f"📊 理財儀表板 ({current_tw_date})", final_text, generated_charts)
-    else:
-        print("今日無更新資料或休市。")
+   else:
+        # 建立休市專用的心跳封包
+        sleep_msg = f"📡 【老網管 NOC 指揮中心：休市回報】\n📅 系統時間：{current_tw_date}\n😴 報告：今日台股休市，戰情室伺服器進入待命模式 (Standby)。"
+        
+        # 把這段話印在 GitHub Log 留底
+        print("今日休市，已發送待命通知至 Telegram。")
+        
+        # 呼叫發送模組，把訊息推送到你的手機！
+        send_telegram_msg(sleep_msg)
