@@ -210,7 +210,7 @@ if __name__ == "__main__":
         send_telegram_msg(final_text)
         # 若設定好 Email 環境變數，可開啟下行發送 K 線圖
         # send_email_report(f"📊 理財儀表板 ({current_tw_date})", final_text, generated_charts)
-   else:
+    else:
         # 建立休市專用的心跳封包
         sleep_msg = f"📡 【老網管 NOC 指揮中心：休市回報】\n📅 系統時間：{current_tw_date}\n😴 報告：今日台股休市，戰情室伺服器進入待命模式 (Standby)。"
         
