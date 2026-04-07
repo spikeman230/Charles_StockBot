@@ -2,6 +2,7 @@ import yfinance as yf
 import requests
 import os
 import datetime
+import csv
 import mplfinance as mpf
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -45,7 +46,20 @@ STOCK_DICT = {
     }
 }
 
-# === 3. 分析、繪圖與情報抓取模組 ===
+# === 3. 持久化日誌模組 (Logging) ===
+def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, alert):
+    log_filename = "noc_trading_log.csv"
+    file_exists = os.path.exists(log_filename)
+    
+    # 使用 utf-8-sig 確保 Excel 開啟不亂碼
+    with open(log_filename, mode='a', newline='', encoding='utf-8-sig') as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(["日期", "代號", "名稱", "收盤價", "RSI", "量能狀態", "趨勢狀態", "戰情室指令"])
+        
+        writer.writerow([date, symbol, name, f"{close_price:.2f}", f"{rsi:.2f}", vol_status, status, alert])
+
+# === 4. 分析、繪圖與情報抓取模組 ===
 def get_analysis_and_draw_chart(symbol, name):
     try:
         stock = yf.Ticker(symbol)
@@ -73,7 +87,6 @@ def get_analysis_and_draw_chart(symbol, name):
         yd = hist.iloc[-2]
         last_trade_date = hist.index[-1].date()
         
-        # 抓取新聞情報
         latest_news = None
         try:
             news_list = stock.news
@@ -87,34 +100,11 @@ def get_analysis_and_draw_chart(symbol, name):
         print(f"[{symbol}] 分析失敗: {e}")
         return None
 
-# === 4. Telegram 發送模組 ===
+# === 5. Telegram 發送模組 ===
 def send_telegram_msg(msg):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
     payload = {"chat_id": TG_CHAT_ID, "text": msg, "disable_web_page_preview": True}
     requests.post(url, json=payload)
-
-# === 5. Email 發送模組 (若不需要可略過設定) ===
-def send_email_report(subject, text_body, image_files):
-    msg = MIMEMultipart()
-    msg['From'] = EMAIL_USER
-    msg['To'] = EMAIL_TO
-    msg['Subject'] = subject
-    msg.attach(MIMEText(text_body, 'plain'))
-    for img_file in image_files:
-        if os.path.exists(img_file):
-            with open(img_file, 'rb') as f:
-                img_data = f.read()
-            image = MIMEImage(img_data, name=os.path.basename(img_file))
-            msg.attach(image)
-    try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(EMAIL_USER, EMAIL_PASS)
-        server.send_message(msg)
-        server.quit()
-        print("✅ Email 發送成功！")
-    except Exception as e:
-        print(f"❌ Email 發送失敗: {e}")
 
 # === 6. 執行主程式 ===
 if __name__ == "__main__":
@@ -128,7 +118,6 @@ if __name__ == "__main__":
     print(f"今天是 {current_tw_date}，開始執行 NOC 暴力防呆戰情室...")
 
     for category, stocks in STOCK_DICT.items():
-        # 在每個分類開頭加上群組標題
         message_list.append(f"━━━━━━━━━━━━━━\n📂 【{category}】\n━━━━━━━━━━━━━━\n")
         
         for symbol, name in stocks.items():
@@ -148,7 +137,6 @@ if __name__ == "__main__":
                 has_new_data = True 
                 generated_charts.append(chart_file) 
                 
-                # 📊 取得指標數據
                 rsi_value = td['RSI']
                 vol_today = td['Volume']
                 vma5 = td['5VMA']
@@ -157,7 +145,6 @@ if __name__ == "__main__":
                 yd_strong = yd['Close'] > yd['5MA'] > yd['20MA']
                 td_weak = td['Close'] < td['5MA'] < td['20MA']
 
-                # 判斷量能與狀態 (保留前一版的完整顯示)
                 if vol_today > vma5 * 1.2: vol_status = "📈 出量 (大於5日均量)"
                 elif vol_today < vma5 * 0.8: vol_status = "📉 量縮 (交投清淡)"
                 else: vol_status = "➖ 量平 (維持均量)"
@@ -186,7 +173,10 @@ if __name__ == "__main__":
                 else:
                     alert = "✅【持股續抱】目前無轉折。空手別追，有持股就繼續抱著！"
 
-                # 📝 完整排版 (包含量能、狀態與新聞)
+                # 💡 實裝持久化日誌：寫入 CSV
+                write_noc_log(current_tw_date, symbol, name, td['Close'], rsi_value, vol_status, status, alert)
+
+                # 📝 完整排版
                 stock_msg = f"🔸 {name} ({symbol})\n"
                 stock_msg += f"   現價: {td['Close']:.2f} | RSI: {rsi_value:.1f}\n"
                 stock_msg += f"   量能: {vol_status}\n"
@@ -203,19 +193,10 @@ if __name__ == "__main__":
                 message_list.append(stock_msg)
 
     if has_new_data and len(message_list) > 0:
-        # 老網管加入 Timestamp 模組：把 current_tw_date 變數塞進標題下方
         final_text = f"📡 【老網管 NOC 指揮中心：行動清單】\n📅 系統時間：{current_tw_date}\n━━━━━━━━━━━━━━\n" + "".join(message_list)
         final_text += "⚠️ 老網管提醒：收到指令請馬上動作，猶豫就會敗北！"
-        
         send_telegram_msg(final_text)
-        # 若設定好 Email 環境變數，可開啟下行發送 K 線圖
-        # send_email_report(f"📊 理財儀表板 ({current_tw_date})", final_text, generated_charts)
     else:
-        # 建立休市專用的心跳封包
-        sleep_msg = f"📡 【老網管 NOC 指揮中心：休市回報】\n📅 系統時間：{current_tw_date}\n😴 報告：今日台股休市，戰情室伺服器進入待命模式 (Standby)。"
-        
-        # 把這段話印在 GitHub Log 留底
-        print("今日休市，已發送待命通知至 Telegram。")
-        
-        # 呼叫發送模組，把訊息推送到你的手機！
+        sleep_msg = f"📡 【老網管 NOC 指揮中心：休市回報】\n📅 系統時間：{current_tw_date}\n😴 報告：今日台股休市，伺服器進入待命模式。"
+        print("今日休市，發送待命通知。")
         send_telegram_msg(sleep_msg)
