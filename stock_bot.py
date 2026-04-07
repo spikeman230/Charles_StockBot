@@ -2,7 +2,6 @@ import yfinance as yf
 import requests
 import os
 import datetime
-import csv
 import mplfinance as mpf
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -16,7 +15,7 @@ EMAIL_USER = os.environ.get("EMAIL_USER")
 EMAIL_PASS = os.environ.get("EMAIL_PASS")
 EMAIL_TO = os.environ.get("EMAIL_TO")
 
-# === 2. 專屬通訊錄 (雙層 VLAN 分區版) ===
+# === 2. 專屬通訊錄 (四層 VLAN 網域版) ===
 STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {
         "3037.TW": "欣興 (ABF載板)"
@@ -46,20 +45,7 @@ STOCK_DICT = {
     }
 }
 
-# === 3. 持久化日誌模組 (Logging) ===
-def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, alert):
-    log_filename = "noc_trading_log.csv"
-    file_exists = os.path.exists(log_filename)
-    
-    # 使用 utf-8-sig 確保 Excel 開啟不亂碼
-    with open(log_filename, mode='a', newline='', encoding='utf-8-sig') as f:
-        writer = csv.writer(f)
-        if not file_exists:
-            writer.writerow(["日期", "代號", "名稱", "收盤價", "RSI", "量能狀態", "趨勢狀態", "戰情室指令"])
-        
-        writer.writerow([date, symbol, name, f"{close_price:.2f}", f"{rsi:.2f}", vol_status, status, alert])
-
-# === 4. 分析、繪圖與情報抓取模組 ===
+# === 3. 分析、繪圖與情報抓取模組 ===
 def get_analysis_and_draw_chart(symbol, name):
     try:
         stock = yf.Ticker(symbol)
@@ -87,6 +73,7 @@ def get_analysis_and_draw_chart(symbol, name):
         yd = hist.iloc[-2]
         last_trade_date = hist.index[-1].date()
         
+        # 抓取新聞情報
         latest_news = None
         try:
             news_list = stock.news
@@ -100,11 +87,34 @@ def get_analysis_and_draw_chart(symbol, name):
         print(f"[{symbol}] 分析失敗: {e}")
         return None
 
-# === 5. Telegram 發送模組 ===
+# === 4. Telegram 發送模組 ===
 def send_telegram_msg(msg):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
     payload = {"chat_id": TG_CHAT_ID, "text": msg, "disable_web_page_preview": True}
     requests.post(url, json=payload)
+
+# === 5. Email 發送模組 (若不需要可略過設定) ===
+def send_email_report(subject, text_body, image_files):
+    msg = MIMEMultipart()
+    msg['From'] = EMAIL_USER
+    msg['To'] = EMAIL_TO
+    msg['Subject'] = subject
+    msg.attach(MIMEText(text_body, 'plain'))
+    for img_file in image_files:
+        if os.path.exists(img_file):
+            with open(img_file, 'rb') as f:
+                img_data = f.read()
+            image = MIMEImage(img_data, name=os.path.basename(img_file))
+            msg.attach(image)
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASS)
+        server.send_message(msg)
+        server.quit()
+        print("✅ Email 發送成功！")
+    except Exception as e:
+        print(f"❌ Email 發送失敗: {e}")
 
 # === 6. 執行主程式 ===
 if __name__ == "__main__":
@@ -115,7 +125,7 @@ if __name__ == "__main__":
     generated_charts = []
     has_new_data = False 
 
-    print(f"今天是 {current_tw_date}，開始執行 NOC 暴力防呆戰情室...")
+    print(f"今天是 {current_tw_date}，開始執行 NOC 暴力防呆戰情室 (v2.0 量能升級版)...")
 
     for category, stocks in STOCK_DICT.items():
         message_list.append(f"━━━━━━━━━━━━━━\n📂 【{category}】\n━━━━━━━━━━━━━━\n")
@@ -137,6 +147,7 @@ if __name__ == "__main__":
                 has_new_data = True 
                 generated_charts.append(chart_file) 
                 
+                # 📊 取得指標數據
                 rsi_value = td['RSI']
                 vol_today = td['Volume']
                 vma5 = td['5VMA']
@@ -145,7 +156,9 @@ if __name__ == "__main__":
                 yd_strong = yd['Close'] > yd['5MA'] > yd['20MA']
                 td_weak = td['Close'] < td['5MA'] < td['20MA']
 
-                if vol_today > vma5 * 1.2: vol_status = "📈 出量 (大於5日均量)"
+                # 🚀 Phase 1 升級：雙重嚴格量能判定
+                if vol_today > vma5 * 2.0: vol_status = "🌋 爆量 (大於5日均量2倍以上)"
+                elif vol_today > vma5 * 1.2: vol_status = "📈 出量 (溫和放量)"
                 elif vol_today < vma5 * 0.8: vol_status = "📉 量縮 (交投清淡)"
                 else: vol_status = "➖ 量平 (維持均量)"
 
@@ -153,15 +166,19 @@ if __name__ == "__main__":
                 elif td_weak: status = "🧊 空頭排列 (趨勢疲弱)"
                 else: status = "🔄 盤整震盪"
 
-                # 暴力防呆指令邏輯
+                # 🚀 Phase 1 升級：暴力防呆指令邏輯 (加入 2倍量條件)
                 alert = ""
-                if td_weak and vol_today > vma5 * 1.2:
-                    alert = "💀【強制退場】大單狂砸！立刻清倉停損，拔掉網路線保命！"
+                if td_weak and vol_today > vma5 * 2.0:
+                    alert = "💀【強制退場】2倍爆量狂砸！主力出貨，立刻清倉拔線！"
+                elif td_weak and vol_today > vma5 * 1.2:
+                    alert = "⚠️【警戒退場】出量跌破均線！建議減碼防守！"
                 elif yd['Close'] < yd['5MA'] and td['Close'] > td['5MA']:
-                    if vol_today > vma5 * 1.2:
-                        alert = "🚀【強烈買進】流量爆發站回5日線！立刻進場試單！"
+                    if vol_today > vma5 * 2.0:
+                        alert = "🚀【強烈買進】2倍爆量站回5日線！超級強勢，立刻進場！"
+                    elif vol_today > vma5 * 1.2:
+                        alert = "📈【試探買進】溫和出量站回5日線，可小買試單。"
                     else:
-                        alert = "📈【試探買進】站回5日線但量縮。可小買，破5日線即停損！"
+                        alert = "📊【觀望買進】站回5日線但量縮。可小買，破線即跑！"
                 elif yd['5MA'] < yd['20MA'] and td['5MA'] > td['20MA']:
                     alert = "🌟【加碼買進】短中線黃金交叉！空手者快買，有持股者加碼！"
                 elif yd_strong and not td_strong:
@@ -173,10 +190,7 @@ if __name__ == "__main__":
                 else:
                     alert = "✅【持股續抱】目前無轉折。空手別追，有持股就繼續抱著！"
 
-                # 💡 實裝持久化日誌：寫入 CSV
-                write_noc_log(current_tw_date, symbol, name, td['Close'], rsi_value, vol_status, status, alert)
-
-                # 📝 完整排版
+                # 📝 完整排版 (包含量能、狀態與新聞)
                 stock_msg = f"🔸 {name} ({symbol})\n"
                 stock_msg += f"   現價: {td['Close']:.2f} | RSI: {rsi_value:.1f}\n"
                 stock_msg += f"   量能: {vol_status}\n"
@@ -192,11 +206,13 @@ if __name__ == "__main__":
                 stock_msg += "\n"
                 message_list.append(stock_msg)
 
+    # 📡 Timestamp 升級與心跳封包 (Heartbeat) 架構
     if has_new_data and len(message_list) > 0:
         final_text = f"📡 【老網管 NOC 指揮中心：行動清單】\n📅 系統時間：{current_tw_date}\n━━━━━━━━━━━━━━\n" + "".join(message_list)
         final_text += "⚠️ 老網管提醒：收到指令請馬上動作，猶豫就會敗北！"
+        
         send_telegram_msg(final_text)
     else:
-        sleep_msg = f"📡 【老網管 NOC 指揮中心：休市回報】\n📅 系統時間：{current_tw_date}\n😴 報告：今日台股休市，伺服器進入待命模式。"
-        print("今日休市，發送待命通知。")
+        sleep_msg = f"📡 【老網管 NOC 指揮中心：休市回報】\n📅 系統時間：{current_tw_date}\n😴 報告：今日台股休市，戰情室伺服器進入待命模式 (Standby)。"
+        print("今日休市，已發送待命通知至 Telegram。")
         send_telegram_msg(sleep_msg)
