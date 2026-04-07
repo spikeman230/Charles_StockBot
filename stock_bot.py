@@ -119,13 +119,17 @@ def send_email_report(subject, text_body, image_files):
 # === 6. 執行主程式 ===
 if __name__ == "__main__":
     tw_tz = datetime.timezone(datetime.timedelta(hours=8))
+    # 保留原本的日期變數，用來計算休市邏輯
     current_tw_date = datetime.datetime.now(tw_tz).date()
+    # 🕒 升級版：精確到秒的時間戳記，用來印在報表與 Log 上
+    current_tw_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
 
     message_list = []
     generated_charts = []
     has_new_data = False 
 
-    print(f"今天是 {current_tw_date}，開始執行 NOC 暴力防呆戰情室 (v2.0 量能升級版)...")
+    # Log 印出精確時間
+    print(f"[{current_tw_time}] 開始執行 NOC 暴力防呆戰情室 (v2.0 量能升級版)...")
 
     for category, stocks in STOCK_DICT.items():
         message_list.append(f"━━━━━━━━━━━━━━\n📂 【{category}】\n━━━━━━━━━━━━━━\n")
@@ -208,11 +212,13 @@ if __name__ == "__main__":
 
     # 📡 Timestamp 升級與心跳封包 (Heartbeat) 架構
     if has_new_data and len(message_list) > 0:
-        final_text = f"📡 【老網管 NOC 指揮中心：行動清單】\n📅 系統時間：{current_tw_date}\n━━━━━━━━━━━━━━\n" + "".join(message_list)
+        # 將 {current_tw_date} 改為 {current_tw_time}
+        final_text = f"📡 【老網管 NOC 指揮中心：行動清單】\n📅 系統時間：{current_tw_time}\n━━━━━━━━━━━━━━\n" + "".join(message_list)
         final_text += "⚠️ 老網管提醒：收到指令請馬上動作，猶豫就會敗北！"
         
         send_telegram_msg(final_text)
     else:
-        sleep_msg = f"📡 【老網管 NOC 指揮中心：休市回報】\n📅 系統時間：{current_tw_date}\n😴 報告：今日台股休市，戰情室伺服器進入待命模式 (Standby)。"
-        print("今日休市，已發送待命通知至 Telegram。")
+        # 將 {current_tw_date} 改為 {current_tw_time}
+        sleep_msg = f"📡 【老網管 NOC 指揮中心：休市回報】\n📅 系統時間：{current_tw_time}\n😴 報告：今日台股休市，戰情室伺服器進入待命模式 (Standby)。"
+        print(f"[{current_tw_time}] 今日休市，已發送待命通知至 Telegram。")
         send_telegram_msg(sleep_msg)
