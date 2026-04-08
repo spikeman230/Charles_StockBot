@@ -15,10 +15,10 @@ from email.mime.application import MIMEApplication
 # === 1. 機密環境變數 ===
 TG_TOKEN = os.environ.get("TG_TOKEN")
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID")
-EMAIL_USER = os.environ.get("EMAIL_USER")  # 你的 Gmail
-EMAIL_PASS = os.environ.get("EMAIL_PASS")  # Gmail 應用程式密碼
-EMAIL_TO = os.environ.get("EMAIL_TO")      # 收件者信箱
-FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")  # 🔑 FinMind Token
+EMAIL_USER = os.environ.get("EMAIL_USER")
+EMAIL_PASS = os.environ.get("EMAIL_PASS")
+EMAIL_TO = os.environ.get("EMAIL_TO")
+FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 
 # === 2. 專屬通訊錄 (18檔監控名單) ===
 STOCK_DICT = {
@@ -40,13 +40,11 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, aler
 
 # === 4. 🔌 FinMind API 串接模組 ===
 def get_finmind_chip_data(symbol, start_date_str):
-    """抓取 FinMind 三大法人買賣超，並整理成 DataFrame"""
     if not FINMIND_TOKEN:
         return pd.DataFrame()
     
-    # 清理代號 (FinMind 不吃 .TW 或 .TWO)
     fm_symbol = symbol.replace(".TW", "").replace(".TWO", "")
-    if not fm_symbol.isdigit(): # 遇到美股 (如 MU, AAPL) 直接略過
+    if not fm_symbol.isdigit():
         return pd.DataFrame()
 
     url = "https://api.finmindtrade.com/api/v4/data"
@@ -64,19 +62,18 @@ def get_finmind_chip_data(symbol, start_date_str):
             df = pd.DataFrame(data["data"])
             df['net_buy'] = df['buy'] - df['sell']
             
-            # 分類三大法人
             df['type'] = 'Other'
             df.loc[df['name'].str.contains('外資'), 'type'] = 'Foreign_Inv'
             df.loc[df['name'].str.contains('投信'), 'type'] = 'Trust_Inv'
             df.loc[df['name'].str.contains('自營商'), 'type'] = 'Dealer_Inv'
             
-            # 樞紐分析轉換為日線欄位
-            pivot_df = df.groupby(['date', 'type'])['net_buy'].sum().unstack(fill_value=0)
+            pivot_df = df.groupby(['date', 'type'])['net_buy'].sum().unstack(fill_value=0).reset_index()
             
-            # 確保欄位存在
             for col in ['Foreign_Inv', 'Trust_Inv', 'Dealer_Inv']:
                 if col not in pivot_df.columns: pivot_df[col] = 0
                     
+            pivot_df['Date'] = pd.to_datetime(pivot_df['date']).dt.date
+            pivot_df.set_index('Date', inplace=True)
             return pivot_df[['Foreign_Inv', 'Trust_Inv', 'Dealer_Inv']]
     except Exception as e:
         print(f"[{symbol}] FinMind 籌碼撈取失敗: {e}")
@@ -97,7 +94,6 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
         hist['Signal_CoBuy'] = (hist['Foreign_Inv'] > 0) & (hist['Trust_Inv'] > 0)
         hist['Signal_Trust_Trend'] = (hist['Trust_Buy_Days_5d'] >= 4) & (hist['Trust_Buy_Flag'] == 1)
         
-        # 簡易籌碼狀態標註
         conditions = [
             (hist['Signal_CoBuy'] == True),
             (hist['Signal_Trust_Trend'] == True),
@@ -115,48 +111,47 @@ def get_analysis_and_chart(symbol, name):
         hist = stock.history(period="6mo")
         if len(hist) < 30: return None
 
-        # 📅 將 yfinance 的日期轉為字串，方便與 FinMind 籌碼資料對接
         hist['Date_Key'] = hist.index.strftime('%Y-%m-%d')
         
-        # 🔌 如果有 Token 且是台股，則撈取籌碼並合併
         if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
             start_date_str = (datetime.datetime.now() - datetime.timedelta(days=180)).strftime("%Y-%m-%d")
             chip_df = get_finmind_chip_data(symbol, start_date_str)
             if not chip_df.empty:
-                hist = hist.join(chip_df, on='Date_Key')
+                # 確保 index 是 date object 以便與 hist 的 index 比較或合併
+                hist.index = hist.index.date
+                hist = hist.join(chip_df, how='left')
                 hist.fillna({'Foreign_Inv': 0, 'Trust_Inv': 0, 'Dealer_Inv': 0}, inplace=True)
 
-        # 🚀 呼叫籌碼運算模組
         hist = calculate_chip_signals(hist)
 
-        # 基本 MA 與 Volume
         hist['5MA'] = hist['Close'].rolling(window=5).mean()
         hist['20MA'] = hist['Close'].rolling(window=20).mean()
         hist['5VMA'] = hist['Volume'].rolling(window=5).mean()
         
-        # RSI
         delta = hist['Close'].diff()
         gain = delta.clip(lower=0); loss = -1 * delta.clip(upper=0)
         ema_gain = gain.ewm(com=13, adjust=False).mean()
         ema_loss = loss.ewm(com=13, adjust=False).mean()
         hist['RSI'] = 100 - (100 / (1 + (ema_gain / ema_loss)))
 
-        # 🔮 MACD 預判動能
         hist['EMA12'] = hist['Close'].ewm(span=12, adjust=False).mean()
         hist['EMA26'] = hist['Close'].ewm(span=26, adjust=False).mean()
         hist['MACD'] = hist['EMA12'] - hist['EMA26']
         hist['Signal'] = hist['MACD'].ewm(span=9, adjust=False).mean()
         hist['MACD_Hist'] = hist['MACD'] - hist['Signal']
 
-        # 🔮 布林通道壓縮 (BB Squeeze)
         hist['STD20'] = hist['Close'].rolling(window=20).std()
         hist['BB_Upper'] = hist['20MA'] + (2 * hist['STD20'])
         hist['BB_Lower'] = hist['20MA'] - (2 * hist['STD20'])
         hist['BB_Width'] = (hist['BB_Upper'] - hist['BB_Lower']) / hist['20MA']
 
-        # 繪圖
         chart_file = f"{symbol}_chart.png"
-        mpf.plot(hist[-60:], type='candle', style='yahoo', volume=True, 
+        
+        # 準備繪圖用的資料格式
+        plot_df = hist.copy()
+        plot_df.index = pd.to_datetime(plot_df.index)
+        
+        mpf.plot(plot_df[-60:], type='candle', style='yahoo', volume=True, 
                  mav=(5, 20), title=f"{name} ({symbol})", savefig=chart_file)
 
         return hist, chart_file, stock.news[0] if stock.news else None
@@ -184,4 +179,4 @@ def send_email_report(subject, text_body, chart_files):
         for chart in chart_files:
             if os.path.exists(chart):
                 with open(chart, 'rb') as f:
-                    img = MIMEImage(f.read(), name=os
+                    # 這行是剛剛出錯的地方，現在已經
