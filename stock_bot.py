@@ -25,7 +25,7 @@ STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
     "🔥 潛力種子 (高頻寬觀察區)": {"3163.TW": "波若威", "5388.TW": "中磊", "3714.TW": "富采"},
     "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "2317.TW": "鴻海", "0050.TW": "元大台灣50"},
-    "💾 記憶體族群 (美光連動網域)": {"MU": "美光", "2408.TW": "南亞科", "3260.TW": "威剛", "8299.TW": "群聯", "AAPL": "蘋果", "NVDA": "輝達"}
+    "💾 YAHOO 觀察區": {"2027.TW": "大成鋼", "2382.TW": "廣達", "2886.TW": "兆豐金", "6116.TW": "彩晶", "3231.TW": "緯創","2352.TW": "佳世達", "NVDA": "輝達"}
 }
 
 # === 3. 🛸 自動拓荒雷達：掃描投信認養股 ===
@@ -125,17 +125,17 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
         hist['Chip_Status'] = np.select(conditions, choices, default="➖ 中性/偏空")
     return hist
 
-# === 7. 分析與預判模組 (台股紅綠配色) ===
+# === 7. 分析與預判模組 ===
 def get_analysis_and_chart(symbol, name):
     try:
         stock = yf.Ticker(symbol)
-        hist = stock.history(period="8mo")
-        if len(hist) < 40: return None
+        hist = stock.history(period="6mo")
+        if len(hist) < 30: return None
 
         hist['Date_Key'] = hist.index.date
         
         if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
-            start_date_str = (datetime.datetime.now() - datetime.timedelta(days=200)).strftime("%Y-%m-%d")
+            start_date_str = (datetime.datetime.now() - datetime.timedelta(days=180)).strftime("%Y-%m-%d")
             chip_df = get_finmind_chip_data(symbol, start_date_str)
             if not chip_df.empty:
                 hist = hist.merge(chip_df, left_on='Date_Key', right_index=True, how='left')
@@ -143,18 +143,14 @@ def get_analysis_and_chart(symbol, name):
 
         hist = calculate_chip_signals(hist)
 
-        # 基本 MA 與 Volume
+        # MA & RSI & MACD & Bollinger Bands
         hist['5MA'] = hist['Close'].rolling(window=5).mean()
         hist['20MA'] = hist['Close'].rolling(window=20).mean()
         hist['5VMA'] = hist['Volume'].rolling(window=5).mean()
         
         delta = hist['Close'].diff()
-        gain = delta.clip(lower=0)
-        loss = -1 * delta.clip(upper=0)
-        ema_gain = gain.ewm(com=13, adjust=False).mean()
-        ema_loss = loss.ewm(com=13, adjust=False).mean()
-        hist['RSI'] = 100 - (100 / (1 + (ema_gain / ema_loss)))
-        hist['RSI'].fillna(50, inplace=True)
+        gain = delta.clip(lower=0); loss = -1 * delta.clip(upper=0)
+        hist['RSI'] = 100 - (100 / (1 + (gain.ewm(com=13, adjust=False).mean() / loss.ewm(com=13, adjust=False).mean())))
 
         hist['EMA12'] = hist['Close'].ewm(span=12, adjust=False).mean()
         hist['EMA26'] = hist['Close'].ewm(span=26, adjust=False).mean()
@@ -163,31 +159,20 @@ def get_analysis_and_chart(symbol, name):
         hist['MACD_Hist'] = hist['MACD'] - hist['Signal']
 
         hist['STD20'] = hist['Close'].rolling(window=20).std()
-        hist['BB_Width'] = (4 * hist['STD20']) / hist['20MA']
+        hist['BB_Width'] = (hist['20MA'] + (2 * hist['STD20']) - (hist['20MA'] - (2 * hist['STD20']))) / hist['20MA']
 
+        # 🎯 狙擊模式偵測
         hist['Is_Bottoming'] = (hist['Close'] < hist['5MA']) & \
                                (hist['MACD_Hist'].shift(2) < hist['MACD_Hist'].shift(1)) & \
                                (hist['MACD_Hist'].shift(1) < hist['MACD_Hist']) & \
                                (hist['MACD_Hist'] < 0)
         hist['Recent_Bottoming'] = hist['Is_Bottoming'].rolling(window=3).max().fillna(0).astype(bool)
 
-        # 👇 修復點：嚴格遵守 mplfinance 的縮寫規範
-        mc = mpf.make_marketcolors(
-            up='r',          
-            down='g',        
-            edge='i',       # i 代表 inherit (繼承) 
-            wick='i',       
-            volume='in'     # in 代表 inherit (繼承K線顏色)
-        )
-        tw_style = mpf.make_mpf_style(base_style='yahoo', marketcolors=mc)
-
         chart_file = f"{symbol}_chart.png"
-        mpf.plot(hist[-60:], type='candle', style=tw_style, volume=True, 
-                 mav=(5, 20), title=f"Stock: {symbol}", savefig=chart_file)
-
+        # 👇 修復：圖表標題改為純英文，避免 GitHub 虛擬機報錯產生亂碼
+        mpf.plot(hist[-60:], type='candle', style='yahoo', volume=True, mav=(5, 20), title=f"Stock: {symbol}", savefig=chart_file)
         return hist, chart_file
     except Exception as e:
-        print(f"[{symbol}] 分析發生錯誤: {e}")
         return None
 
 # === 8. 發送模組 (Telegram + Email) ===
@@ -227,31 +212,33 @@ if __name__ == "__main__":
     generated_charts = []
     has_data = False
 
-    print(f"[{curr_time}] NOC 戰情室 v5.4 (畫圖崩潰修復版) 啟動...")
+    print(f"[{curr_time}] NOC 戰情室 v5.1 (防亂碼 + 強制雷達回報) 啟動...")
 
-    # 動態加入雷達掃描到的新標的
+    # 🚀 動態加入雷達掃描到的新標的
     radar_targets = scan_top_trust_buy(limit=5)
+    
+    # 👇 修復：確保雷達不論有沒有掃到東西，都會在 Telegram 顯示狀態
     if radar_targets:
         STOCK_DICT["🛸 自動雷達 (投信最新重倉)"] = radar_targets
     else:
         msg_list.append("━━━━━━━━━━━━━━\n📂 【🛸 自動雷達 (投信最新重倉)】\n━━━━━━━━━━━━━━\n🔸 狀態: 今日掃描無符合條件標的或 API 無回應。\n\n")
 
     for cat, stocks in STOCK_DICT.items():
-        cat_printed = False 
-        
+        if cat != "🛸 自動雷達 (投信最新重倉)" or radar_targets:
+            msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
+            
         for sym, name in stocks.items():
             res = get_analysis_and_chart(sym, name)
             if not res: continue
             
             hist, chart_file = res
             td = hist.iloc[-1]; yd = hist.iloc[-2]
+            last_date = hist.index[-1].date()
+            
+            if last_date != curr_date and ".TW" in sym: continue
             
             has_data = True
             generated_charts.append(chart_file)
-            
-            if not cat_printed and cat != "🛸 自動雷達 (投信最新重倉)":
-                msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
-                cat_printed = True
 
             # 基本狀態判斷
             vol_today = td['Volume']; vma5 = td['5VMA']
@@ -293,9 +280,9 @@ if __name__ == "__main__":
 
     # 戰報發送
     if has_data or len(msg_list) > 0:
-        final_text = f"📡 【NOC 戰情室 v5.4：全面恢復連線】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 戰情室 v5.1：主動拓荒版】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
             if os.path.exists(chart): os.remove(chart)
     else:
-        print("休市或資料讀取失敗，伺服器待命。")
+        print("休市，伺服器待命。")
