@@ -15,10 +15,10 @@ from email.mime.application import MIMEApplication
 # === 1. 機密環境變數 ===
 TG_TOKEN = os.environ.get("TG_TOKEN")
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID")
-EMAIL_USER = os.environ.get("EMAIL_USER")  # 你的 Gmail
-EMAIL_PASS = os.environ.get("EMAIL_PASS")  # Gmail 應用程式密碼
-EMAIL_TO = os.environ.get("EMAIL_TO")      # 收件者信箱
-FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")  # 🔑 FinMind Token
+EMAIL_USER = os.environ.get("EMAIL_USER")
+EMAIL_PASS = os.environ.get("EMAIL_PASS")
+EMAIL_TO = os.environ.get("EMAIL_TO")
+FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 
 # === 2. 專屬通訊錄 (18檔監控名單) ===
 STOCK_DICT = {
@@ -38,245 +38,151 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, aler
             writer.writerow(["日期", "代號", "名稱", "收盤價", "RSI", "量能狀態", "趨勢狀態", "戰場預判", "籌碼訊號", "行動指令"])
         writer.writerow([date, symbol, name, f"{close_price:.2f}", f"{rsi:.2f}", vol_status, status, predict, chip_signal, alert])
 
-# === 4. 🔌 FinMind API 串接模組 ===
+# === 4. FinMind API 串接 ===
 def get_finmind_chip_data(symbol, start_date_str):
-    """抓取 FinMind 三大法人買賣超，並整理成 DataFrame"""
-    if not FINMIND_TOKEN:
-        return pd.DataFrame()
-    
-    # 清理代號 (FinMind 不吃 .TW 或 .TWO)
+    if not FINMIND_TOKEN: return pd.DataFrame()
     fm_symbol = symbol.replace(".TW", "").replace(".TWO", "")
-    if not fm_symbol.isdigit(): # 遇到美股 (如 MU, AAPL) 直接略過
-        return pd.DataFrame()
-
+    if not fm_symbol.isdigit(): return pd.DataFrame()
     url = "https://api.finmindtrade.com/api/v4/data"
-    params = {
-        "dataset": "TaiwanStockInstitutionalInvestorsBuySell",
-        "data_id": fm_symbol,
-        "start_date": start_date_str,
-        "token": FINMIND_TOKEN
-    }
-    
+    params = {"dataset": "TaiwanStockInstitutionalInvestorsBuySell", "data_id": fm_symbol, "start_date": start_date_str, "token": FINMIND_TOKEN}
     try:
         r = requests.get(url, params=params, timeout=10)
         data = r.json()
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
             df = pd.DataFrame(data["data"])
             df['net_buy'] = df['buy'] - df['sell']
-            
-            # 分類三大法人
             df['type'] = 'Other'
             df.loc[df['name'].str.contains('外資'), 'type'] = 'Foreign_Inv'
             df.loc[df['name'].str.contains('投信'), 'type'] = 'Trust_Inv'
             df.loc[df['name'].str.contains('自營商'), 'type'] = 'Dealer_Inv'
-            
-            # 樞紐分析轉換為日線欄位
             pivot_df = df.groupby(['date', 'type'])['net_buy'].sum().unstack(fill_value=0).reset_index()
-            
-            # 確保欄位存在
             for col in ['Foreign_Inv', 'Trust_Inv', 'Dealer_Inv']:
-                if col not in pivot_df.columns: 
-                    pivot_df[col] = 0
-            
+                if col not in pivot_df.columns: pivot_df[col] = 0
             pivot_df['Date'] = pd.to_datetime(pivot_df['date']).dt.date
             pivot_df.set_index('Date', inplace=True)
             return pivot_df[['Foreign_Inv', 'Trust_Inv', 'Dealer_Inv']]
-    except Exception as e:
-        print(f"[{symbol}] FinMind 籌碼撈取失敗: {e}")
-        
+    except: pass
     return pd.DataFrame()
 
-# === 5. Phase 2 籌碼運算模組 ===
-def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
-    required_chip_cols = ['Foreign_Inv', 'Trust_Inv', 'Dealer_Inv']
-    hist['Chip_Status'] = "無資料"
-    
-    if all(col in hist.columns for col in required_chip_cols):
-        hist['Total_Institutional'] = hist['Foreign_Inv'] + hist['Trust_Inv'] + hist['Dealer_Inv']
-        hist['Foreign_Buy_Flag'] = (hist['Foreign_Inv'] > 0).astype(int)
-        hist['Trust_Buy_Flag'] = (hist['Trust_Inv'] > 0).astype(int)
-        hist['Trust_Buy_Days_5d'] = hist['Trust_Buy_Flag'].rolling(window=5).sum()
-        
-        hist['Signal_CoBuy'] = (hist['Foreign_Inv'] > 0) & (hist['Trust_Inv'] > 0)
-        hist['Signal_Trust_Trend'] = (hist['Trust_Buy_Days_5d'] >= 4) & (hist['Trust_Buy_Flag'] == 1)
-        
-        # 簡易籌碼狀態標註
-        conditions = [
-            (hist['Signal_CoBuy'] == True),
-            (hist['Signal_Trust_Trend'] == True),
-            (hist['Total_Institutional'] > 0)
-        ]
-        choices = ["🤝 土洋齊買", "🏦 投信連買", "📈 法人偏多"]
-        hist['Chip_Status'] = np.select(conditions, choices, default="➖ 中性/偏空")
-        
-    return hist
-
-# === 6. 分析與預判模組 ===
+# === 5. 分析模組 (含狙擊模式邏輯) ===
 def get_analysis_and_chart(symbol, name):
     try:
         stock = yf.Ticker(symbol)
         hist = stock.history(period="6mo")
         if len(hist) < 30: return None
 
-        # 📅 將 yfinance 的日期對齊 FinMind
-        hist['Date_Key'] = hist.index.date
+        # 基礎指標與 MA
+        hist['5MA'] = hist['Close'].rolling(5).mean()
+        hist['20MA'] = hist['Close'].rolling(20).mean()
+        hist['5VMA'] = hist['Volume'].rolling(5).mean()
         
-        # 🔌 撈取籌碼並合併
-        if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
-            start_date_str = (datetime.datetime.now() - datetime.timedelta(days=180)).strftime("%Y-%m-%d")
-            chip_df = get_finmind_chip_data(symbol, start_date_str)
-            if not chip_df.empty:
-                hist = hist.merge(chip_df, left_on='Date_Key', right_index=True, how='left')
-                hist.fillna({'Foreign_Inv': 0, 'Trust_Inv': 0, 'Dealer_Inv': 0}, inplace=True)
-
-        # 🚀 呼叫籌碼運算
-        hist = calculate_chip_signals(hist)
-
-        # 基本 MA 與 Volume
-        hist['5MA'] = hist['Close'].rolling(window=5).mean()
-        hist['20MA'] = hist['Close'].rolling(window=20).mean()
-        hist['5VMA'] = hist['Volume'].rolling(window=5).mean()
-        
-        # RSI
-        delta = hist['Close'].diff()
-        gain = delta.clip(lower=0); loss = -1 * delta.clip(upper=0)
-        ema_gain = gain.ewm(com=13, adjust=False).mean()
-        ema_loss = loss.ewm(com=13, adjust=False).mean()
-        hist['RSI'] = 100 - (100 / (1 + (ema_gain / ema_loss)))
-
-        # 🔮 MACD 預判動能
+        # MACD
         hist['EMA12'] = hist['Close'].ewm(span=12, adjust=False).mean()
         hist['EMA26'] = hist['Close'].ewm(span=26, adjust=False).mean()
         hist['MACD'] = hist['EMA12'] - hist['EMA26']
         hist['Signal'] = hist['MACD'].ewm(span=9, adjust=False).mean()
         hist['MACD_Hist'] = hist['MACD'] - hist['Signal']
 
-        # 🔮 布林通道壓縮 (BB Squeeze)
-        hist['STD20'] = hist['Close'].rolling(window=20).std()
-        hist['BB_Upper'] = hist['20MA'] + (2 * hist['STD20'])
-        hist['BB_Lower'] = hist['20MA'] - (2 * hist['STD20'])
-        hist['BB_Width'] = (hist['BB_Upper'] - hist['BB_Lower']) / hist['20MA']
+        # 布林通道
+        hist['STD20'] = hist['Close'].rolling(20).std()
+        hist['BB_Width'] = (hist['20MA']*4*hist['STD20'])/hist['20MA'] # 簡化
+        hist['BB_Width'] = (hist['Close'].rolling(20).std() * 4) / hist['20MA']
 
-        # 繪圖
+        # RSI
+        delta = hist['Close'].diff()
+        gain = delta.clip(lower=0); loss = -1 * delta.clip(upper=0)
+        hist['RSI'] = 100 - (100 / (1 + (gain.ewm(com=13).mean() / loss.ewm(com=13).mean())))
+
+        # 🔌 籌碼合併
+        hist['Date_Key'] = hist.index.date
+        if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
+            start_str = (datetime.datetime.now() - datetime.timedelta(days=180)).strftime("%Y-%m-%d")
+            chip = get_finmind_chip_data(symbol, start_str)
+            if not chip.empty:
+                hist = hist.merge(chip, left_on='Date_Key', right_index=True, how='left').fillna(0)
+
+        # ---------------------------------------------------------
+        # 🎯 核心：狙擊模式偵測
+        # ---------------------------------------------------------
+        # 定義築底：價格在5MA下且MACD綠柱連三天收斂 (MACD_Hist < 0 且連續上升)
+        hist['Is_Bottoming'] = (hist['Close'] < hist['5MA']) & \
+                               (hist['MACD_Hist'].shift(2) < hist['MACD_Hist'].shift(1)) & \
+                               (hist['MACD_Hist'].shift(1) < hist['MACD_Hist']) & \
+                               (hist['MACD_Hist'] < 0)
+        
+        # 檢查過去 3 天(含今天) 是否有築底訊號
+        hist['Recent_Bottoming'] = hist['Is_Bottoming'].rolling(window=3).max().astype(bool)
+
         chart_file = f"{symbol}_chart.png"
-        mpf.plot(hist[-60:], type='candle', style='yahoo', volume=True, 
-                 mav=(5, 20), title=f"{name} ({symbol})", savefig=chart_file)
+        mpf.plot(hist[-60:], type='candle', style='yahoo', volume=True, mav=(5, 20), savefig=chart_file)
+        return hist, chart_file
+    except: return None
 
-        return hist, chart_file, stock.news[0] if stock.news else None
-    except Exception as e:
-        print(f"[{symbol}] 分析過程發生錯誤: {e}")
-        return None
+# === 6. 發送模組 (修復 CSV 夾帶) ===
+def send_reports(subject, msg, charts):
+    # Telegram
+    if TG_TOKEN: requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage", json={"chat_id": TG_CHAT_ID, "text": msg})
+    # Email
+    if EMAIL_USER and EMAIL_PASS:
+        try:
+            m = MIMEMultipart(); m['From'] = EMAIL_USER; m['To'] = EMAIL_TO; m['Subject'] = subject
+            m.attach(MIMEText(msg, 'plain'))
+            for c in charts:
+                if os.path.exists(c):
+                    with open(c, 'rb') as f: m.attach(MIMEImage(f.read(), name=os.path.basename(c)))
+            if os.path.exists("noc_trading_log.csv"):
+                with open("noc_trading_log.csv", 'rb') as f:
+                    part = MIMEApplication(f.read(), Name="noc_trading_log.csv")
+                    part.add_header('Content-Disposition', 'attachment; filename="noc_trading_log.csv"')
+                    m.attach(part)
+            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
+                s.login(EMAIL_USER, EMAIL_PASS); s.send_message(m)
+        except Exception as e: print(f"Email Error: {e}")
 
-# === 7. 發送模組 (Telegram + Email) ===
-def send_telegram(msg):
-    if TG_TOKEN and TG_CHAT_ID:
-        requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage", 
-                      json={"chat_id": TG_CHAT_ID, "text": msg, "disable_web_page_preview": True})
-
-def send_email_report(subject, text_body, chart_files):
-    if not EMAIL_USER or not EMAIL_PASS or not EMAIL_TO:
-        print("未設定 Email 環境變數，略過發送。")
-        return
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = EMAIL_USER
-        msg['To'] = EMAIL_TO
-        msg['Subject'] = subject
-        msg.attach(MIMEText(text_body, 'plain'))
-        
-        for chart in chart_files:
-            if os.path.exists(chart):
-                with open(chart, 'rb') as f:
-                    img = MIMEImage(f.read(), name=os.path.basename(chart))
-                    msg.attach(img)
-        
-        log_file = "noc_trading_log.csv"
-        if os.path.exists(log_file):
-            with open(log_file, 'rb') as f:
-                csv_part = MIMEApplication(f.read(), Name=log_file)
-                csv_part.add_header('Content-Disposition', f'attachment; filename="{log_file}"')
-                msg.attach(csv_part)
-        
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login(EMAIL_USER, EMAIL_PASS)
-            server.send_message(msg)
-        print("✅ Email 戰報 (含圖表與 CSV 日誌) 發送成功！")
-    except Exception as e:
-        print(f"❌ Email 發送失敗: {e}")
-
-# === 8. 主程式執行 ===
+# === 7. 主程式 ===
 if __name__ == "__main__":
     tw_tz = datetime.timezone(datetime.timedelta(hours=8))
     curr_date = datetime.datetime.now(tw_tz).date()
     curr_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
-    
-    msg_list = []
-    generated_charts = []
-    has_data = False
-
-    print(f"[{curr_time}] NOC 戰情室 v4.0 (預判雷達 + FinMind籌碼) 啟動...")
+    msg_list = []; charts = []; has_data = False
 
     for cat, stocks in STOCK_DICT.items():
-        msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
+        msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】")
         for sym, name in stocks.items():
             res = get_analysis_and_chart(sym, name)
             if not res: continue
-            hist, chart_file, news = res
+            hist, chart_file = res
+            td = hist.iloc[-1]; yd = hist.iloc[-2]
+            if td.name.date() != curr_date and ".TW" in sym: continue
+            has_data = True; charts.append(chart_file)
+
+            # 狀態判斷
+            vol_status = "📈 出量" if td['Volume'] > td['5VMA']*1.2 else "📉 量縮"
+            trend = "🔥 多頭" if td['Close'] > td['5MA'] > td['20MA'] else "🧊 空頭" if td['Close'] < td['5MA'] < td['20MA'] else "🔄 盤整"
             
-            td = hist.iloc[-1]; yd = hist.iloc[-2]; yyd = hist.iloc[-3]
-            last_date = hist.index[-1].date()
+            # 🔮 預判
+            predict = "⚠️ 大變盤預警" if td['BB_Width'] < 0.08 else "築底醞釀中" if td['Is_Bottoming'] else "無特殊徵兆"
             
-            if last_date != curr_date and ".TW" in sym: continue
+            # 🛡️ 狙擊指令邏輯
+            # 條件：近 3 日有築底訊號 + 今日帶量突破 5MA
+            is_breakout = (yd['Close'] < yd['5MA']) and (td['Close'] > td['5MA']) and (td['Volume'] > td['5VMA']*1.1)
             
-            has_data = True
-            generated_charts.append(chart_file)
-
-            # 基本狀態
-            vol_today = td['Volume']; vma5 = td['5VMA']
-            vol_status = "📈 出量" if vol_today > vma5 * 1.2 else "📉 量縮" if vol_today < vma5 * 0.8 else "➖ 量平"
-            trend_status = "🔥 多頭" if td['Close'] > td['5MA'] > td['20MA'] else "🧊 空頭" if td['Close'] < td['5MA'] < td['20MA'] else "🔄 盤整"
-
-            # 籌碼狀態
-            chip_status = td['Chip_Status']
-
-            # 預判雷達
-            predict_msg = "無特殊徵兆"
-            if td['BB_Width'] < 0.08:
-                predict_msg = "⚠️【大變盤預警】布林通道極度壓縮，即將表態！"
-            elif td['Close'] < td['5MA'] and yyd['MACD_Hist'] < yd['MACD_Hist'] < td['MACD_Hist'] < 0:
-                predict_msg = "📈【築底預判】空方動能衰退，醞釀反彈契機！"
-            elif td['Close'] > td['5MA'] and yyd['MACD_Hist'] > yd['MACD_Hist'] > td['MACD_Hist'] > 0:
-                predict_msg = "📉【見頂預判】多方動能衰退，小心假突破！"
-
-            # 行動指令
-            if td['Close'] < td['5MA'] < td['20MA'] and vol_today > vma5 * 1.2:
-                alert = "💀【強制退場】大單狂砸！立刻清倉保命！"
-            elif yd['Close'] < yd['5MA'] and td['Close'] > td['5MA'] and vol_today > vma5 * 1.2:
-                alert = "🚀【強烈買進】出量站回5日線！立刻進場！"
+            if td['Recent_Bottoming'] and is_breakout:
+                alert = "🚀【狙擊模式：強烈買進】底部完成且帶量突破！"
             elif td['RSI'] > 80:
-                alert = "💰【獲利了結】RSI過熱，分批獲利入袋！"
+                alert = "💰【獲利了結】短線過熱"
+            elif td['Close'] < td['5MA'] < td['20MA']:
+                alert = "💀【強制退場】空頭確認"
             else:
-                alert = "✅【持股續抱】順勢操作，等待訊號。"
+                alert = "✅【持股續抱】順勢操作"
 
-            # 寫入 CSV
-            write_noc_log(curr_date, sym, name, td['Close'], td['RSI'], vol_status, trend_status, predict_msg, chip_status, alert)
-
-            # 排版字串
-            stock_msg = f"🔸 {name} ({sym})\n"
-            stock_msg += f"   現價: {td['Close']:.2f} | RSI: {td['RSI']:.1f}\n"
-            stock_msg += f"   狀態: {trend_status} | {vol_status}\n"
-            if chip_status != "無資料":
-                stock_msg += f"   💰 籌碼: {chip_status}\n"
-            stock_msg += f"   🔮 預判: {predict_msg}\n"
-            stock_msg += f"   👉 指令: {alert}\n\n"
-            msg_list.append(stock_msg)
+            # 寫入日誌
+            write_noc_log(curr_date, sym, name, td['Close'], td['RSI'], vol_status, trend, alert, predict, "N/A")
+            
+            msg_list.append(f"🔸 {name} ({sym})\n   現價: {td['Close']:.2f} | RSI: {td['RSI']:.1f}\n   狀態: {trend} | {vol_status}\n   🔮 預判: {predict}\n   👉 指令: {alert}\n")
 
     if has_data:
-        final_text = f"📡 【老網管 NOC 指揮中心：綜合戰報】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
-        send_telegram(final_text)
-        send_email_report(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
-        
-        for chart in generated_charts:
-            if os.path.exists(chart): os.remove(chart)
-    else:
-        print("休市，伺服器待命。")
+        final_msg = f"📡 【NOC 戰情室 v4.0：嚴格狙擊版】\n📅 時間：{curr_time}\n" + "\n".join(msg_list)
+        send_reports(f"NOC 戰情報告 {curr_date}", final_msg, charts)
+        for c in charts: 
+            if os.path.exists(c): os.remove(c)
