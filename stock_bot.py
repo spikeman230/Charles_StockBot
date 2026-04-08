@@ -25,7 +25,7 @@ STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
     "🔥 潛力種子 (高頻寬觀察區)": {"3163.TW": "波若威", "5388.TW": "中磊", "3714.TW": "富采"},
     "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "2317.TW": "鴻海", "0050.TW": "元大台灣50"},
-    "💾 記憶體族群 (美光連動網域)": {"MU": "美光", "2408.TW": "南亞科", "3260.TW": "威剛", "8299.TW": "群聯", "AAPL": "蘋果", "NVDA": "輝達"}
+    "💾 YAHOO 觀察區": {"2027.TW": "大成鋼", "2382.TW": "廣達", "2886.TW": "兆豐金", "6116.TW": "彩晶", "3231.TW": "緯創","2352.TW": "佳世達", "NVDA": "輝達"}
 }
 
 # === 3. 🛸 自動拓荒雷達：掃描投信認養股 ===
@@ -125,16 +125,15 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
         hist['Chip_Status'] = np.select(conditions, choices, default="➖ 中性/偏空")
     return hist
 
-# === 7. 分析與預判模組 (修復台股紅綠配色) ===
+# === 7. 分析與預判模組 (台股紅綠配色) ===
 def get_analysis_and_chart(symbol, name):
     try:
         stock = yf.Ticker(symbol)
-        hist = stock.history(period="8mo")  # 抓取較長歷史確保均線與籌碼足夠
+        hist = stock.history(period="8mo")
         if len(hist) < 40: return None
 
         hist['Date_Key'] = hist.index.date
         
-        # 🔌 撈取籌碼並合併
         if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
             start_date_str = (datetime.datetime.now() - datetime.timedelta(days=200)).strftime("%Y-%m-%d")
             chip_df = get_finmind_chip_data(symbol, start_date_str)
@@ -149,7 +148,6 @@ def get_analysis_and_chart(symbol, name):
         hist['20MA'] = hist['Close'].rolling(window=20).mean()
         hist['5VMA'] = hist['Volume'].rolling(window=5).mean()
         
-        # RSI 穩定計算
         delta = hist['Close'].diff()
         gain = delta.clip(lower=0)
         loss = -1 * delta.clip(upper=0)
@@ -158,37 +156,30 @@ def get_analysis_and_chart(symbol, name):
         hist['RSI'] = 100 - (100 / (1 + (ema_gain / ema_loss)))
         hist['RSI'].fillna(50, inplace=True)
 
-        # 🔮 MACD 預判動能
         hist['EMA12'] = hist['Close'].ewm(span=12, adjust=False).mean()
         hist['EMA26'] = hist['Close'].ewm(span=26, adjust=False).mean()
         hist['MACD'] = hist['EMA12'] - hist['EMA26']
         hist['Signal'] = hist['MACD'].ewm(span=9, adjust=False).mean()
         hist['MACD_Hist'] = hist['MACD'] - hist['Signal']
 
-        # 🔮 布林通道壓縮 (BB Squeeze)
         hist['STD20'] = hist['Close'].rolling(window=20).std()
         hist['BB_Width'] = (4 * hist['STD20']) / hist['20MA']
 
-        # 🎯 狙擊模式偵測
         hist['Is_Bottoming'] = (hist['Close'] < hist['5MA']) & \
                                (hist['MACD_Hist'].shift(2) < hist['MACD_Hist'].shift(1)) & \
                                (hist['MACD_Hist'].shift(1) < hist['MACD_Hist']) & \
                                (hist['MACD_Hist'] < 0)
         hist['Recent_Bottoming'] = hist['Is_Bottoming'].rolling(window=3).max().fillna(0).astype(bool)
 
-        # ---------------------------------------------------------
-        # 🎨 修復配色：自定義「台股標準」配色 (紅漲綠跌)
-        # ---------------------------------------------------------
         mc = mpf.make_marketcolors(
-            up='r',          # 漲：紅色
-            down='g',        # 跌：綠色
-            edge='inherit',  # 邊框顏色跟隨 K 線
-            wick='inherit',  # 影線顏色跟隨 K 線
-            volume='inherit' # 成交量顏色跟隨 K 線
+            up='r',          
+            down='g',        
+            edge='inherit',  
+            wick='inherit',  
+            volume='inherit' 
         )
         tw_style = mpf.make_mpf_style(base_style='yahoo', marketcolors=mc)
 
-        # 繪圖 (英文字體標題防亂碼)
         chart_file = f"{symbol}_chart.png"
         mpf.plot(hist[-60:], type='candle', style=tw_style, volume=True, 
                  mav=(5, 20), title=f"Stock: {symbol}", savefig=chart_file)
@@ -227,85 +218,4 @@ def send_reports(subject, text_body, chart_files):
 
 # === 9. 主程式執行 ===
 if __name__ == "__main__":
-    tw_tz = datetime.timezone(datetime.timedelta(hours=8))
-    curr_date = datetime.datetime.now(tw_tz).date()
-    curr_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
-    
-    msg_list = []
-    generated_charts = []
-    has_data = False
-
-    print(f"[{curr_time}] NOC 戰情室 v5.2 (台股配色修復版) 啟動...")
-
-    # 🚀 動態加入雷達掃描到的新標的
-    radar_targets = scan_top_trust_buy(limit=5)
-    
-    # 確保雷達不論有沒有掃到東西，都會在 Telegram 顯示狀態
-    if radar_targets:
-        STOCK_DICT["🛸 自動雷達 (投信最新重倉)"] = radar_targets
-    else:
-        msg_list.append("━━━━━━━━━━━━━━\n📂 【🛸 自動雷達 (投信最新重倉)】\n━━━━━━━━━━━━━━\n🔸 狀態: 今日掃描無符合條件標的或 API 無回應。\n\n")
-
-    for cat, stocks in STOCK_DICT.items():
-        if cat != "🛸 自動雷達 (投信最新重倉)" or radar_targets:
-            msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
-            
-        for sym, name in stocks.items():
-            res = get_analysis_and_chart(sym, name)
-            if not res: continue
-            
-            hist, chart_file = res
-            td = hist.iloc[-1]; yd = hist.iloc[-2]
-            last_date = hist.index[-1].date()
-            
-            if last_date != curr_date and ".TW" in sym: continue
-            
-            has_data = True
-            generated_charts.append(chart_file)
-
-            # 基本狀態判斷
-            vol_today = td['Volume']; vma5 = td['5VMA']
-            vol_status = "📈 出量" if vol_today > vma5 * 1.2 else "📉 量縮" if vol_today < vma5 * 0.8 else "➖ 量平"
-            trend_status = "🔥 多頭" if td['Close'] > td['5MA'] > td['20MA'] else "🧊 空頭" if td['Close'] < td['5MA'] < td['20MA'] else "🔄 盤整"
-
-            chip_status = td['Chip_Status']
-
-            # 預判雷達邏輯
-            predict_msg = "無特殊徵兆"
-            if td['BB_Width'] < 0.08:
-                predict_msg = "⚠️【大變盤預警】布林通道極度壓縮！"
-            elif td['Is_Bottoming']:
-                predict_msg = "📈【築底預判】空方動能連續收斂！"
-
-            # 🛡️ 狙擊指令邏輯
-            is_breakout = (yd['Close'] < yd['5MA']) and (td['Close'] > td['5MA']) and (vol_today > vma5 * 1.2)
-            
-            if td['Recent_Bottoming'] and is_breakout:
-                alert = "🚀【狙擊模式：強烈買進】底部完成且帶量突破！"
-            elif td['RSI'] > 80:
-                alert = "💰【獲利了結】短線過熱，注意回檔。"
-            elif td['Close'] < td['5MA'] < td['20MA'] and vol_today > vma5 * 1.2:
-                alert = "💀【強制退場】空頭確認，大單砸盤！"
-            else:
-                alert = "✅【持股續抱】順勢操作，等待訊號。"
-
-            write_noc_log(curr_date, sym, name, td['Close'], td['RSI'], vol_status, trend_status, predict_msg, chip_status, alert)
-
-            # 排版字串
-            stock_msg = f"🔸 {name} ({sym})\n"
-            stock_msg += f"   現價: {td['Close']:.2f} | RSI: {td['RSI']:.1f}\n"
-            stock_msg += f"   狀態: {trend_status} | {vol_status}\n"
-            if chip_status != "無資料":
-                stock_msg += f"   💰 籌碼: {chip_status}\n"
-            stock_msg += f"   🔮 預判: {predict_msg}\n"
-            stock_msg += f"   👉 指令: {alert}\n\n"
-            msg_list.append(stock_msg)
-
-    # 戰報發送
-    if has_data or len(msg_list) > 0:
-        final_text = f"📡 【NOC 戰情室 v5.2：台股視覺版】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
-        send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
-        for chart in generated_charts:
-            if os.path.exists(chart): os.remove(chart)
-    else:
-        print("休市，伺服器待命。")
+    tw_tz =
