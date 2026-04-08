@@ -30,12 +30,10 @@ STOCK_DICT = {
 
 # === 3. 🛸 自動拓荒雷達：掃描投信認養股 ===
 def scan_top_trust_buy(limit=5):
-    """掃描全台股，抓取前一交易日投信買超前 N 名的股票"""
     if not FINMIND_TOKEN:
         return {}
     
     print("📡 啟動全網掃描：尋找投信最新認養目標...")
-    # 嘗試往前推幾天，尋找最近有資料的交易日 (避開假日)
     for i in range(1, 6):
         target_date = (datetime.datetime.now() - datetime.timedelta(days=i)).strftime("%Y-%m-%d")
         url = "https://api.finmindtrade.com/api/v4/data"
@@ -49,23 +47,17 @@ def scan_top_trust_buy(limit=5):
             data = r.json()
             if data.get("msg") == "success" and len(data.get("data", [])) > 0:
                 df = pd.DataFrame(data["data"])
-                # 篩選投信
                 trust_df = df[df['name'].str.contains('投信', na=False)].copy()
                 if not trust_df.empty:
                     trust_df['net_buy'] = trust_df['buy'] - trust_df['sell']
-                    # 依買超張數排序
                     top_df = trust_df.sort_values(by='net_buy', ascending=False)
                     
-                    # 取得目前已在靜態清單中的股票代碼 (避免重複掃描)
                     existing_symbols = [sym.replace('.TW', '').replace('.TWO', '') for stocks in STOCK_DICT.values() for sym in stocks.keys()]
-                    
                     radar_stocks = {}
                     count = 0
                     for _, row in top_df.iterrows():
                         stock_id = str(row['stock_id'])
-                        # 略過權證、ETF或已存在名單的標的 (簡單防呆：只抓純數字代碼)
                         if stock_id.isdigit() and len(stock_id) == 4 and stock_id not in existing_symbols:
-                            # 預設先用 .TW (上市)，若 yfinance 抓不到在後續模組會自動略過
                             radar_stocks[f"{stock_id}.TW"] = f"投信新寵 ({stock_id})"
                             count += 1
                         if count >= limit:
@@ -133,7 +125,7 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
         hist['Chip_Status'] = np.select(conditions, choices, default="➖ 中性/偏空")
     return hist
 
-# === 7. 分析與預判模組 (含嚴格狙擊) ===
+# === 7. 分析與預判模組 ===
 def get_analysis_and_chart(symbol, name):
     try:
         stock = yf.Ticker(symbol)
@@ -177,7 +169,8 @@ def get_analysis_and_chart(symbol, name):
         hist['Recent_Bottoming'] = hist['Is_Bottoming'].rolling(window=3).max().fillna(0).astype(bool)
 
         chart_file = f"{symbol}_chart.png"
-        mpf.plot(hist[-60:], type='candle', style='yahoo', volume=True, mav=(5, 20), title=f"{name} ({symbol})", savefig=chart_file)
+        # 👇 修復：圖表標題改為純英文，避免 GitHub 虛擬機報錯產生亂碼
+        mpf.plot(hist[-60:], type='candle', style='yahoo', volume=True, mav=(5, 20), title=f"Stock: {symbol}", savefig=chart_file)
         return hist, chart_file
     except Exception as e:
         return None
@@ -219,15 +212,21 @@ if __name__ == "__main__":
     generated_charts = []
     has_data = False
 
-    print(f"[{curr_time}] NOC 戰情室 v5.0 (自動雷達 + 嚴格狙擊) 啟動...")
+    print(f"[{curr_time}] NOC 戰情室 v5.1 (防亂碼 + 強制雷達回報) 啟動...")
 
     # 🚀 動態加入雷達掃描到的新標的
     radar_targets = scan_top_trust_buy(limit=5)
+    
+    # 👇 修復：確保雷達不論有沒有掃到東西，都會在 Telegram 顯示狀態
     if radar_targets:
         STOCK_DICT["🛸 自動雷達 (投信最新重倉)"] = radar_targets
+    else:
+        msg_list.append("━━━━━━━━━━━━━━\n📂 【🛸 自動雷達 (投信最新重倉)】\n━━━━━━━━━━━━━━\n🔸 狀態: 今日掃描無符合條件標的或 API 無回應。\n\n")
 
     for cat, stocks in STOCK_DICT.items():
-        msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
+        if cat != "🛸 自動雷達 (投信最新重倉)" or radar_targets:
+            msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
+            
         for sym, name in stocks.items():
             res = get_analysis_and_chart(sym, name)
             if not res: continue
@@ -255,7 +254,7 @@ if __name__ == "__main__":
             elif td['Is_Bottoming']:
                 predict_msg = "📈【築底預判】空方動能連續收斂！"
 
-            # 🛡️ 狙擊指令邏輯 (需同時滿足近3日築底 + 今日突破出量)
+            # 🛡️ 狙擊指令邏輯
             is_breakout = (yd['Close'] < yd['5MA']) and (td['Close'] > td['5MA']) and (vol_today > vma5 * 1.2)
             
             if td['Recent_Bottoming'] and is_breakout:
@@ -280,8 +279,8 @@ if __name__ == "__main__":
             msg_list.append(stock_msg)
 
     # 戰報發送
-    if has_data:
-        final_text = f"📡 【NOC 戰情室 v5.0：主動拓荒版】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+    if has_data or len(msg_list) > 0:
+        final_text = f"📡 【NOC 戰情室 v5.1：主動拓荒版】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
             if os.path.exists(chart): os.remove(chart)
