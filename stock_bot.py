@@ -171,12 +171,13 @@ def get_analysis_and_chart(symbol, name):
                                (hist['MACD_Hist'] < 0)
         hist['Recent_Bottoming'] = hist['Is_Bottoming'].rolling(window=3).max().fillna(0).astype(bool)
 
+        # 👇 修復點：嚴格遵守 mplfinance 的縮寫規範
         mc = mpf.make_marketcolors(
             up='r',          
             down='g',        
-            edge='inherit',  
-            wick='inherit',  
-            volume='inherit' 
+            edge='i',       # i 代表 inherit (繼承) 
+            wick='i',       
+            volume='in'     # in 代表 inherit (繼承K線顏色)
         )
         tw_style = mpf.make_mpf_style(base_style='yahoo', marketcolors=mc)
 
@@ -226,18 +227,17 @@ if __name__ == "__main__":
     generated_charts = []
     has_data = False
 
-    print(f"[{curr_time}] NOC 戰情室 v5.3 (防呆修正版) 啟動...")
+    print(f"[{curr_time}] NOC 戰情室 v5.4 (畫圖崩潰修復版) 啟動...")
 
     # 動態加入雷達掃描到的新標的
     radar_targets = scan_top_trust_buy(limit=5)
     if radar_targets:
         STOCK_DICT["🛸 自動雷達 (投信最新重倉)"] = radar_targets
     else:
-        # 如果雷達沒掃到，依然寫入戰報作為通知
         msg_list.append("━━━━━━━━━━━━━━\n📂 【🛸 自動雷達 (投信最新重倉)】\n━━━━━━━━━━━━━━\n🔸 狀態: 今日掃描無符合條件標的或 API 無回應。\n\n")
 
     for cat, stocks in STOCK_DICT.items():
-        cat_printed = False # 用來記錄該分類標題是否印過了，避免印出空資料夾
+        cat_printed = False 
         
         for sym, name in stocks.items():
             res = get_analysis_and_chart(sym, name)
@@ -249,7 +249,6 @@ if __name__ == "__main__":
             has_data = True
             generated_charts.append(chart_file)
             
-            # 確保該分類有抓到股票，才把分類標題印出來
             if not cat_printed and cat != "🛸 自動雷達 (投信最新重倉)":
                 msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
                 cat_printed = True
@@ -294,7 +293,7 @@ if __name__ == "__main__":
 
     # 戰報發送
     if has_data or len(msg_list) > 0:
-        final_text = f"📡 【NOC 戰情室 v5.3：圖表與穩定性雙修復】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 戰情室 v5.4：全面恢復連線】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
             if os.path.exists(chart): os.remove(chart)
