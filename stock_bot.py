@@ -25,7 +25,7 @@ STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
     "🔥 潛力種子 (高頻寬觀察區)": {"3163.TW": "波若威", "5388.TW": "中磊", "3714.TW": "富采"},
     "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "2317.TW": "鴻海", "0050.TW": "元大台灣50"},
-    "💾 YAHOO 觀察區": {"2027.TW": "大成鋼", "2382.TW": "廣達", "2886.TW": "兆豐金", "6116.TW": "彩晶", "3231.TW": "緯創","2352.TW": "佳世達", "NVDA": "輝達"}
+    "💾 記憶體族群 (美光連動網域)": {"MU": "美光", "2408.TW": "南亞科", "3260.TW": "威剛", "8299.TW": "群聯", "AAPL": "蘋果", "NVDA": "輝達"}
 }
 
 # === 3. 🛸 自動拓荒雷達：掃描投信認養股 ===
@@ -218,4 +218,85 @@ def send_reports(subject, text_body, chart_files):
 
 # === 9. 主程式執行 ===
 if __name__ == "__main__":
-    tw_tz =
+    tw_tz = datetime.timezone(datetime.timedelta(hours=8))
+    curr_date = datetime.datetime.now(tw_tz).date()
+    curr_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
+    
+    msg_list = []
+    generated_charts = []
+    has_data = False
+
+    print(f"[{curr_time}] NOC 戰情室 v5.3 (防呆修正版) 啟動...")
+
+    # 動態加入雷達掃描到的新標的
+    radar_targets = scan_top_trust_buy(limit=5)
+    if radar_targets:
+        STOCK_DICT["🛸 自動雷達 (投信最新重倉)"] = radar_targets
+    else:
+        # 如果雷達沒掃到，依然寫入戰報作為通知
+        msg_list.append("━━━━━━━━━━━━━━\n📂 【🛸 自動雷達 (投信最新重倉)】\n━━━━━━━━━━━━━━\n🔸 狀態: 今日掃描無符合條件標的或 API 無回應。\n\n")
+
+    for cat, stocks in STOCK_DICT.items():
+        cat_printed = False # 用來記錄該分類標題是否印過了，避免印出空資料夾
+        
+        for sym, name in stocks.items():
+            res = get_analysis_and_chart(sym, name)
+            if not res: continue
+            
+            hist, chart_file = res
+            td = hist.iloc[-1]; yd = hist.iloc[-2]
+            
+            has_data = True
+            generated_charts.append(chart_file)
+            
+            # 確保該分類有抓到股票，才把分類標題印出來
+            if not cat_printed and cat != "🛸 自動雷達 (投信最新重倉)":
+                msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
+                cat_printed = True
+
+            # 基本狀態判斷
+            vol_today = td['Volume']; vma5 = td['5VMA']
+            vol_status = "📈 出量" if vol_today > vma5 * 1.2 else "📉 量縮" if vol_today < vma5 * 0.8 else "➖ 量平"
+            trend_status = "🔥 多頭" if td['Close'] > td['5MA'] > td['20MA'] else "🧊 空頭" if td['Close'] < td['5MA'] < td['20MA'] else "🔄 盤整"
+
+            chip_status = td['Chip_Status']
+
+            # 預判雷達邏輯
+            predict_msg = "無特殊徵兆"
+            if td['BB_Width'] < 0.08:
+                predict_msg = "⚠️【大變盤預警】布林通道極度壓縮！"
+            elif td['Is_Bottoming']:
+                predict_msg = "📈【築底預判】空方動能連續收斂！"
+
+            # 🛡️ 狙擊指令邏輯
+            is_breakout = (yd['Close'] < yd['5MA']) and (td['Close'] > td['5MA']) and (vol_today > vma5 * 1.2)
+            
+            if td['Recent_Bottoming'] and is_breakout:
+                alert = "🚀【狙擊模式：強烈買進】底部完成且帶量突破！"
+            elif td['RSI'] > 80:
+                alert = "💰【獲利了結】短線過熱，注意回檔。"
+            elif td['Close'] < td['5MA'] < td['20MA'] and vol_today > vma5 * 1.2:
+                alert = "💀【強制退場】空頭確認，大單砸盤！"
+            else:
+                alert = "✅【持股續抱】順勢操作，等待訊號。"
+
+            write_noc_log(curr_date, sym, name, td['Close'], td['RSI'], vol_status, trend_status, predict_msg, chip_status, alert)
+
+            # 排版字串
+            stock_msg = f"🔸 {name} ({sym})\n"
+            stock_msg += f"   現價: {td['Close']:.2f} | RSI: {td['RSI']:.1f}\n"
+            stock_msg += f"   狀態: {trend_status} | {vol_status}\n"
+            if chip_status != "無資料":
+                stock_msg += f"   💰 籌碼: {chip_status}\n"
+            stock_msg += f"   🔮 預判: {predict_msg}\n"
+            stock_msg += f"   👉 指令: {alert}\n\n"
+            msg_list.append(stock_msg)
+
+    # 戰報發送
+    if has_data or len(msg_list) > 0:
+        final_text = f"📡 【NOC 戰情室 v5.3：圖表與穩定性雙修復】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
+        for chart in generated_charts:
+            if os.path.exists(chart): os.remove(chart)
+    else:
+        print("休市或資料讀取失敗，伺服器待命。")
