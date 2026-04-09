@@ -24,40 +24,45 @@ FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
     "🔥 潛力種子 (高頻寬觀察區)": {"3163.TW": "波若威", "5388.TW": "中磊", "3714.TW": "富采"},
-    "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "0050.TW": "元大台灣50"},
-    "💾 記憶體族群 (美光連動網域)": {"MU": "美光", "2408.TW": "南亞科", "3260.TW": "威剛", "8299.TW": "群聯"},
-    "🔍 YAHOO 觀察區": {"2027.TW": "大成鋼", "2382.TW": "廣達", "2886.TW": "兆豐金", "6116.TW": "彩晶", "2352.TW": "佳世達", "NVDA": "輝達" } # 保留給您未來擴充的網域
+    "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "2317.TW": "鴻海", "0050.TW": "元大台灣50"},
+    "💾 記憶體族群 (美光連動網域)": {"MU": "美光", "2408.TW": "南亞科", "3260.TW": "威剛", "8299.TW": "群聯", "AAPL": "蘋果", "NVDA": "輝達"},
+    "🔍 YAHOO 觀察區": {} 
 }
 
 # === 2.1 真實持股庫存 (實體機房配置) ===
-# 📝 已經幫您修正了緯創 (3231.TW) 與匯鑽科 (8431.TWO)
 MY_PORTFOLIO = {
+    "3037.TW": {"name": "欣興", "buy_price": 160.0, "shares": 1000},
+    "2317.TW": {"name": "鴻海", "buy_price": 140.0, "shares": 2000},
     "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
-    "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000},
-    "6116.TW": {"name": "彩晶", "buy_price": 8.4, "shares": 1000},
-    "2317.TW": {"name": "鴻海", "buy_price": 201.5, "shares": 1000}
+    "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000}
 }
 # ⚙️ 設定自動停利/停損的閥值 (Threshold)
-TAKE_PROFIT_PCT = 20.0  # 當報酬率達到 +20% 時，發出獲利了結警報
-STOP_LOSS_PCT = -10.0   # 當報酬率跌至 -10% 時，發出停損拔線警報
+TAKE_PROFIT_PCT = 20.0  
+STOP_LOSS_PCT = -10.0   
 
-# === 3. 🛸 自動拓荒雷達 (Verbose 除錯版) ===
+# === 3. 🛸 自動拓荒雷達 (API 參數修復版) ===
 def scan_top_trust_buy(limit=5):
     if not FINMIND_TOKEN:
-        print("⚠️ 警告：系統未偵測到 FINMIND_TOKEN，雷達強制關閉！請檢查 GitHub Secrets。")
+        print("⚠️ 警告：系統未偵測到 FINMIND_TOKEN，雷達強制關閉！")
         return {}
     
     print(f"📡 啟動全網掃描：使用 Token 權限認證中...")
     for i in range(1, 6):
         target_date = (datetime.datetime.now() - datetime.timedelta(days=i)).strftime("%Y-%m-%d")
         url = "https://api.finmindtrade.com/api/v4/data"
-        params = {"dataset": "TaiwanStockInstitutionalInvestorsBuySell", "date": target_date, "token": FINMIND_TOKEN}
+        
+        # 👇 核心修復：使用 start_date 與 end_date 限制區間，滿足 API 規格
+        params = {
+            "dataset": "TaiwanStockInstitutionalInvestorsBuySell", 
+            "start_date": target_date,
+            "end_date": target_date,
+            "token": FINMIND_TOKEN
+        }
         
         try:
             r = requests.get(url, params=params, timeout=15)
             data = r.json()
             
-            # 👇 除錯追蹤：強制印出 API 回應的原始狀態
             print(f"   ➤ 嘗試日期 [{target_date}] API 回應狀態: {data.get('msg')}")
             
             if data.get("msg") == "success":
@@ -69,7 +74,6 @@ def scan_top_trust_buy(limit=5):
                         top_df = trust_df.sort_values(by='net_buy', ascending=False)
                         existing_symbols = [sym.replace('.TW', '').replace('.TWO', '') for stocks in STOCK_DICT.values() for sym in stocks.keys()]
                         
-                        # 把庫存的代號也加入排除名單，避免雷達重複掃到您的持股
                         portfolio_symbols = [sym.replace('.TW', '').replace('.TWO', '') for sym in MY_PORTFOLIO.keys()]
                         existing_symbols.extend(portfolio_symbols)
 
@@ -242,7 +246,7 @@ if __name__ == "__main__":
     curr_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
     msg_list = []; generated_charts = []; has_data = False
 
-    print(f"[{curr_time}] NOC 戰情室 v5.7 (終極盤點除錯版) 啟動...")
+    print(f"[{curr_time}] NOC 戰情室 v5.8 (雷達參數修復版) 啟動...")
 
     # 💼 優先盤點：實體機房配置 (真實持股)
     if MY_PORTFOLIO:
@@ -259,7 +263,6 @@ if __name__ == "__main__":
             buy_price = data['buy_price']
             roi_pct = ((curr_price - buy_price) / buy_price) * 100
             
-            # 損益狀態閥值判定
             if roi_pct >= TAKE_PROFIT_PCT:
                 pnl_alert = f"💰【達標警戒】建議分批獲利入袋！"
             elif roi_pct <= STOP_LOSS_PCT:
@@ -283,7 +286,7 @@ if __name__ == "__main__":
 
     # 👀 一般外部網域監控
     for cat, stocks in STOCK_DICT.items():
-        if not stocks: continue # 跳過空的分類 (如 YAHOO 觀察區)
+        if not stocks: continue 
         
         cat_printed = False 
         for sym, name in stocks.items():
@@ -323,7 +326,7 @@ if __name__ == "__main__":
             msg_list.append(stock_msg)
 
     if has_data or len(msg_list) > 0:
-        final_text = f"📡 【NOC 戰情室 v5.7：全網域監控中】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 戰情室 v5.8：全網域監控中】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
             if os.path.exists(chart): os.remove(chart)
