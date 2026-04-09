@@ -25,11 +25,12 @@ STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
     "🔥 潛力種子 (高頻寬觀察區)": {"3163.TW": "波若威", "5388.TW": "中磊", "3714.TW": "富采"},
     "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "0050.TW": "元大台灣50"},
-    "💾 YAHOO 觀察區": {"2027.TW": "大成鋼", "2382.TW": "廣達", "2886.TW": "兆豐金", "6116.TW": "彩晶", "2352.TW": "佳世達", "NVDA": "輝達"}
+    "💾 記憶體族群 (美光連動網域)": {"MU": "美光", "2408.TW": "南亞科", "3260.TW": "威剛", "8299.TW": "群聯"},
+    "🔍 YAHOO 觀察區": {"2027.TW": "大成鋼", "2382.TW": "廣達", "2886.TW": "兆豐金", "6116.TW": "彩晶", "2352.TW": "佳世達", "NVDA": "輝達" } # 保留給您未來擴充的網域
 }
 
-# === 2.1 真實持股庫存 (您的實體機房配置) ===
-# 📝 請在這裡填入您的真實買進成本與股數
+# === 2.1 真實持股庫存 (實體機房配置) ===
+# 📝 已經幫您修正了緯創 (3231.TW) 與匯鑽科 (8431.TWO)
 MY_PORTFOLIO = {
     "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
     "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000},
@@ -40,37 +41,60 @@ MY_PORTFOLIO = {
 TAKE_PROFIT_PCT = 20.0  # 當報酬率達到 +20% 時，發出獲利了結警報
 STOP_LOSS_PCT = -10.0   # 當報酬率跌至 -10% 時，發出停損拔線警報
 
-# === 3. 🛸 自動拓荒雷達 ===
+# === 3. 🛸 自動拓荒雷達 (Verbose 除錯版) ===
 def scan_top_trust_buy(limit=5):
-    if not FINMIND_TOKEN: return {}
-    print("📡 啟動全網掃描：尋找投信最新認養目標...")
+    if not FINMIND_TOKEN:
+        print("⚠️ 警告：系統未偵測到 FINMIND_TOKEN，雷達強制關閉！請檢查 GitHub Secrets。")
+        return {}
+    
+    print(f"📡 啟動全網掃描：使用 Token 權限認證中...")
     for i in range(1, 6):
         target_date = (datetime.datetime.now() - datetime.timedelta(days=i)).strftime("%Y-%m-%d")
         url = "https://api.finmindtrade.com/api/v4/data"
         params = {"dataset": "TaiwanStockInstitutionalInvestorsBuySell", "date": target_date, "token": FINMIND_TOKEN}
+        
         try:
             r = requests.get(url, params=params, timeout=15)
             data = r.json()
-            if data.get("msg") == "success" and len(data.get("data", [])) > 0:
-                df = pd.DataFrame(data["data"])
-                trust_df = df[df['name'].str.contains('投信', na=False)].copy()
-                if not trust_df.empty:
-                    trust_df['net_buy'] = trust_df['buy'] - trust_df['sell']
-                    top_df = trust_df.sort_values(by='net_buy', ascending=False)
-                    existing_symbols = [sym.replace('.TW', '').replace('.TWO', '') for stocks in STOCK_DICT.values() for sym in stocks.keys()]
-                    radar_stocks = {}
-                    count = 0
-                    for _, row in top_df.iterrows():
-                        stock_id = str(row['stock_id'])
-                        if stock_id.isdigit() and len(stock_id) == 4 and stock_id not in existing_symbols:
-                            radar_stocks[f"{stock_id}.TW"] = f"投信新寵 ({stock_id})"
-                            count += 1
-                        if count >= limit: break
-                    print(f"✅ 雷達掃描完成！鎖定 {len(radar_stocks)} 檔標的。")
-                    return radar_stocks
+            
+            # 👇 除錯追蹤：強制印出 API 回應的原始狀態
+            print(f"   ➤ 嘗試日期 [{target_date}] API 回應狀態: {data.get('msg')}")
+            
+            if data.get("msg") == "success":
+                if len(data.get("data", [])) > 0:
+                    df = pd.DataFrame(data["data"])
+                    trust_df = df[df['name'].str.contains('投信', na=False)].copy()
+                    if not trust_df.empty:
+                        trust_df['net_buy'] = trust_df['buy'] - trust_df['sell']
+                        top_df = trust_df.sort_values(by='net_buy', ascending=False)
+                        existing_symbols = [sym.replace('.TW', '').replace('.TWO', '') for stocks in STOCK_DICT.values() for sym in stocks.keys()]
+                        
+                        # 把庫存的代號也加入排除名單，避免雷達重複掃到您的持股
+                        portfolio_symbols = [sym.replace('.TW', '').replace('.TWO', '') for sym in MY_PORTFOLIO.keys()]
+                        existing_symbols.extend(portfolio_symbols)
+
+                        radar_stocks = {}
+                        count = 0
+                        for _, row in top_df.iterrows():
+                            stock_id = str(row['stock_id'])
+                            if stock_id.isdigit() and len(stock_id) == 4 and stock_id not in existing_symbols:
+                                radar_stocks[f"{stock_id}.TW"] = f"投信新寵 ({stock_id})"
+                                count += 1
+                            if count >= limit: break
+                        print(f"✅ 雷達掃描完成！鎖定 {len(radar_stocks)} 檔標的。")
+                        return radar_stocks
+                    else:
+                        print(f"   ➤ [{target_date}] 有資料，但沒有『投信』的買賣紀錄。")
+                else:
+                    print(f"   ➤ [{target_date}] API 成功連線，但當天為休市或無籌碼資料。")
+            else:
+                print(f"   ❌ API 拒絕存取，錯誤訊息: {data.get('msg')}")
+                
         except Exception as e:
-            print(f"雷達掃描失敗 ({target_date}): {e}")
+            print(f"   💥 雷達連線崩潰 ({target_date}): {e}")
             continue
+            
+    print("⚠️ 往前推 5 天皆無可用資料，雷達空手而回。")
     return {}
 
 # === 4. 持久化日誌 ===
@@ -218,7 +242,7 @@ if __name__ == "__main__":
     curr_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
     msg_list = []; generated_charts = []; has_data = False
 
-    print(f"[{curr_time}] NOC 戰情室 v5.6 (庫存損益盤點版) 啟動...")
+    print(f"[{curr_time}] NOC 戰情室 v5.7 (終極盤點除錯版) 啟動...")
 
     # 💼 優先盤點：實體機房配置 (真實持股)
     if MY_PORTFOLIO:
@@ -255,10 +279,12 @@ if __name__ == "__main__":
     if radar_targets:
         STOCK_DICT["🛸 自動雷達 (投信最新重倉)"] = radar_targets
     else:
-        msg_list.append("━━━━━━━━━━━━━━\n📂 【🛸 自動雷達 (投信最新重倉)】\n━━━━━━━━━━━━━━\n🔸 狀態: 今日掃描無符合條件標的或 API 無回應。\n\n")
+        msg_list.append("━━━━━━━━━━━━━━\n📂 【🛸 自動雷達 (投信最新重倉)】\n━━━━━━━━━━━━━━\n🔸 狀態: 今日掃描無符合條件標的或 API 遇限制。\n\n")
 
     # 👀 一般外部網域監控
     for cat, stocks in STOCK_DICT.items():
+        if not stocks: continue # 跳過空的分類 (如 YAHOO 觀察區)
+        
         cat_printed = False 
         for sym, name in stocks.items():
             res = get_analysis_and_chart(sym, name)
@@ -297,7 +323,7 @@ if __name__ == "__main__":
             msg_list.append(stock_msg)
 
     if has_data or len(msg_list) > 0:
-        final_text = f"📡 【NOC 戰情室 v5.6：資產損益控管】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 戰情室 v5.7：全網域監控中】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
             if os.path.exists(chart): os.remove(chart)
