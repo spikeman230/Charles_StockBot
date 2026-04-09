@@ -24,17 +24,17 @@ FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
     "🔥 潛力種子 (高頻寬觀察區)": {"3163.TW": "波若威", "5388.TW": "中磊", "3714.TW": "富采"},
-    "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "0050.TW": "元大台灣50"},
-    "💾 記憶體族群 (美光連動網域)": {"MU": "美光", "2408.TW": "南亞科", "3260.TW": "威剛", "8299.TW": "群聯", "AAPL": "蘋果", "NVDA": "輝達"},
-    "🔍 YAHOO 觀察區": {"2027.TW": "大成鋼", "2382.TW": "廣達", "2886.TW": "兆豐金", "2409.TW": "友達", "2352.TW": "佳世達", "NVDA": "輝達"} 
+    "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "0050.TW": "元大台灣50","AAPL": "蘋果","NVDA": "輝達"},
+    "💾 記憶體族群 (美光連動網域)": {"MU": "美光", "2408.TW": "南亞科", "3260.TW": "威剛", "8299.TW": "群聯", },
+    "🔍 YAHOO 觀察區": {"2027.TW": "大成鋼", "2382.TW": "廣達", "2886.TW": "兆豐金", "2409.TW": "友達", "2352.TW": "佳世達", } 
 }
 
 # === 2.1 真實持股庫存 (實體機房配置) ===
 MY_PORTFOLIO = {
-   "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
-   "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000},
-   "6116.TW": {"name": "彩晶", "buy_price": 8.4, "shares": 1000},
-   "2317.TW": {"name": "鴻海", "buy_price": 201.5, "shares": 1000}
+    "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
+    "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000},
+    "6116.TW": {"name": "彩晶", "buy_price": 8.4, "shares": 1000},
+    "2317.TW": {"name": "鴻海", "buy_price": 201.5, "shares": 1000}
 }
 
 # ⚙️ 設定自動停利/停損的閥值 (Threshold)
@@ -161,3 +161,107 @@ def send_reports(subject, text_body, chart_files):
     
     if EMAIL_USER and EMAIL_PASS and EMAIL_TO:
         try:
+            msg = MIMEMultipart(); msg['From'] = EMAIL_USER; msg['To'] = EMAIL_TO; msg['Subject'] = subject
+            msg.attach(MIMEText(text_body, 'plain'))
+            for chart in chart_files:
+                if os.path.exists(chart):
+                    with open(chart, 'rb') as f: msg.attach(MIMEImage(f.read(), name=os.path.basename(chart)))
+            
+            log_file = "noc_trading_log.csv"
+            if os.path.exists(log_file):
+                with open(log_file, 'rb') as f:
+                    csv_part = MIMEApplication(f.read(), Name=log_file)
+                    csv_part.add_header('Content-Disposition', f'attachment; filename="{log_file}"')
+                    msg.attach(csv_part)
+            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                server.login(EMAIL_USER, EMAIL_PASS)
+                server.send_message(msg)
+            print("✅ 戰報發送成功！")
+        except Exception as e: print(f"❌ Email 發送失敗: {e}")
+
+# === 8. 主程式執行 ===
+if __name__ == "__main__":
+    tw_tz = datetime.timezone(datetime.timedelta(hours=8))
+    curr_date = datetime.datetime.now(tw_tz).date()
+    curr_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
+    msg_list = []; generated_charts = []; has_data = False
+
+    print(f"[{curr_time}] NOC 戰情室 v5.9 (純淨資產監控版) 啟動...")
+
+    # 💼 優先盤點：實體機房配置 (真實持股)
+    if MY_PORTFOLIO:
+        msg_list.append("━━━━━━━━━━━━━━\n💼 【庫存機櫃 (真實持股盤點)】\n━━━━━━━━━━━━━━\n")
+        for sym, data in MY_PORTFOLIO.items():
+            res = get_analysis_and_chart(sym, data['name'])
+            if not res: continue
+            hist, chart_file = res
+            td = hist.iloc[-1]
+            has_data = True
+            generated_charts.append(chart_file)
+            
+            curr_price = td['Close']
+            buy_price = data['buy_price']
+            roi_pct = ((curr_price - buy_price) / buy_price) * 100
+            
+            if roi_pct >= TAKE_PROFIT_PCT:
+                pnl_alert = f"💰【達標警戒】建議分批獲利入袋！"
+            elif roi_pct <= STOP_LOSS_PCT:
+                pnl_alert = f"🩸【破網警戒】請嚴格執行停損拔線！"
+            elif roi_pct > 0:
+                pnl_alert = f"🟢 獲利巡航中，持續抱牢。"
+            else:
+                pnl_alert = f"🟡 暫時浮虧，注意防守。"
+                
+            portfolio_msg = f"🔸 {data['name']} ({sym})\n"
+            portfolio_msg += f"   成本: {buy_price:.2f} | 現價: {curr_price:.2f}\n"
+            portfolio_msg += f"   損益: {roi_pct:+.2f}% | 👉 {pnl_alert}\n\n"
+            msg_list.append(portfolio_msg)
+
+    # 👀 一般外部網域監控
+    for cat, stocks in STOCK_DICT.items():
+        if not stocks: continue 
+        
+        cat_printed = False 
+        for sym, name in stocks.items():
+            res = get_analysis_and_chart(sym, name)
+            if not res: continue
+            
+            hist, chart_file = res
+            td = hist.iloc[-1]; yd = hist.iloc[-2]
+            has_data = True
+            if chart_file not in generated_charts:
+                generated_charts.append(chart_file)
+            
+            if not cat_printed:
+                msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
+                cat_printed = True
+
+            vol_today = td['Volume']; vma5 = td['5VMA']
+            vol_status = "📈 出量" if vol_today > vma5 * 1.2 else "📉 量縮" if vol_today < vma5 * 0.8 else "➖ 量平"
+            trend_status = "🔥 多頭" if td['Close'] > td['5MA'] > td['20MA'] else "🧊 空頭" if td['Close'] < td['5MA'] < td['20MA'] else "🔄 盤整"
+            chip_status = td['Chip_Status']
+
+            predict_msg = "無特殊徵兆"
+            if td['BB_Width'] < 0.08: predict_msg = "⚠️【大變盤預警】布林通道極度壓縮！"
+            elif td['Is_Bottoming'] == 1: predict_msg = "📈【築底預判】空方動能連續收斂！"
+
+            is_breakout = (yd['Close'] < yd['5MA']) and (td['Close'] > td['5MA']) and (vol_today > vma5 * 1.2)
+            if td['Recent_Bottoming'] and is_breakout: alert = "🚀【狙擊模式：強烈買進】底部完成且帶量突破！"
+            elif td['RSI'] > 80: alert = "💰【獲利了結】短線過熱，注意回檔。"
+            elif td['Close'] < td['5MA'] < td['20MA'] and vol_today > vma5 * 1.2: alert = "💀【強制退場】空頭確認，大單砸盤！"
+            else: alert = "✅【持股續抱】順勢操作，等待訊號。"
+
+            write_noc_log(curr_date, sym, name, td['Close'], td['RSI'], vol_status, trend_status, predict_msg, chip_status, alert)
+            
+            stock_msg = f"🔸 {name} ({sym})\n   現價: {td['Close']:.2f} | RSI: {td['RSI']:.1f}\n   狀態: {trend_status} | {vol_status}\n"
+            if chip_status != "無資料": stock_msg += f"   💰 籌碼: {chip_status}\n"
+            stock_msg += f"   🔮 預判: {predict_msg}\n   👉 指令: {alert}\n\n"
+            msg_list.append(stock_msg)
+
+    if has_data or len(msg_list) > 0:
+        final_text = f"📡 【NOC 戰情室 v5.9：純淨資產監控版】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
+        for chart in generated_charts:
+            if os.path.exists(chart): os.remove(chart)
+    else:
+        print("休市或資料讀取失敗，伺服器待命。")
