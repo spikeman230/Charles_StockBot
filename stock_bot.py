@@ -33,8 +33,8 @@ STOCK_DICT = {
 MY_PORTFOLIO = {
     "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
     "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000},
-    "6116.TWO": {"name": "彩晶", "buy_price": 8.4, "shares": 1000},
-    "2317.TWO": {"name": "鴻海", "buy_price": 201.5, "shares": 1000}
+    "6116.TW": {"name": "彩晶", "buy_price": 8.4, "shares": 1000},
+    "2317.TW": {"name": "鴻海", "buy_price": 201.5, "shares": 1000}
 }
 # ⚙️ 設定自動停利/停損的閥值 (Threshold)
 TAKE_PROFIT_PCT = 20.0  # 當報酬率達到 +20% 時，發出獲利了結警報
