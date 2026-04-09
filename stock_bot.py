@@ -24,84 +24,24 @@ FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
     "🔥 潛力種子 (高頻寬觀察區)": {"3163.TW": "波若威", "5388.TW": "中磊", "3714.TW": "富采"},
-    "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "2317.TW": "鴻海", "0050.TW": "元大台灣50"},
+    "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "0050.TW": "元大台灣50"},
     "💾 記憶體族群 (美光連動網域)": {"MU": "美光", "2408.TW": "南亞科", "3260.TW": "威剛", "8299.TW": "群聯", "AAPL": "蘋果", "NVDA": "輝達"},
-    "🔍 YAHOO 觀察區": {} 
+    "🔍 YAHOO 觀察區": {"2027.TW": "大成鋼", "2382.TW": "廣達", "2886.TW": "兆豐金", "2409.TW": "友達", "2352.TW": "佳世達", "NVDA": "輝達"} 
 }
 
 # === 2.1 真實持股庫存 (實體機房配置) ===
 MY_PORTFOLIO = {
-    "3037.TW": {"name": "欣興", "buy_price": 160.0, "shares": 1000},
-    "2317.TW": {"name": "鴻海", "buy_price": 140.0, "shares": 2000},
-    "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
-    "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000}
+   "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
+   "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000},
+   "6116.TW": {"name": "彩晶", "buy_price": 8.4, "shares": 1000},
+   "2317.TW": {"name": "鴻海", "buy_price": 201.5, "shares": 1000}
 }
+
 # ⚙️ 設定自動停利/停損的閥值 (Threshold)
 TAKE_PROFIT_PCT = 20.0  
 STOP_LOSS_PCT = -10.0   
 
-# === 3. 🛸 自動拓荒雷達 (API 參數修復版) ===
-def scan_top_trust_buy(limit=5):
-    if not FINMIND_TOKEN:
-        print("⚠️ 警告：系統未偵測到 FINMIND_TOKEN，雷達強制關閉！")
-        return {}
-    
-    print(f"📡 啟動全網掃描：使用 Token 權限認證中...")
-    for i in range(1, 6):
-        target_date = (datetime.datetime.now() - datetime.timedelta(days=i)).strftime("%Y-%m-%d")
-        url = "https://api.finmindtrade.com/api/v4/data"
-        
-        # 👇 核心修復：使用 start_date 與 end_date 限制區間，滿足 API 規格
-        params = {
-            "dataset": "TaiwanStockInstitutionalInvestorsBuySell", 
-            "start_date": target_date,
-            "end_date": target_date,
-            "token": FINMIND_TOKEN
-        }
-        
-        try:
-            r = requests.get(url, params=params, timeout=15)
-            data = r.json()
-            
-            print(f"   ➤ 嘗試日期 [{target_date}] API 回應狀態: {data.get('msg')}")
-            
-            if data.get("msg") == "success":
-                if len(data.get("data", [])) > 0:
-                    df = pd.DataFrame(data["data"])
-                    trust_df = df[df['name'].str.contains('投信', na=False)].copy()
-                    if not trust_df.empty:
-                        trust_df['net_buy'] = trust_df['buy'] - trust_df['sell']
-                        top_df = trust_df.sort_values(by='net_buy', ascending=False)
-                        existing_symbols = [sym.replace('.TW', '').replace('.TWO', '') for stocks in STOCK_DICT.values() for sym in stocks.keys()]
-                        
-                        portfolio_symbols = [sym.replace('.TW', '').replace('.TWO', '') for sym in MY_PORTFOLIO.keys()]
-                        existing_symbols.extend(portfolio_symbols)
-
-                        radar_stocks = {}
-                        count = 0
-                        for _, row in top_df.iterrows():
-                            stock_id = str(row['stock_id'])
-                            if stock_id.isdigit() and len(stock_id) == 4 and stock_id not in existing_symbols:
-                                radar_stocks[f"{stock_id}.TW"] = f"投信新寵 ({stock_id})"
-                                count += 1
-                            if count >= limit: break
-                        print(f"✅ 雷達掃描完成！鎖定 {len(radar_stocks)} 檔標的。")
-                        return radar_stocks
-                    else:
-                        print(f"   ➤ [{target_date}] 有資料，但沒有『投信』的買賣紀錄。")
-                else:
-                    print(f"   ➤ [{target_date}] API 成功連線，但當天為休市或無籌碼資料。")
-            else:
-                print(f"   ❌ API 拒絕存取，錯誤訊息: {data.get('msg')}")
-                
-        except Exception as e:
-            print(f"   💥 雷達連線崩潰 ({target_date}): {e}")
-            continue
-            
-    print("⚠️ 往前推 5 天皆無可用資料，雷達空手而回。")
-    return {}
-
-# === 4. 持久化日誌 ===
+# === 3. 持久化日誌 ===
 def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, alert, predict, chip_signal):
     log_filename = "noc_trading_log.csv"
     file_exists = os.path.exists(log_filename)
@@ -111,7 +51,7 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, aler
             writer.writerow(["日期", "代號", "名稱", "收盤價", "RSI", "量能狀態", "趨勢狀態", "戰場預判", "籌碼訊號", "行動指令"])
         writer.writerow([date, symbol, name, f"{close_price:.2f}", f"{rsi:.2f}", vol_status, status, predict, chip_signal, alert])
 
-# === 5. FinMind 籌碼串接 ===
+# === 4. FinMind 單檔籌碼串接 (免費額度內正常運作) ===
 def get_finmind_chip_data(symbol, start_date_str):
     if not FINMIND_TOKEN: return pd.DataFrame()
     fm_symbol = symbol.replace(".TW", "").replace(".TWO", "")
@@ -139,7 +79,7 @@ def get_finmind_chip_data(symbol, start_date_str):
     except: pass
     return pd.DataFrame()
 
-# === 6. 籌碼判定 ===
+# === 5. 籌碼判定 ===
 def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     required_chip_cols = ['Foreign_Inv', 'Trust_Inv', 'Dealer_Inv']
     hist['Chip_Status'] = "無資料"
@@ -156,7 +96,7 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
         hist['Chip_Status'] = np.select(conditions, choices, default="➖ 中性/偏空")
     return hist
 
-# === 7. 分析與預判模組 ===
+# === 6. 分析與預判模組 ===
 def get_analysis_and_chart(symbol, name):
     try:
         stock = yf.Ticker(symbol)
@@ -214,121 +154,10 @@ def get_analysis_and_chart(symbol, name):
         print(f"[{symbol}] 分析核心發生嚴重錯誤: {e}")
         return None
 
-# === 8. 發送模組 ===
+# === 7. 發送模組 ===
 def send_reports(subject, text_body, chart_files):
     if TG_TOKEN and TG_CHAT_ID:
         requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage", json={"chat_id": TG_CHAT_ID, "text": text_body, "disable_web_page_preview": True})
     
     if EMAIL_USER and EMAIL_PASS and EMAIL_TO:
         try:
-            msg = MIMEMultipart(); msg['From'] = EMAIL_USER; msg['To'] = EMAIL_TO; msg['Subject'] = subject
-            msg.attach(MIMEText(text_body, 'plain'))
-            for chart in chart_files:
-                if os.path.exists(chart):
-                    with open(chart, 'rb') as f: msg.attach(MIMEImage(f.read(), name=os.path.basename(chart)))
-            
-            log_file = "noc_trading_log.csv"
-            if os.path.exists(log_file):
-                with open(log_file, 'rb') as f:
-                    csv_part = MIMEApplication(f.read(), Name=log_file)
-                    csv_part.add_header('Content-Disposition', f'attachment; filename="{log_file}"')
-                    msg.attach(csv_part)
-            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-                server.login(EMAIL_USER, EMAIL_PASS)
-                server.send_message(msg)
-            print("✅ 戰報發送成功！")
-        except Exception as e: print(f"❌ Email 發送失敗: {e}")
-
-# === 9. 主程式執行 ===
-if __name__ == "__main__":
-    tw_tz = datetime.timezone(datetime.timedelta(hours=8))
-    curr_date = datetime.datetime.now(tw_tz).date()
-    curr_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
-    msg_list = []; generated_charts = []; has_data = False
-
-    print(f"[{curr_time}] NOC 戰情室 v5.8 (雷達參數修復版) 啟動...")
-
-    # 💼 優先盤點：實體機房配置 (真實持股)
-    if MY_PORTFOLIO:
-        msg_list.append("━━━━━━━━━━━━━━\n💼 【庫存機櫃 (真實持股盤點)】\n━━━━━━━━━━━━━━\n")
-        for sym, data in MY_PORTFOLIO.items():
-            res = get_analysis_and_chart(sym, data['name'])
-            if not res: continue
-            hist, chart_file = res
-            td = hist.iloc[-1]
-            has_data = True
-            generated_charts.append(chart_file)
-            
-            curr_price = td['Close']
-            buy_price = data['buy_price']
-            roi_pct = ((curr_price - buy_price) / buy_price) * 100
-            
-            if roi_pct >= TAKE_PROFIT_PCT:
-                pnl_alert = f"💰【達標警戒】建議分批獲利入袋！"
-            elif roi_pct <= STOP_LOSS_PCT:
-                pnl_alert = f"🩸【破網警戒】請嚴格執行停損拔線！"
-            elif roi_pct > 0:
-                pnl_alert = f"🟢 獲利巡航中，持續抱牢。"
-            else:
-                pnl_alert = f"🟡 暫時浮虧，注意防守。"
-                
-            portfolio_msg = f"🔸 {data['name']} ({sym})\n"
-            portfolio_msg += f"   成本: {buy_price:.2f} | 現價: {curr_price:.2f}\n"
-            portfolio_msg += f"   損益: {roi_pct:+.2f}% | 👉 {pnl_alert}\n\n"
-            msg_list.append(portfolio_msg)
-
-    # 🛸 自動拓荒雷達掃描
-    radar_targets = scan_top_trust_buy(limit=5)
-    if radar_targets:
-        STOCK_DICT["🛸 自動雷達 (投信最新重倉)"] = radar_targets
-    else:
-        msg_list.append("━━━━━━━━━━━━━━\n📂 【🛸 自動雷達 (投信最新重倉)】\n━━━━━━━━━━━━━━\n🔸 狀態: 今日掃描無符合條件標的或 API 遇限制。\n\n")
-
-    # 👀 一般外部網域監控
-    for cat, stocks in STOCK_DICT.items():
-        if not stocks: continue 
-        
-        cat_printed = False 
-        for sym, name in stocks.items():
-            res = get_analysis_and_chart(sym, name)
-            if not res: continue
-            
-            hist, chart_file = res
-            td = hist.iloc[-1]; yd = hist.iloc[-2]
-            has_data = True
-            if chart_file not in generated_charts:
-                generated_charts.append(chart_file)
-            
-            if not cat_printed and cat != "🛸 自動雷達 (投信最新重倉)":
-                msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
-                cat_printed = True
-
-            vol_today = td['Volume']; vma5 = td['5VMA']
-            vol_status = "📈 出量" if vol_today > vma5 * 1.2 else "📉 量縮" if vol_today < vma5 * 0.8 else "➖ 量平"
-            trend_status = "🔥 多頭" if td['Close'] > td['5MA'] > td['20MA'] else "🧊 空頭" if td['Close'] < td['5MA'] < td['20MA'] else "🔄 盤整"
-            chip_status = td['Chip_Status']
-
-            predict_msg = "無特殊徵兆"
-            if td['BB_Width'] < 0.08: predict_msg = "⚠️【大變盤預警】布林通道極度壓縮！"
-            elif td['Is_Bottoming'] == 1: predict_msg = "📈【築底預判】空方動能連續收斂！"
-
-            is_breakout = (yd['Close'] < yd['5MA']) and (td['Close'] > td['5MA']) and (vol_today > vma5 * 1.2)
-            if td['Recent_Bottoming'] and is_breakout: alert = "🚀【狙擊模式：強烈買進】底部完成且帶量突破！"
-            elif td['RSI'] > 80: alert = "💰【獲利了結】短線過熱，注意回檔。"
-            elif td['Close'] < td['5MA'] < td['20MA'] and vol_today > vma5 * 1.2: alert = "💀【強制退場】空頭確認，大單砸盤！"
-            else: alert = "✅【持股續抱】順勢操作，等待訊號。"
-
-            write_noc_log(curr_date, sym, name, td['Close'], td['RSI'], vol_status, trend_status, predict_msg, chip_status, alert)
-            
-            stock_msg = f"🔸 {name} ({sym})\n   現價: {td['Close']:.2f} | RSI: {td['RSI']:.1f}\n   狀態: {trend_status} | {vol_status}\n"
-            if chip_status != "無資料": stock_msg += f"   💰 籌碼: {chip_status}\n"
-            stock_msg += f"   🔮 預判: {predict_msg}\n   👉 指令: {alert}\n\n"
-            msg_list.append(stock_msg)
-
-    if has_data or len(msg_list) > 0:
-        final_text = f"📡 【NOC 戰情室 v5.8：全網域監控中】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
-        send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
-        for chart in generated_charts:
-            if os.path.exists(chart): os.remove(chart)
-    else:
-        print("休市或資料讀取失敗，伺服器待命。")
