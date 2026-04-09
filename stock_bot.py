@@ -31,8 +31,8 @@ STOCK_DICT = {
 # === 2.1 真實持股庫存 (您的實體機房配置) ===
 # 📝 請在這裡填入您的真實買進成本與股數
 MY_PORTFOLIO = {
-    "2331.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
-    "8431.TW": {"name": "匯鑽科", "buy_price": 70.7, "shares": 2000}
+    "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
+    "8431.TW": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000}
 }
 # ⚙️ 設定自動停利/停損的閥值 (Threshold)
 TAKE_PROFIT_PCT = 20.0  # 當報酬率達到 +20% 時，發出獲利了結警報
