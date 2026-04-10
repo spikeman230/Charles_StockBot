@@ -2,7 +2,7 @@ name: Daily Stock Reporter
 
 on:
   schedule:
-    - cron: '15 11 * * *'
+  - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:
