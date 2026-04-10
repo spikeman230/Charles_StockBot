@@ -2,9 +2,11 @@ name: Daily Stock Reporter
 
 on:
   schedule:
-    # 這裡的設定代表：每週一到週五的 UTC 01:50 (台灣 9:50) 與 04:50 (台灣 12:50) 與 07:50 (台灣 15:50) 觸發
+    # 💡 50 分 01點,04點,07點 (對應台灣時間 09:50, 12:50, 15:50)
+    # 避開整點尖峰，降低延遲機率
     - cron: '50 1,4,7 * * 1-5'
   workflow_dispatch:
+
 jobs:
   run-stock-bot:
     runs-on: ubuntu-latest
@@ -24,10 +26,10 @@ jobs:
 
     - name: Run stock script
       env:
-          TG_TOKEN: ${{ secrets.TG_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          EMAIL_USER: ${{ secrets.EMAIL_USER }}
-          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-          EMAIL_TO: ${{ secrets.EMAIL_TO }}
-          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }} # 👈 老網管指示：補上這行打通籌碼資料庫！
+        TG_TOKEN: ${{ secrets.TG_TOKEN }}
+        TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        EMAIL_USER: ${{ secrets.EMAIL_USER }}
+        EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+        EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
       run: python stock_bot.py
