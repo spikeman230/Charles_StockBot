@@ -2,8 +2,8 @@ name: Daily Stock Reporter
 
 on:
   schedule:
-    # 🧪 網管終極測試模式：每 5 分鐘強制觸發一次！
-    - cron: '*/5 * * * *'
+    - cron: '30 1,4,7,8,9 * * 1-5'
+
   workflow_dispatch:
 
 jobs:
