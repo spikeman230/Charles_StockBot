@@ -1,0 +1,34 @@
+name: Daily Stock Reporter
+
+on:
+  schedule:
+    # 🧪 網管終極測試模式：每 5 分鐘強制觸發一次！
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-stock-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+
+    - name: Run stock script
+      env:
+        TG_TOKEN: ${{ secrets.TG_TOKEN }}
+        TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        EMAIL_USER: ${{ secrets.EMAIL_USER }}
+        EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+        EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+      run: python stock_bot.py
