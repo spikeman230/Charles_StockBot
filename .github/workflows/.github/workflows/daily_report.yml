@@ -3,7 +3,7 @@ name: Daily Stock Reporter
 on:
   schedule:
     # 這是 Cron 語法。台灣時間 10:30 = 減去 8 小時 = 國際標準時間 (UTC) 的 02:30
-    - cron: '30 2 * * *'
+   - cron: '*/5 * * * *'
   workflow_dispatch: # 這個設定讓你可以隨時手動點擊「執行」來測試
 
 jobs:
