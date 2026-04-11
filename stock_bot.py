@@ -5,6 +5,8 @@ import datetime
 import pandas as pd
 import numpy as np
 import csv
+import json
+import math
 import mplfinance as mpf
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -19,6 +21,11 @@ EMAIL_USER = os.environ.get("EMAIL_USER")
 EMAIL_PASS = os.environ.get("EMAIL_PASS")
 EMAIL_TO = os.environ.get("EMAIL_TO")
 FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
+
+# === 1.1 量化基金風控參數 (v7.6 全面動態核心) ===
+TOTAL_CAPITAL = 1000000  # 預設總資金 100 萬台幣
+RISK_PER_TRADE = 0.02    # 單筆風險 2%
+ATR_MULTIPLIER = 2.0     # 2倍 ATR 動態停損 (套用於全部持股)
 
 # === 2. 專屬通訊錄 (外部觀察網域) ===
 STOCK_DICT = {
@@ -38,11 +45,20 @@ MY_PORTFOLIO = {
     "2317.TW": {"name": "鴻海", "buy_price": 201.5, "shares": 1000}
 }
 
-# ⚙️ 設定自動停利/停損的閥值 (Threshold)
-TAKE_PROFIT_PCT = 20.0  
-STOP_LOSS_PCT = -10.0   
+# === 3. 實體狀態記憶庫與日誌 (Stateful Database) ===
+STATE_FILE = "noc_state.json"
 
-# === 3. 持久化日誌 ===
+def load_state():
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f: return json.load(f)
+        except: pass
+    return {}
+
+def save_state(state_data):
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state_data, f, ensure_ascii=False, indent=4)
+
 def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, alert, predict, chip_signal):
     log_filename = "noc_trading_log.csv"
     file_exists = os.path.exists(log_filename)
@@ -52,12 +68,34 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, aler
             writer.writerow(["日期", "代號", "名稱", "收盤價", "RSI", "量能狀態", "趨勢狀態", "戰場預判", "籌碼訊號", "行動指令"])
         writer.writerow([date, symbol, name, f"{close_price:.2f}", f"{rsi:.2f}", vol_status, status, predict, chip_signal, alert])
 
-# === 4. FinMind 單檔籌碼串接 ===
+# === 4. 環境感知：大盤與營收 YoY ===
+def get_market_regime():
+    try:
+        twii = yf.Ticker("^TWII").history(period="1mo")
+        twii['20MA'] = twii['Close'].rolling(20).mean()
+        if twii['Close'].iloc[-1] > twii['20MA'].iloc[-1]: return True, f"🟢 多頭格局 (站上月線)"
+        else: return False, f"🔴 空頭警戒 (跌破月線)"
+    except: return True, "🟡 大盤狀態未知"
+
+def get_revenue_yoy(symbol):
+    if not FINMIND_TOKEN: return "N/A"
+    fm_symbol = symbol.replace(".TW", "").replace(".TWO", "")
+    if not fm_symbol.isdigit(): return "N/A"
+    try:
+        url = "https://api.finmindtrade.com/api/v4/data"
+        params = {"dataset": "TaiwanStockMonthRevenue", "data_id": fm_symbol, "start_date": (datetime.datetime.now() - datetime.timedelta(days=90)).strftime("%Y-%m-%d"), "token": FINMIND_TOKEN}
+        r = requests.get(url, params=params, timeout=10)
+        data = r.json()
+        if data.get("msg") == "success" and len(data.get("data", [])) > 0:
+            return float(pd.DataFrame(data["data"]).iloc[-1]['revenue_YearOverYear_ratio'])
+    except: pass
+    return "N/A"
+
+# === 5. FinMind 籌碼分析 ===
 def get_finmind_chip_data(symbol, start_date_str):
     if not FINMIND_TOKEN: return pd.DataFrame()
     fm_symbol = symbol.replace(".TW", "").replace(".TWO", "")
     if not fm_symbol.isdigit(): return pd.DataFrame()
-    
     url = "https://api.finmindtrade.com/api/v4/data"
     params = {"dataset": "TaiwanStockInstitutionalInvestorsBuySell", "data_id": fm_symbol, "start_date": start_date_str, "token": FINMIND_TOKEN}
     try:
@@ -70,7 +108,6 @@ def get_finmind_chip_data(symbol, start_date_str):
             df.loc[df['name'].str.contains('外資'), 'type'] = 'Foreign_Inv'
             df.loc[df['name'].str.contains('投信'), 'type'] = 'Trust_Inv'
             df.loc[df['name'].str.contains('自營商'), 'type'] = 'Dealer_Inv'
-            
             pivot_df = df.groupby(['date', 'type'])['net_buy'].sum().unstack(fill_value=0).reset_index()
             for col in ['Foreign_Inv', 'Trust_Inv', 'Dealer_Inv']:
                 if col not in pivot_df.columns: pivot_df[col] = 0
@@ -80,7 +117,6 @@ def get_finmind_chip_data(symbol, start_date_str):
     except: pass
     return pd.DataFrame()
 
-# === 5. 籌碼判定 ===
 def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     required_chip_cols = ['Foreign_Inv', 'Trust_Inv', 'Dealer_Inv']
     hist['Chip_Status'] = "無資料"
@@ -91,13 +127,12 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
         hist['Trust_Buy_Days_5d'] = hist['Trust_Buy_Flag'].rolling(window=5).sum()
         hist['Signal_CoBuy'] = (hist['Foreign_Inv'] > 0) & (hist['Trust_Inv'] > 0)
         hist['Signal_Trust_Trend'] = (hist['Trust_Buy_Days_5d'] >= 4) & (hist['Trust_Buy_Flag'] == 1)
-        
         conditions = [(hist['Signal_CoBuy'] == True), (hist['Signal_Trust_Trend'] == True), (hist['Total_Institutional'] > 0)]
         choices = ["🤝 土洋齊買", "🏦 投信作帳(連買)", "📈 法人偏多"]
         hist['Chip_Status'] = np.select(conditions, choices, default="➖ 中性/偏空")
     return hist
 
-# === 6. 分析與預判模組 (v6.1 記憶追蹤版) ===
+# === 6. 核心分析引擎 ===
 def get_analysis_and_chart(symbol, name):
     try:
         stock = yf.Ticker(symbol)
@@ -105,58 +140,47 @@ def get_analysis_and_chart(symbol, name):
         if len(hist) < 40: return None
 
         hist['Date_Key'] = hist.index.date
-        
         if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
             start_date_str = (datetime.datetime.now() - datetime.timedelta(days=200)).strftime("%Y-%m-%d")
             chip_df = get_finmind_chip_data(symbol, start_date_str)
             if not chip_df.empty:
-                hist = hist.merge(chip_df, left_on='Date_Key', right_index=True, how='left')
-                hist = hist.fillna({'Foreign_Inv': 0, 'Trust_Inv': 0, 'Dealer_Inv': 0})
-
+                hist = hist.merge(chip_df, left_on='Date_Key', right_index=True, how='left').fillna({'Foreign_Inv': 0, 'Trust_Inv': 0, 'Dealer_Inv': 0})
         hist = calculate_chip_signals(hist)
 
-        # 基礎技術指標
+        # 基礎指標與 RSI
         hist['5MA'] = hist['Close'].rolling(window=5).mean()
         hist['20MA'] = hist['Close'].rolling(window=20).mean()
         hist['5VMA'] = hist['Volume'].rolling(window=5).mean()
-        
         delta = hist['Close'].diff()
         gain = delta.clip(lower=0); loss = -1 * delta.clip(upper=0)
-        ema_gain = gain.ewm(com=13, adjust=False).mean()
-        ema_loss = loss.ewm(com=13, adjust=False).mean()
-        hist['RSI'] = 100 - (100 / (1 + (ema_gain / ema_loss)))
+        hist['RSI'] = 100 - (100 / (1 + (gain.ewm(com=13, adjust=False).mean() / loss.ewm(com=13, adjust=False).mean())))
         hist['RSI'] = hist['RSI'].fillna(50)
 
-        hist['EMA12'] = hist['Close'].ewm(span=12, adjust=False).mean()
-        hist['EMA26'] = hist['Close'].ewm(span=26, adjust=False).mean()
-        hist['MACD'] = hist['EMA12'] - hist['EMA26']
+        # ATR 動態波動率 (v7.6)
+        hist['H-L'] = hist['High'] - hist['Low']
+        hist['H-PC'] = abs(hist['High'] - hist['Close'].shift(1))
+        hist['L-PC'] = abs(hist['Low'] - hist['Close'].shift(1))
+        hist['TR'] = hist[['H-L', 'H-PC', 'L-PC']].max(axis=1)
+        hist['ATR'] = hist['TR'].rolling(window=14).mean()
+
+        # 底部分析與狙擊記憶
+        hist['MACD'] = hist['Close'].ewm(span=12, adjust=False).mean() - hist['Close'].ewm(span=26, adjust=False).mean()
         hist['Signal'] = hist['MACD'].ewm(span=9, adjust=False).mean()
         hist['MACD_Hist'] = hist['MACD'] - hist['Signal']
-
         hist['STD20'] = hist['Close'].rolling(window=20).std()
         hist['BB_Width'] = (4 * hist['STD20']) / hist['20MA']
-
-        # 底部分析
-        hist['Is_Bottoming'] = ((hist['Close'] < hist['5MA']) & \
-                               (hist['MACD_Hist'].shift(2) < hist['MACD_Hist'].shift(1)) & \
-                               (hist['MACD_Hist'].shift(1) < hist['MACD_Hist']) & \
-                               (hist['MACD_Hist'] < 0)).astype(int)
+        
+        hist['Is_Bottoming'] = ((hist['Close'] < hist['5MA']) & (hist['MACD_Hist'].shift(2) < hist['MACD_Hist'].shift(1)) & (hist['MACD_Hist'].shift(1) < hist['MACD_Hist']) & (hist['MACD_Hist'] < 0)).astype(int)
         hist['Recent_Bottoming'] = hist['Is_Bottoming'].rolling(window=3).max().fillna(0).astype(bool)
-
-        # 👇 核心升級：狙擊模式快取記憶 (5天狀態追蹤)
-        hist['Is_Breakout'] = (hist['Close'].shift(1) < hist['5MA'].shift(1)) & \
-                              (hist['Close'] > hist['5MA']) & \
-                              (hist['Volume'] > hist['5VMA'] * 1.2)
+        hist['Is_Breakout'] = (hist['Close'].shift(1) < hist['5MA'].shift(1)) & (hist['Close'] > hist['5MA']) & (hist['Volume'] > hist['5VMA'] * 1.2)
         hist['Sniper_Signal'] = hist['Recent_Bottoming'] & hist['Is_Breakout']
-        # 寫入5日快取記憶
         hist['Sniper_Memory_5D'] = hist['Sniper_Signal'].rolling(window=5).max().fillna(0)
 
-        # 核心升級：進階特徵工程 (IPS防禦)
+        # 進階特徵工程 (IPS 防禦)
         hist['20_High'] = hist['High'].rolling(window=20).max().shift(1)
         hist['Body_Top'] = hist[['Open', 'Close']].max(axis=1)
         hist['Upper_Shadow'] = hist['High'] - hist['Body_Top']
-        hist['K_Length'] = hist['High'] - hist['Low']
-        hist['K_Length'] = hist['K_Length'].replace(0, 0.001) 
+        hist['K_Length'] = (hist['High'] - hist['Low']).replace(0, 0.001) 
         hist['Shadow_Ratio'] = hist['Upper_Shadow'] / hist['K_Length']
 
         chart_file = f"{symbol}_chart.png"
@@ -169,7 +193,7 @@ def get_analysis_and_chart(symbol, name):
 
         return hist, chart_file
     except Exception as e:
-        print(f"[{symbol}] 分析核心發生嚴重錯誤: {e}")
+        print(f"[{symbol}] 分析發生錯誤: {e}")
         return None
 
 # === 7. 發送模組 ===
@@ -204,96 +228,130 @@ if __name__ == "__main__":
     curr_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
     msg_list = []; generated_charts = []; has_data = False
 
-    print(f"[{curr_time}] NOC 戰情室 v6.1 (5日記憶追蹤版) 啟動...")
+    print(f"[{curr_time}] NOC 終極融合版 (v7.6 動態持股防禦) 啟動...")
 
+    # 🌐 載入系統大腦與環境
+    is_bull_market, market_msg = get_market_regime()
+    noc_state = load_state()
+    msg_list.append(f"🌐 【大盤風向】: {market_msg}\n")
+
+    # === 處理真實持股 (MY_PORTFOLIO 導入 ATR 動態防禦) ===
     if MY_PORTFOLIO:
-        msg_list.append("━━━━━━━━━━━━━━\n💼 【庫存機櫃 (真實持股盤點)】\n━━━━━━━━━━━━━━\n")
+        msg_list.append("━━━━━━━━━━━━━━\n💼 【庫存機櫃 (真實持股動態防禦)】\n━━━━━━━━━━━━━━\n")
         for sym, data in MY_PORTFOLIO.items():
             res = get_analysis_and_chart(sym, data['name'])
             if not res: continue
-            hist, chart_file = res
-            td = hist.iloc[-1]
+            hist, chart_file = res; td = hist.iloc[-1]
             has_data = True
             generated_charts.append(chart_file)
             
             curr_price = td['Close']
+            atr = td['ATR']
             buy_price = data['buy_price']
             roi_pct = ((curr_price - buy_price) / buy_price) * 100
             
-            if roi_pct >= TAKE_PROFIT_PCT:
-                pnl_alert = f"💰【達標警戒】建議分批獲利入袋！"
-            elif roi_pct <= STOP_LOSS_PCT:
-                pnl_alert = f"🩸【破網警戒】請嚴格執行停損拔線！"
-            elif roi_pct > 0:
-                pnl_alert = f"🟢 獲利巡航中，持續抱牢。"
+            # 🧠 真實持股的 JSON 狀態機 (ATR 動態防線)
+            stop_distance = atr * ATR_MULTIPLIER
+            sym_state = noc_state.get(sym, {"status": "NONE"})
+            
+            # 第一次抓到真實持股，寫入初始防守線
+            if sym_state["status"] != "REAL_HOLD":
+                initial_stop = curr_price - stop_distance
+                noc_state[sym] = {"status": "REAL_HOLD", "entry": buy_price, "trailing_stop": initial_stop}
+                sym_state = noc_state[sym]
+            
+            # 計算只進不退的防線
+            new_stop = curr_price - stop_distance
+            final_stop = max(sym_state["trailing_stop"], new_stop)
+            
+            # 判定是否跌破
+            if curr_price < final_stop:
+                pnl_alert = f"🩸【拔線警戒】跌破動態防守線 {final_stop:.1f}，請嚴格執行停利/停損！"
+                # 不清除狀態，讓使用者自行決定是否從 MY_PORTFOLIO 刪除
             else:
-                pnl_alert = f"🟡 暫時浮虧，注意防守。"
+                noc_state[sym]["trailing_stop"] = final_stop  # 更新防守線
+                if roi_pct > 0: pnl_alert = f"🔥 獲利巡航中 | 📍 動態防線墊高至: {final_stop:.1f}"
+                else: pnl_alert = f"🟡 暫時浮虧中 | 📍 死守底線: {final_stop:.1f}"
                 
             portfolio_msg = f"🔸 {data['name']} ({sym})\n"
             portfolio_msg += f"   成本: {buy_price:.2f} | 現價: {curr_price:.2f}\n"
             portfolio_msg += f"   損益: {roi_pct:+.2f}% | 👉 {pnl_alert}\n\n"
             msg_list.append(portfolio_msg)
 
+    # === 處理觀察網域 (STOCK_DICT) ===
     for cat, stocks in STOCK_DICT.items():
         if not stocks: continue 
-        
         cat_printed = False 
+        
         for sym, name in stocks.items():
             res = get_analysis_and_chart(sym, name)
             if not res: continue
-            
-            hist, chart_file = res
-            td = hist.iloc[-1]; yd = hist.iloc[-2]
+            hist, chart_file = res; td = hist.iloc[-1]
             has_data = True
-            if chart_file not in generated_charts:
-                generated_charts.append(chart_file)
+            if chart_file not in generated_charts: generated_charts.append(chart_file)
             
             if not cat_printed:
                 msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
                 cat_printed = True
 
+            close = td['Close']; atr = td['ATR']; rsi = td['RSI']
             vol_today = td['Volume']; vma5 = td['5VMA']
             vol_status = "📈 出量" if vol_today > vma5 * 1.2 else "📉 量縮" if vol_today < vma5 * 0.8 else "➖ 量平"
-            trend_status = "🔥 多頭" if td['Close'] > td['5MA'] > td['20MA'] else "🧊 空頭" if td['Close'] < td['5MA'] < td['20MA'] else "🔄 盤整"
+            trend_status = "🔥 多頭" if close > td['5MA'] > td['20MA'] else "🧊 空頭" if close < td['5MA'] < td['20MA'] else "🔄 盤整"
             chip_status = td['Chip_Status']
 
-            # 進階預判邏輯
+            # 🛡️ 營收與預判 (IPS)
+            yoy = get_revenue_yoy(sym)
+            yoy_str = f"{yoy:.2f}%" if isinstance(yoy, float) else yoy
             predict_msg = "無特殊徵兆"
-            if vol_today > vma5 * 3 and td['RSI'] > 75:
-                predict_msg = "💀【異常爆量】動能竭盡警戒，主力可能倒貨！"
-            elif td['Shadow_Ratio'] > 0.5 and vol_today > vma5 * 1.5:
-                predict_msg = "⚠️【避雷針陷阱】高檔爆量長上影線，留意假突破！"
-            elif td['Close'] > td['20_High'] and vol_today > vma5 * 1.2:
-                predict_msg = "🚀【無壓巡航】帶量突破 20 日前高，強勢表態！"
-            elif td['BB_Width'] < 0.08: 
-                predict_msg = "⚠️【大變盤預警】布林通道極度壓縮！"
-            elif td['Is_Bottoming'] == 1: 
-                predict_msg = "📈【築底預判】空方動能連續收斂！"
+            if vol_today > vma5 * 3 and rsi > 75: predict_msg = "💀【動能竭盡】異常爆量，主力可能倒貨！"
+            elif td['Shadow_Ratio'] > 0.5 and vol_today > vma5 * 1.5: predict_msg = "⚠️【避雷針陷阱】高檔爆量長上影線！"
+            elif close > td['20_High'] and vol_today > vma5 * 1.2: predict_msg = "🚀【無壓巡航】帶量突破 20 日前高！"
+            elif td['BB_Width'] < 0.08: predict_msg = "⚠️【大變盤預警】布林通道極度壓縮！"
+            elif td['Is_Bottoming'] == 1: predict_msg = "📈【築底預判】空方動能連續收斂！"
 
-            # 👇 新增：支援快取記憶的行動指令
-            if td['Sniper_Signal']: 
-                alert = "🚀【狙擊模式：強烈買進】底部完成且帶量突破！"
-            elif td['Sniper_Memory_5D'] == 1 and not td['Sniper_Signal']:
-                if td['Close'] > td['5MA']:
-                    alert = "🔥【狙擊延續：強勢巡航】近期突破，站穩5日線，可逢低佈局！"
+            # 🧠 資金控管與量化大腦邏輯
+            stop_distance = atr * ATR_MULTIPLIER
+            suggested_shares = min(math.floor((TOTAL_CAPITAL * RISK_PER_TRADE) / stop_distance) if stop_distance > 0 else 0, math.floor(TOTAL_CAPITAL / close))
+            sym_state = noc_state.get(sym, {"status": "NONE"})
+            alert = "✅ 持股觀望"
+
+            # 確保不會跟 MY_PORTFOLIO 衝突 (如果這檔股票剛好也放在觀察區)
+            if sym_state["status"] == "REAL_HOLD":
+                alert = f"💼 已列入真實持股防禦區 | 📍 動態防線: {sym_state['trailing_stop']:.1f}"
+            elif sym_state["status"] == "NONE":
+                if td['Sniper_Signal']: 
+                    if not is_bull_market: alert = "🛡️【大盤攔截】大盤偏空，放棄狙擊。"
+                    elif isinstance(yoy, float) and yoy < 0: alert = f"🛡️【基本面攔截】營收 YoY {yoy_str}，避開地雷。"
+                    else:
+                        stop_price = close - stop_distance
+                        noc_state[sym] = {"status": "HOLD", "entry": close, "trailing_stop": stop_price}
+                        alert = f"🚀【啟動狙擊】建議買入 {suggested_shares/1000:.1f} 張，停損設 {stop_price:.1f}"
+                elif td['Sniper_Memory_5D'] == 1 and not td['Sniper_Signal']: # v6.1 記憶追蹤
+                    if close > td['5MA']: alert = "🔥【狙擊延續：強勢巡航】近期突破，站穩5日線！"
+                    else: alert = "⚠️【狙擊失效：跌破防線】跌破5日線，請觀望！"
+                elif rsi > 80: alert = "💰【獲利了結】短線過熱，注意回檔。"
+                elif close < td['5MA'] < td['20MA'] and vol_today > vma5 * 1.2: alert = "💀【強制退場】空頭確認，大單砸盤！"
+            elif sym_state["status"] == "HOLD":
+                new_stop = max(sym_state["trailing_stop"], close - stop_distance)
+                if close < new_stop:
+                    alert = f"🩸【拔線離場】跌破防守線 {new_stop:.1f}，強制停損/停利！"
+                    noc_state[sym] = {"status": "NONE"} 
                 else:
-                    alert = "⚠️【狙擊失效：跌破防線】跌破5日線，假突破機率高，請觀望！"
-            elif td['RSI'] > 80: 
-                alert = "💰【獲利了結】短線過熱，注意回檔。"
-            elif td['Close'] < td['5MA'] < td['20MA'] and vol_today > vma5 * 1.2: 
-                alert = "💀【強制退場】空頭確認，大單砸盤！"
-            else: 
-                alert = "✅【持股續抱】順勢操作，等待訊號。"
+                    noc_state[sym]["trailing_stop"] = new_stop
+                    alert = f"🔥【波段抱牢】未實現損益: {((close - sym_state['entry']) / sym_state['entry']) * 100:+.2f}% | 防守線: {new_stop:.1f}"
 
-            write_noc_log(curr_date, sym, name, td['Close'], td['RSI'], vol_status, trend_status, predict_msg, chip_status, alert)
+            write_noc_log(curr_date, sym, name, close, rsi, vol_status, trend_status, predict_msg, chip_status, alert)
             
-            stock_msg = f"🔸 {name} ({sym})\n   現價: {td['Close']:.2f} | RSI: {td['RSI']:.1f}\n   狀態: {trend_status} | {vol_status}\n"
+            # 資訊面板
+            stock_msg = f"🔸 {name} ({sym})\n   現價: {close:.2f} | RSI: {rsi:.1f} | 營收YoY: {yoy_str}\n   狀態: {trend_status} | {vol_status}\n"
             if chip_status != "無資料": stock_msg += f"   💰 籌碼: {chip_status}\n"
             stock_msg += f"   🔮 預判: {predict_msg}\n   👉 指令: {alert}\n\n"
             msg_list.append(stock_msg)
 
     if has_data or len(msg_list) > 0:
-        final_text = f"📡 【NOC 戰情室 v6.1：快取記憶追蹤版】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        save_state(noc_state) # 儲存 JSON 記憶
+        final_text = f"📡 【NOC 終極融合版 v7.6】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
             if os.path.exists(chart): os.remove(chart)
