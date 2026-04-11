@@ -24,17 +24,18 @@ FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
     "🔥 潛力種子 (高頻寬觀察區)": {"3163.TW": "波若威", "5388.TW": "中磊", "3714.TW": "富采"},
-    "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "2317.TW": "鴻海", "0050.TW": "元大台灣50"},
-    "💾 記憶體族群 (美光連動網域)": {"MU": "美光", "2408.TW": "南亞科", "3260.TW": "威剛", "8299.TW": "群聯", "AAPL": "蘋果", "NVDA": "輝達"},
-    "🔍 YAHOO 觀察區": {} 
+    "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "0050.TW": "元大台灣50","AAPL": "蘋果","NVDA": "輝達"},
+    "💾 記憶體族群 (美光連動網域)": {"MU": "美光", "2408.TW": "南亞科", "3260.TW": "威剛", "8299.TW": "群聯", },
+    "🔍 YAHOO 觀察區": {"2027.TW": "大成鋼", "2382.TW": "廣達", "2886.TW": "兆豐金", "2409.TW": "友達", "2352.TW": "佳世達", },
+    "真實持股 追蹤區" : {"8431.TWO":"匯鑽科","3231.TW":"緯創" }
 }
 
 # === 2.1 真實持股庫存 (實體機房配置) ===
 MY_PORTFOLIO = {
-    "3037.TW": {"name": "欣興", "buy_price": 160.0, "shares": 1000},
-    "2317.TW": {"name": "鴻海", "buy_price": 140.0, "shares": 2000},
     "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
-    "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000}
+    "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000},
+    "6116.TW": {"name": "彩晶", "buy_price": 8.4, "shares": 1000},
+    "2317.TW": {"name": "鴻海", "buy_price": 201.5, "shares": 1000}
 }
 
 # ⚙️ 設定自動停利/停損的閥值 (Threshold)
@@ -96,7 +97,7 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
         hist['Chip_Status'] = np.select(conditions, choices, default="➖ 中性/偏空")
     return hist
 
-# === 6. 分析與預判模組 (v6.0 進階防禦版) ===
+# === 6. 分析與預判模組 (v6.1 記憶追蹤版) ===
 def get_analysis_and_chart(symbol, name):
     try:
         stock = yf.Ticker(symbol)
@@ -141,6 +142,14 @@ def get_analysis_and_chart(symbol, name):
                                (hist['MACD_Hist'].shift(1) < hist['MACD_Hist']) & \
                                (hist['MACD_Hist'] < 0)).astype(int)
         hist['Recent_Bottoming'] = hist['Is_Bottoming'].rolling(window=3).max().fillna(0).astype(bool)
+
+        # 👇 核心升級：狙擊模式快取記憶 (5天狀態追蹤)
+        hist['Is_Breakout'] = (hist['Close'].shift(1) < hist['5MA'].shift(1)) & \
+                              (hist['Close'] > hist['5MA']) & \
+                              (hist['Volume'] > hist['5VMA'] * 1.2)
+        hist['Sniper_Signal'] = hist['Recent_Bottoming'] & hist['Is_Breakout']
+        # 寫入5日快取記憶
+        hist['Sniper_Memory_5D'] = hist['Sniper_Signal'].rolling(window=5).max().fillna(0)
 
         # 核心升級：進階特徵工程 (IPS防禦)
         hist['20_High'] = hist['High'].rolling(window=20).max().shift(1)
@@ -195,7 +204,7 @@ if __name__ == "__main__":
     curr_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
     msg_list = []; generated_charts = []; has_data = False
 
-    print(f"[{curr_time}] NOC 戰情室 v6.0 (IPS防禦過濾版) 啟動...")
+    print(f"[{curr_time}] NOC 戰情室 v6.1 (5日記憶追蹤版) 啟動...")
 
     if MY_PORTFOLIO:
         msg_list.append("━━━━━━━━━━━━━━\n💼 【庫存機櫃 (真實持股盤點)】\n━━━━━━━━━━━━━━\n")
@@ -261,11 +270,20 @@ if __name__ == "__main__":
             elif td['Is_Bottoming'] == 1: 
                 predict_msg = "📈【築底預判】空方動能連續收斂！"
 
-            is_breakout = (yd['Close'] < yd['5MA']) and (td['Close'] > td['5MA']) and (vol_today > vma5 * 1.2)
-            if td['Recent_Bottoming'] and is_breakout: alert = "🚀【狙擊模式：強烈買進】底部完成且帶量突破！"
-            elif td['RSI'] > 80: alert = "💰【獲利了結】短線過熱，注意回檔。"
-            elif td['Close'] < td['5MA'] < td['20MA'] and vol_today > vma5 * 1.2: alert = "💀【強制退場】空頭確認，大單砸盤！"
-            else: alert = "✅【持股續抱】順勢操作，等待訊號。"
+            # 👇 新增：支援快取記憶的行動指令
+            if td['Sniper_Signal']: 
+                alert = "🚀【狙擊模式：強烈買進】底部完成且帶量突破！"
+            elif td['Sniper_Memory_5D'] == 1 and not td['Sniper_Signal']:
+                if td['Close'] > td['5MA']:
+                    alert = "🔥【狙擊延續：強勢巡航】近期突破，站穩5日線，可逢低佈局！"
+                else:
+                    alert = "⚠️【狙擊失效：跌破防線】跌破5日線，假突破機率高，請觀望！"
+            elif td['RSI'] > 80: 
+                alert = "💰【獲利了結】短線過熱，注意回檔。"
+            elif td['Close'] < td['5MA'] < td['20MA'] and vol_today > vma5 * 1.2: 
+                alert = "💀【強制退場】空頭確認，大單砸盤！"
+            else: 
+                alert = "✅【持股續抱】順勢操作，等待訊號。"
 
             write_noc_log(curr_date, sym, name, td['Close'], td['RSI'], vol_status, trend_status, predict_msg, chip_status, alert)
             
@@ -275,7 +293,7 @@ if __name__ == "__main__":
             msg_list.append(stock_msg)
 
     if has_data or len(msg_list) > 0:
-        final_text = f"📡 【NOC 戰情室 v6.0：IPS 防禦過濾版】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 戰情室 v6.1：快取記憶追蹤版】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
             if os.path.exists(chart): os.remove(chart)
