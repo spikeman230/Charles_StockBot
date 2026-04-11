@@ -22,7 +22,7 @@ EMAIL_PASS = os.environ.get("EMAIL_PASS")
 EMAIL_TO = os.environ.get("EMAIL_TO")
 FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 
-# === 1.1 量化基金風控參數 (v7.6 全面動態核心) ===
+# === 1.1 量化基金風控參數 (v7.7) ===
 TOTAL_CAPITAL = 1000000  # 預設總資金 100 萬台幣
 RISK_PER_TRADE = 0.02    # 單筆風險 2%
 ATR_MULTIPLIER = 2.0     # 2倍 ATR 動態停損
@@ -68,7 +68,7 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, aler
             writer.writerow(["日期", "代號", "名稱", "收盤價", "RSI", "量能狀態", "趨勢狀態", "戰場預判", "籌碼訊號", "行動指令"])
         writer.writerow([date, symbol, name, f"{close_price:.2f}", f"{rsi:.2f}", vol_status, status, predict, chip_signal, alert])
 
-# === 4. 環境感知：大盤與營收 YoY (🔧 動態欄位修復版) ===
+# === 4. 環境感知：大盤與營收 YoY (🚀 v7.7 自行推算版) ===
 def get_market_regime():
     try:
         twii = yf.Ticker("^TWII").history(period="1mo")
@@ -83,24 +83,33 @@ def get_revenue_yoy(symbol):
     if not fm_symbol.isdigit(): return "N/A"
     try:
         url = "https://api.finmindtrade.com/api/v4/data"
-        params = {"dataset": "TaiwanStockMonthRevenue", "data_id": fm_symbol, "start_date": (datetime.datetime.now() - datetime.timedelta(days=90)).strftime("%Y-%m-%d"), "token": FINMIND_TOKEN}
+        # 抓取過去 400 天，確保能涵蓋到去年同月
+        params = {"dataset": "TaiwanStockMonthRevenue", "data_id": fm_symbol, "start_date": (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d"), "token": FINMIND_TOKEN}
         r = requests.get(url, params=params, timeout=10)
         data = r.json()
         
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
             df = pd.DataFrame(data["data"])
-            # 支援多種 FinMind 欄位命名法
-            if 'revenue_YearOverYear_ratio' in df.columns:
-                return float(df.iloc[-1]['revenue_YearOverYear_ratio'])
-            elif 'revenue_year_over_year_ratio' in df.columns:
-                return float(df.iloc[-1]['revenue_year_over_year_ratio'])
-            else:
-                print(f"⚠️ [{fm_symbol}] 找不到 YoY 欄位！目前可用欄位: {df.columns.tolist()}")
-                return "N/A"
+            
+            # 確保有基本的原始欄位
+            if 'revenue' in df.columns and 'revenue_month' in df.columns and 'revenue_year' in df.columns:
+                latest_record = df.iloc[-1]
+                latest_rev = latest_record['revenue']
+                target_month = latest_record['revenue_month']
+                target_year_last = latest_record['revenue_year'] - 1
+                
+                # 尋找去年同月的資料
+                last_year_record = df[(df['revenue_year'] == target_year_last) & (df['revenue_month'] == target_month)]
+                
+                if not last_year_record.empty:
+                    last_year_rev = last_year_record.iloc[-1]['revenue']
+                    if last_year_rev > 0:
+                        yoy = ((latest_rev - last_year_rev) / last_year_rev) * 100
+                        return float(yoy)
+            return "N/A"
         else:
-            # 針對 0050 這種沒有營收的 ETF 不印警告，其餘股票印出警告
             if fm_symbol not in ["0050", "0056", "00878"]:
-                print(f"⚠️ [{fm_symbol}] 營收資料為空: {data}")
+                print(f"⚠️ [{fm_symbol}] 營收資料為空")
             
     except Exception as e: 
         print(f"⚠️ [{fm_symbol}] 營收 API 處理錯誤: {e}")
@@ -244,7 +253,7 @@ if __name__ == "__main__":
     curr_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
     msg_list = []; generated_charts = []; has_data = False
 
-    print(f"[{curr_time}] NOC 終極融合版 (v7.6 動態持股防禦) 啟動...")
+    print(f"[{curr_time}] NOC 終極融合版 (v7.7 自主運算 YoY) 啟動...")
 
     # 🌐 載入系統大腦與環境
     is_bull_market, market_msg = get_market_regime()
@@ -358,7 +367,7 @@ if __name__ == "__main__":
 
     if has_data or len(msg_list) > 0:
         save_state(noc_state) 
-        final_text = f"📡 【NOC 終極融合版 v7.6】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 終極融合版 v7.7】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
             if os.path.exists(chart): os.remove(chart)
