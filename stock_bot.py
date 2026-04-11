@@ -25,10 +25,9 @@ FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 # === 1.1 量化基金風控參數 (v7.6 全面動態核心) ===
 TOTAL_CAPITAL = 1000000  # 預設總資金 100 萬台幣
 RISK_PER_TRADE = 0.02    # 單筆風險 2%
-ATR_MULTIPLIER = 2.0     # 2倍 ATR 動態停損 (套用於全部持股)
+ATR_MULTIPLIER = 2.0     # 2倍 ATR 動態停損
 
 # === 2. 專屬通訊錄 (外部觀察網域) ===
-# 🔧 已修正：波若威、威剛、群聯 改為 .TWO 上櫃代碼
 STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
     "🔥 潛力種子 (高頻寬觀察區)": {"3163.TWO": "波若威", "5388.TW": "中磊", "3714.TW": "富采","2337.TW": "旺宏"},
@@ -46,7 +45,7 @@ MY_PORTFOLIO = {
     "2317.TW": {"name": "鴻海", "buy_price": 201.5, "shares": 1000}
 }
 
-# === 3. 實體狀態記憶庫與日誌 (Stateful Database) ===
+# === 3. 實體狀態記憶庫與日誌 ===
 STATE_FILE = "noc_state.json"
 
 def load_state():
@@ -69,7 +68,7 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, aler
             writer.writerow(["日期", "代號", "名稱", "收盤價", "RSI", "量能狀態", "趨勢狀態", "戰場預判", "籌碼訊號", "行動指令"])
         writer.writerow([date, symbol, name, f"{close_price:.2f}", f"{rsi:.2f}", vol_status, status, predict, chip_signal, alert])
 
-# === 4. 環境感知：大盤與營收 YoY (帶有抓鬼雷達) ===
+# === 4. 環境感知：大盤與營收 YoY (🔧 動態欄位修復版) ===
 def get_market_regime():
     try:
         twii = yf.Ticker("^TWII").history(period="1mo")
@@ -89,13 +88,22 @@ def get_revenue_yoy(symbol):
         data = r.json()
         
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
-            return float(pd.DataFrame(data["data"]).iloc[-1]['revenue_YearOverYear_ratio'])
+            df = pd.DataFrame(data["data"])
+            # 支援多種 FinMind 欄位命名法
+            if 'revenue_YearOverYear_ratio' in df.columns:
+                return float(df.iloc[-1]['revenue_YearOverYear_ratio'])
+            elif 'revenue_year_over_year_ratio' in df.columns:
+                return float(df.iloc[-1]['revenue_year_over_year_ratio'])
+            else:
+                print(f"⚠️ [{fm_symbol}] 找不到 YoY 欄位！目前可用欄位: {df.columns.tolist()}")
+                return "N/A"
         else:
-            # 👻 抓鬼雷達：把 FinMind 拒絕的真正原因印在 GitHub Log 裡！
-            print(f"⚠️ [{fm_symbol}] 營收抓取失敗，FinMind 回應: {data}")
+            # 針對 0050 這種沒有營收的 ETF 不印警告，其餘股票印出警告
+            if fm_symbol not in ["0050", "0056", "00878"]:
+                print(f"⚠️ [{fm_symbol}] 營收資料為空: {data}")
             
     except Exception as e: 
-        print(f"⚠️ [{fm_symbol}] 營收 API 連線錯誤: {e}")
+        print(f"⚠️ [{fm_symbol}] 營收 API 處理錯誤: {e}")
         
     return "N/A"
 
@@ -236,7 +244,7 @@ if __name__ == "__main__":
     curr_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
     msg_list = []; generated_charts = []; has_data = False
 
-    print(f"[{curr_time}] NOC 終極融合版 (v7.6 動態持股防禦 + 抓鬼雷達) 啟動...")
+    print(f"[{curr_time}] NOC 終極融合版 (v7.6 動態持股防禦) 啟動...")
 
     # 🌐 載入系統大腦與環境
     is_bull_market, market_msg = get_market_regime()
@@ -258,25 +266,21 @@ if __name__ == "__main__":
             buy_price = data['buy_price']
             roi_pct = ((curr_price - buy_price) / buy_price) * 100
             
-            # 🧠 真實持股的 JSON 狀態機 (ATR 動態防線)
             stop_distance = atr * ATR_MULTIPLIER
             sym_state = noc_state.get(sym, {"status": "NONE"})
             
-            # 第一次抓到真實持股，寫入初始防守線
             if sym_state["status"] != "REAL_HOLD":
                 initial_stop = curr_price - stop_distance
                 noc_state[sym] = {"status": "REAL_HOLD", "entry": buy_price, "trailing_stop": initial_stop}
                 sym_state = noc_state[sym]
             
-            # 計算只進不退的防線
             new_stop = curr_price - stop_distance
             final_stop = max(sym_state["trailing_stop"], new_stop)
             
-            # 判定是否跌破
             if curr_price < final_stop:
                 pnl_alert = f"🩸【拔線警戒】跌破動態防守線 {final_stop:.1f}，請嚴格執行停利/停損！"
             else:
-                noc_state[sym]["trailing_stop"] = final_stop  # 更新防守線
+                noc_state[sym]["trailing_stop"] = final_stop 
                 if roi_pct > 0: pnl_alert = f"🔥 獲利巡航中 | 📍 動態防線墊高至: {final_stop:.1f}"
                 else: pnl_alert = f"🟡 暫時浮虧中 | 📍 死守底線: {final_stop:.1f}"
                 
@@ -307,7 +311,6 @@ if __name__ == "__main__":
             trend_status = "🔥 多頭" if close > td['5MA'] > td['20MA'] else "🧊 空頭" if close < td['5MA'] < td['20MA'] else "🔄 盤整"
             chip_status = td['Chip_Status']
 
-            # 🛡️ 營收與預判 (IPS)
             yoy = get_revenue_yoy(sym)
             yoy_str = f"{yoy:.2f}%" if isinstance(yoy, float) else yoy
             predict_msg = "無特殊徵兆"
@@ -317,13 +320,11 @@ if __name__ == "__main__":
             elif td['BB_Width'] < 0.08: predict_msg = "⚠️【大變盤預警】布林通道極度壓縮！"
             elif td['Is_Bottoming'] == 1: predict_msg = "📈【築底預判】空方動能連續收斂！"
 
-            # 🧠 資金控管與量化大腦邏輯
             stop_distance = atr * ATR_MULTIPLIER
             suggested_shares = min(math.floor((TOTAL_CAPITAL * RISK_PER_TRADE) / stop_distance) if stop_distance > 0 else 0, math.floor(TOTAL_CAPITAL / close))
             sym_state = noc_state.get(sym, {"status": "NONE"})
             alert = "✅ 持股觀望"
 
-            # 確保不會跟 MY_PORTFOLIO 衝突
             if sym_state["status"] == "REAL_HOLD":
                 alert = f"💼 已列入真實持股防禦區 | 📍 動態防線: {sym_state['trailing_stop']:.1f}"
             elif sym_state["status"] == "NONE":
@@ -350,7 +351,6 @@ if __name__ == "__main__":
 
             write_noc_log(curr_date, sym, name, close, rsi, vol_status, trend_status, predict_msg, chip_status, alert)
             
-            # 資訊面板
             stock_msg = f"🔸 {name} ({sym})\n   現價: {close:.2f} | RSI: {rsi:.1f} | 營收YoY: {yoy_str}\n   狀態: {trend_status} | {vol_status}\n"
             if chip_status != "無資料": stock_msg += f"   💰 籌碼: {chip_status}\n"
             stock_msg += f"   🔮 預判: {predict_msg}\n   👉 指令: {alert}\n\n"
