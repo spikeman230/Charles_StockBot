@@ -3,7 +3,7 @@ name: Daily Stock Reporter
 on:
   schedule:
     # 台灣時間 09:30, 12:30, 13:30 執行 (週一至週五)
-    - cron: '30 1,4,5 * * 1-5'
+    - cron: '43 1,4,5,7 * * 1-5'
   workflow_dispatch:
 
 jobs:
