@@ -28,6 +28,7 @@ RISK_PER_TRADE = 0.02    # 單筆風險 2%
 ATR_MULTIPLIER = 2.0     # 2倍 ATR 動態停損 (套用於全部持股)
 
 # === 2. 專屬通訊錄 (外部觀察網域) ===
+# 🔧 已修正：波若威、威剛、群聯 改為 .TWO 上櫃代碼
 STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
     "🔥 潛力種子 (高頻寬觀察區)": {"3163.TWO": "波若威", "5388.TW": "中磊", "3714.TW": "富采","2337.TW": "旺宏"},
@@ -68,7 +69,7 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, aler
             writer.writerow(["日期", "代號", "名稱", "收盤價", "RSI", "量能狀態", "趨勢狀態", "戰場預判", "籌碼訊號", "行動指令"])
         writer.writerow([date, symbol, name, f"{close_price:.2f}", f"{rsi:.2f}", vol_status, status, predict, chip_signal, alert])
 
-# === 4. 環境感知：大盤與營收 YoY ===
+# === 4. 環境感知：大盤與營收 YoY (帶有抓鬼雷達) ===
 def get_market_regime():
     try:
         twii = yf.Ticker("^TWII").history(period="1mo")
@@ -86,9 +87,16 @@ def get_revenue_yoy(symbol):
         params = {"dataset": "TaiwanStockMonthRevenue", "data_id": fm_symbol, "start_date": (datetime.datetime.now() - datetime.timedelta(days=90)).strftime("%Y-%m-%d"), "token": FINMIND_TOKEN}
         r = requests.get(url, params=params, timeout=10)
         data = r.json()
+        
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
             return float(pd.DataFrame(data["data"]).iloc[-1]['revenue_YearOverYear_ratio'])
-    except: pass
+        else:
+            # 👻 抓鬼雷達：把 FinMind 拒絕的真正原因印在 GitHub Log 裡！
+            print(f"⚠️ [{fm_symbol}] 營收抓取失敗，FinMind 回應: {data}")
+            
+    except Exception as e: 
+        print(f"⚠️ [{fm_symbol}] 營收 API 連線錯誤: {e}")
+        
     return "N/A"
 
 # === 5. FinMind 籌碼分析 ===
@@ -156,7 +164,7 @@ def get_analysis_and_chart(symbol, name):
         hist['RSI'] = 100 - (100 / (1 + (gain.ewm(com=13, adjust=False).mean() / loss.ewm(com=13, adjust=False).mean())))
         hist['RSI'] = hist['RSI'].fillna(50)
 
-        # ATR 動態波動率 (v7.6)
+        # ATR 動態波動率
         hist['H-L'] = hist['High'] - hist['Low']
         hist['H-PC'] = abs(hist['High'] - hist['Close'].shift(1))
         hist['L-PC'] = abs(hist['Low'] - hist['Close'].shift(1))
@@ -228,7 +236,7 @@ if __name__ == "__main__":
     curr_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
     msg_list = []; generated_charts = []; has_data = False
 
-    print(f"[{curr_time}] NOC 終極融合版 (v7.6 動態持股防禦) 啟動...")
+    print(f"[{curr_time}] NOC 終極融合版 (v7.6 動態持股防禦 + 抓鬼雷達) 啟動...")
 
     # 🌐 載入系統大腦與環境
     is_bull_market, market_msg = get_market_regime()
@@ -267,7 +275,6 @@ if __name__ == "__main__":
             # 判定是否跌破
             if curr_price < final_stop:
                 pnl_alert = f"🩸【拔線警戒】跌破動態防守線 {final_stop:.1f}，請嚴格執行停利/停損！"
-                # 不清除狀態，讓使用者自行決定是否從 MY_PORTFOLIO 刪除
             else:
                 noc_state[sym]["trailing_stop"] = final_stop  # 更新防守線
                 if roi_pct > 0: pnl_alert = f"🔥 獲利巡航中 | 📍 動態防線墊高至: {final_stop:.1f}"
@@ -316,7 +323,7 @@ if __name__ == "__main__":
             sym_state = noc_state.get(sym, {"status": "NONE"})
             alert = "✅ 持股觀望"
 
-            # 確保不會跟 MY_PORTFOLIO 衝突 (如果這檔股票剛好也放在觀察區)
+            # 確保不會跟 MY_PORTFOLIO 衝突
             if sym_state["status"] == "REAL_HOLD":
                 alert = f"💼 已列入真實持股防禦區 | 📍 動態防線: {sym_state['trailing_stop']:.1f}"
             elif sym_state["status"] == "NONE":
@@ -327,7 +334,7 @@ if __name__ == "__main__":
                         stop_price = close - stop_distance
                         noc_state[sym] = {"status": "HOLD", "entry": close, "trailing_stop": stop_price}
                         alert = f"🚀【啟動狙擊】建議買入 {suggested_shares/1000:.1f} 張，停損設 {stop_price:.1f}"
-                elif td['Sniper_Memory_5D'] == 1 and not td['Sniper_Signal']: # v6.1 記憶追蹤
+                elif td['Sniper_Memory_5D'] == 1 and not td['Sniper_Signal']: 
                     if close > td['5MA']: alert = "🔥【狙擊延續：強勢巡航】近期突破，站穩5日線！"
                     else: alert = "⚠️【狙擊失效：跌破防線】跌破5日線，請觀望！"
                 elif rsi > 80: alert = "💰【獲利了結】短線過熱，注意回檔。"
@@ -350,7 +357,7 @@ if __name__ == "__main__":
             msg_list.append(stock_msg)
 
     if has_data or len(msg_list) > 0:
-        save_state(noc_state) # 儲存 JSON 記憶
+        save_state(noc_state) 
         final_text = f"📡 【NOC 終極融合版 v7.6】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
