@@ -276,7 +276,7 @@ if __name__ == "__main__":
             write_noc_log(curr_date, sym, name, close, rsi, vol_status, trend_status, predict_msg, td['Chip_Status'], alert)
             msg_list.append(f"🔸 {name} ({sym})\n   現價: {close:.2f} | RSI: {rsi:.1f} | 營收YoY: {yoy_label}\n   狀態: {trend_status} | {vol_status}\n   💰 籌碼: {td['Chip_Status']}\n   🔮 預判: {predict_msg}\n   👉 指令: {alert}\n\n")
 
-   if has_data or len(msg_list) > 0:
+    if has_data or len(msg_list) > 0:
         save_state(noc_state) 
         final_text = f"📡 【NOC 終極戰情室 v7.8 (雙劍合璧版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
