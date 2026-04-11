@@ -1,0 +1,22 @@
+{
+    "3231.TW": {
+        "status": "REAL_HOLD",
+        "entry": 130.5,
+        "trailing_stop": 126.78571428571429
+    },
+    "8431.TWO": {
+        "status": "REAL_HOLD",
+        "entry": 70.7,
+        "trailing_stop": 58.31428691319057
+    },
+    "6116.TW": {
+        "status": "REAL_HOLD",
+        "entry": 8.4,
+        "trailing_stop": 7.755714280264718
+    },
+    "2317.TW": {
+        "status": "REAL_HOLD",
+        "entry": 201.5,
+        "trailing_stop": 188.07142857142858
+    }
+}
