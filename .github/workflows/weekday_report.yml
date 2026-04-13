@@ -1,4 +1,4 @@
-name: Daily Stock Reporter
+name: Weekdays Stock Reporter
 
 on:
   schedule:
