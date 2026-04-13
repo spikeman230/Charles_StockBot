@@ -22,7 +22,7 @@ EMAIL_PASS = os.environ.get("EMAIL_PASS")
 EMAIL_TO = os.environ.get("EMAIL_TO")
 FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 
-# === 1.1 量化基金風控參數 (v7.9 全方位價值動能版) ===
+# === 1.1 量化基金風控參數 (v7.9.1 防護升級版) ===
 TOTAL_CAPITAL = 1000000  # 預設總資金 100 萬台幣
 RISK_PER_TRADE = 0.02    # 單筆風險 2%
 ATR_MULTIPLIER = 2.0     # 2倍 ATR 動態停損
@@ -32,7 +32,7 @@ PE_LIMIT = 40.0          # 本益比上限 (超過 40 倍視為過貴)
 # === 2. 專屬通訊錄 (外部觀察網域) ===
 STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
-    "🔥 潛力種子 (高頻寬觀察區)": {"6239.TW": "力成", "5388.TW": "中磊", "3714.TW": "富采","2337.TW": "旺宏", "2428.TW": "興勤"},
+    "🔥 潛力種子 (高頻寬觀察區)": {"3163.TWO": "波若威", "5388.TW": "中磊", "3714.TW": "富采","2337.TW": "旺宏"},
     "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "0050.TW": "元大台灣50","AAPL": "蘋果","NVDA": "輝達"},
     "💾 記憶體族群 (美光連動網域)": {"MU": "美光", "2408.TW": "南亞科", "3260.TWO": "威剛", "8299.TWO": "群聯" },
     "🔍 YAHOO 觀察區": {"2027.TW": "大成鋼", "2382.TW": "廣達", "2886.TW": "兆豐金", "2409.TW": "友達", "2352.TW": "佳世達","2317.TW": "鴻海", "6116.TW": "彩晶" },
@@ -202,6 +202,10 @@ def get_analysis_and_chart(symbol, name):
     try:
         stock = yf.Ticker(symbol)
         hist = stock.history(period="8mo")
+        
+        # 🛡️ 核心防護罩：把收盤價是 NaN 的髒行數全部砍掉！
+        hist = hist.dropna(subset=['Close'])
+        
         if len(hist) < 40: 
             return None
             
@@ -279,28 +283,22 @@ def get_analysis_and_chart(symbol, name):
         print(f"[{symbol}] 核心分析發生錯誤: {e}")
         return None
 
-# === 7. 發送模組 ===
-# === 7. 發送模組 ===
+# === 7. 發送模組 (Telegram 自動分段防阻擋版) ===
 def send_reports(subject, text_body, chart_files):
-    # 解決 Telegram 4096 字數限制：長訊息自動分段發送
     if TG_TOKEN and TG_CHAT_ID:
         try:
-            max_length = 4000 # 保守設定在 4000 字元切割
-            # 將長篇戰報切成多個文字區塊
+            max_length = 4000
             message_parts = [text_body[i:i + max_length] for i in range(0, len(text_body), max_length)]
-            
             for part in message_parts:
                 resp = requests.post(
                     f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage", 
                     json={"chat_id": TG_CHAT_ID, "text": part, "disable_web_page_preview": True},
                     timeout=10
                 )
-                # 新增錯誤捕捉：如果 Telegram 拒絕接收，印出官方的拒絕理由
                 if resp.status_code != 200:
                     print(f"⚠️ Telegram API 拒絕發送: {resp.text}")
-                    
         except Exception as e:
-            print(f"❌ Telegram 連線發生異常: {e}")
+            print(f"❌ Telegram 發送失敗: {e}")
     
     if EMAIL_USER and EMAIL_PASS and EMAIL_TO:
         try:
@@ -338,7 +336,7 @@ if __name__ == "__main__":
     generated_charts = []
     has_data = False
     
-    print(f"[{curr_time}] NOC 終極融合版 (v7.9 全方位價值動能展開版) 啟動...")
+    print(f"[{curr_time}] NOC 終極融合版 (v7.9.1 空值裝甲升級版) 啟動...")
     
     is_bull_market, market_msg = get_market_regime()
     noc_state = load_state()
@@ -451,12 +449,15 @@ if __name__ == "__main__":
             elif td['BB_Width'] < 0.08: 
                 predict_msg = "⚠️【大變盤預警】通道極度壓縮！"
             
-            # 雙劍合璧與狀態機邏輯
-            stop_distance = atr * ATR_MULTIPLIER
+            # 🛡️ 雙劍合璧與狀態機邏輯 (加入數學除法防呆)
+            safe_stop_distance = stop_distance if not pd.isna(stop_distance) and stop_distance > 0 else 999999
+            safe_close = close if not pd.isna(close) and close > 0 else 1.0
+            
             suggested_shares = min(
-                math.floor((TOTAL_CAPITAL * RISK_PER_TRADE) / stop_distance) if stop_distance > 0 else 0, 
-                math.floor(TOTAL_CAPITAL / close)
+                math.floor((TOTAL_CAPITAL * RISK_PER_TRADE) / safe_stop_distance), 
+                math.floor(TOTAL_CAPITAL / safe_close)
             )
+            
             sym_state = noc_state.get(sym, {"status": "NONE"})
             alert = "✅ 持股觀望"
             
@@ -500,7 +501,7 @@ if __name__ == "__main__":
     # === 完美復原的結尾機制 ===
     if has_data or len(msg_list) > 0:
         save_state(noc_state) 
-        final_text = f"📡 【NOC 終極戰情室 v7.9 (全方位價值動能展開版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 終極戰情室 v7.9.1 (安全防護無敵版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
             if os.path.exists(chart): 
