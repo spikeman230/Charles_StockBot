@@ -22,16 +22,17 @@ EMAIL_PASS = os.environ.get("EMAIL_PASS")
 EMAIL_TO = os.environ.get("EMAIL_TO")
 FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 
-# === 1.1 量化基金風控參數 (v7.8 雙劍合璧核心) ===
+# === 1.1 量化基金風控參數 (v7.9 全方位價值動能版) ===
 TOTAL_CAPITAL = 1000000  # 預設總資金 100 萬台幣
 RISK_PER_TRADE = 0.02    # 單筆風險 2%
 ATR_MULTIPLIER = 2.0     # 2倍 ATR 動態停損
 YOY_EXPLOSION_PCT = 50.0 # 業績大爆發閥值 (50%)
+PE_LIMIT = 40.0          # 本益比上限 (超過 40 倍視為過貴)
 
 # === 2. 專屬通訊錄 (外部觀察網域) ===
 STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
-    "🔥 潛力種子 (高頻寬觀察區)": {"3163.TWO": "波若威", "5388.TW": "中磊", "3714.TW": "富采","2337.TW": "旺宏"},
+    "🔥 潛力種子 (高頻寬觀察區)": {"6239.TW": "力成", "5388.TW": "中磊", "3714.TW": "富采","2337.TW": "旺宏", "2428.TW": "興勤"},
     "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "0050.TW": "元大台灣50","AAPL": "蘋果","NVDA": "輝達"},
     "💾 記憶體族群 (美光連動網域)": {"MU": "美光", "2408.TW": "南亞科", "3260.TWO": "威剛", "8299.TWO": "群聯" },
     "🔍 YAHOO 觀察區": {"2027.TW": "大成鋼", "2382.TW": "廣達", "2886.TW": "兆豐金", "2409.TW": "友達", "2352.TW": "佳世達","2317.TW": "鴻海", "6116.TW": "彩晶" },
@@ -77,7 +78,7 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, aler
     except Exception as e:
         print(f"⚠️ 日誌寫入失敗: {e}")
 
-# === 4. 環境感知：大盤與營收 YoY (自主推算版) ===
+# === 4. 環境感知：大盤、營收與估值 ===
 def get_market_regime():
     try:
         twii = yf.Ticker("^TWII").history(period="1mo")
@@ -127,6 +128,13 @@ def get_revenue_yoy(symbol):
         print(f"⚠️ [{symbol}] 營收處理錯誤: {e}")
         
     return "N/A"
+
+def get_pe_ratio(symbol):
+    try:
+        info = yf.Ticker(symbol).info
+        return info.get('trailingPE', info.get('forwardPE', "N/A"))
+    except:
+        return "N/A"
 
 # === 5. FinMind 籌碼分析 ===
 def get_finmind_chip_data(symbol, start_date_str):
@@ -211,6 +219,13 @@ def get_analysis_and_chart(symbol, name):
         hist['5MA'] = hist['Close'].rolling(window=5).mean()
         hist['20MA'] = hist['Close'].rolling(window=20).mean()
         hist['5VMA'] = hist['Volume'].rolling(window=5).mean()
+
+        # KD 計算 (9,3,3)
+        low_9 = hist['Low'].rolling(window=9).min()
+        high_9 = hist['High'].rolling(window=9).max()
+        rsv = ((hist['Close'] - low_9) / (high_9 - low_9)) * 100
+        hist['K'] = rsv.ewm(com=2, adjust=False).mean()
+        hist['D'] = hist['K'].ewm(com=2, adjust=False).mean()
         
         delta = hist['Close'].diff()
         gain = delta.clip(lower=0)
@@ -312,7 +327,7 @@ if __name__ == "__main__":
     generated_charts = []
     has_data = False
     
-    print(f"[{curr_time}] NOC 終極融合版 (v7.8 完全展開版) 啟動...")
+    print(f"[{curr_time}] NOC 終極融合版 (v7.9 全方位價值動能展開版) 啟動...")
     
     is_bull_market, market_msg = get_market_regime()
     noc_state = load_state()
@@ -390,6 +405,9 @@ if __name__ == "__main__":
             atr = td['ATR']
             rsi = td['RSI']
             vma5 = td['5VMA']
+            k = td['K']
+            d = td['D']
+            pe = get_pe_ratio(sym)
             
             vol_status = "📈 出量" if td['Volume'] > vma5 * 1.2 else "📉 量縮" if td['Volume'] < vma5 * 0.8 else "➖ 量平"
             trend_status = "🔥 多頭" if close > td['5MA'] > td['20MA'] else "🧊 空頭" if close < td['5MA'] < td['20MA'] else "🔄 盤整"
@@ -400,6 +418,17 @@ if __name__ == "__main__":
             is_yoy_explosion = isinstance(yoy, float) and yoy >= YOY_EXPLOSION_PCT
             if is_yoy_explosion: 
                 yoy_label += " (🌟 業績大爆發)"
+
+            # KD 視覺化標籤
+            kd_str = f"K:{k:.1f} D:{d:.1f}"
+            if k < 30 and k > d and hist['K'].iloc[-2] <= hist['D'].iloc[-2]: 
+                kd_str += " (🌟 KD金叉)"
+            elif k > 80: 
+                kd_str += " (⚠️ 短線過熱)"
+
+            # PE 本益比視覺化標籤
+            pe_str = f"{pe:.1f}" if isinstance(pe, float) else pe
+            is_overvalued = isinstance(pe, float) and pe > PE_LIMIT
 
             predict_msg = "無特殊徵兆"
             if td['Volume'] > vma5 * 3 and rsi > 75: 
@@ -428,6 +457,8 @@ if __name__ == "__main__":
                         alert = "🛡️【大盤攔截】大盤偏空，放棄狙擊。"
                     elif isinstance(yoy, float) and yoy < 0: 
                         alert = f"🛡️【基本面攔截】營收衰退，避開地雷。"
+                    elif is_overvalued: 
+                        alert = f"🛡️【估值攔截】PE {pe_str} 過高，風險極大。"
                     else:
                         stop_price = close - stop_distance
                         noc_state[sym] = {"status": "HOLD", "entry": close, "trailing_stop": stop_price}
@@ -447,7 +478,8 @@ if __name__ == "__main__":
             write_noc_log(curr_date, sym, name, close, rsi, vol_status, trend_status, predict_msg, td['Chip_Status'], alert)
             
             stock_msg = f"🔸 {name} ({sym})\n"
-            stock_msg += f"   現價: {close:.2f} | RSI: {rsi:.1f} | 營收YoY: {yoy_label}\n"
+            stock_msg += f"   現價: {close:.2f} | PE: {pe_str} | 營收YoY: {yoy_label}\n"
+            stock_msg += f"   指標: {kd_str} | RSI: {rsi:.1f}\n"
             stock_msg += f"   狀態: {trend_status} | {vol_status}\n"
             stock_msg += f"   💰 籌碼: {td['Chip_Status']}\n"
             stock_msg += f"   🔮 預判: {predict_msg}\n"
@@ -457,7 +489,7 @@ if __name__ == "__main__":
     # === 完美復原的結尾機制 ===
     if has_data or len(msg_list) > 0:
         save_state(noc_state) 
-        final_text = f"📡 【NOC 終極戰情室 v7.8 (雙劍合璧展開版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 終極戰情室 v7.9 (全方位價值動能展開版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
             if os.path.exists(chart): 
