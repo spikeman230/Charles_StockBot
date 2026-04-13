@@ -1,10 +1,10 @@
-name: Weekdays Stock Reporter
+name: NOC-Weekend-Test
 
 on:
   schedule:
-    # 台灣時間 09:43, 12:43, 13:43, 15:43 執行 (週一至週五)
+    # 測試用：每小時的 15 分自動觸發一次 (不分平假日)
     - cron: '43 1,4,5,7 * * 1-5'
-  workflow_dispatch:
+  workflow_dispatch: # 保留手動點火，方便你現在測試
 
 jobs:
   run-stock-bot:
