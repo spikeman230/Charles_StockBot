@@ -280,16 +280,27 @@ def get_analysis_and_chart(symbol, name):
         return None
 
 # === 7. 發送模組 ===
+# === 7. 發送模組 ===
 def send_reports(subject, text_body, chart_files):
+    # 解決 Telegram 4096 字數限制：長訊息自動分段發送
     if TG_TOKEN and TG_CHAT_ID:
         try:
-            requests.post(
-                f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage", 
-                json={"chat_id": TG_CHAT_ID, "text": text_body, "disable_web_page_preview": True},
-                timeout=10
-            )
+            max_length = 4000 # 保守設定在 4000 字元切割
+            # 將長篇戰報切成多個文字區塊
+            message_parts = [text_body[i:i + max_length] for i in range(0, len(text_body), max_length)]
+            
+            for part in message_parts:
+                resp = requests.post(
+                    f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage", 
+                    json={"chat_id": TG_CHAT_ID, "text": part, "disable_web_page_preview": True},
+                    timeout=10
+                )
+                # 新增錯誤捕捉：如果 Telegram 拒絕接收，印出官方的拒絕理由
+                if resp.status_code != 200:
+                    print(f"⚠️ Telegram API 拒絕發送: {resp.text}")
+                    
         except Exception as e:
-            print(f"❌ Telegram 發送失敗: {e}")
+            print(f"❌ Telegram 連線發生異常: {e}")
     
     if EMAIL_USER and EMAIL_PASS and EMAIL_TO:
         try:
