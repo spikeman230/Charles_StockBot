@@ -3,7 +3,7 @@ name: NOC-Weekend-Test
 on:
   schedule:
     # 測試用：每小時的 15 分自動觸發一次 (不分平假日)
-    - cron: '43 1,4,5,7 * * 1-5'
+    - cron: '05 1,4,7 * * 1-5'
   workflow_dispatch: # 保留手動點火，方便你現在測試
 
 jobs:
