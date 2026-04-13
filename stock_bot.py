@@ -252,7 +252,7 @@ def get_analysis_and_chart(symbol, name):
         chart_file = f"{symbol}_chart.png"
         try:
             mc = mpf.make_marketcolors(up='red', down='green', edge='black', wick='black', volume='gray')
-            tw_style = mpf.make_mpf_style(base_style='yahoo', marketcolors=mc)
+            tw_style = mpf.make_mpf_style(base_mpf_style='yahoo', marketcolors=mc)
             mpf.plot(hist[-60:], type='candle', style=tw_style, volume=True, mav=(5, 20), title=f"Stock: {symbol}", savefig=chart_file)
         except Exception as e:
             print(f"[{symbol}] 自訂圖表繪製失敗，改用預設風格: {e}")
