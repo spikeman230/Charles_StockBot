@@ -1,6 +1,6 @@
 name: NOC 手動游擊雷達
 
-# 關鍵：只有 workflow_dispatch，沒有 schedule！
+# 關鍵：workflow_dispatch 代表這個腳本沒有定時器，只能「手動按鈕」觸發！
 on: 
   workflow_dispatch: 
 
