@@ -38,7 +38,18 @@ STOCK_DICT = {
     "🔍 YAHOO 觀察區": {"2027.TW": "大成鋼",  "2409.TW": "友達", "2352.TW": "佳世達","2317.TW": "鴻海", "6116.TW": "彩晶" },
     "真實持股 追蹤區" : {"8431.TWO":"匯鑽科","3231.TW":"緯創" }
 }
-
+# --- 🚀 動態掛載：讀取雷達自動掃描的名單 ---
+TARGET_FILE = "radar_targets.json"
+if os.path.exists(TARGET_FILE):
+    try:
+        with open(TARGET_FILE, "r", encoding="utf-8") as f:
+            radar_stocks = json.load(f)
+            if radar_stocks:
+                # 把讀到的清單，直接以新群組塞進 STOCK_DICT 裡！
+                STOCK_DICT["🎯 雷達鎖定 (新進火種區)"] = radar_stocks
+    except Exception as e:
+        print(f"⚠️ 雷達名單讀取失敗: {e}")
+        
 # === 2.1 真實持股庫存 (實體機房配置) ===
 MY_PORTFOLIO = {
     "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
