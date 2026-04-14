@@ -3,6 +3,7 @@ import requests
 import datetime
 import pandas as pd
 import os
+import json  # 必須引入 json 模組來建立傳令兵
 
 # === 1. 設定掃描池 (台股前150大中型權值股 + 產業指標股) ===
 SCAN_LIST = [
@@ -69,15 +70,13 @@ def scan_stock(symbol):
         td = hist.iloc[-1]
         y_td = hist.iloc[-2]
         
-        # === 條件放寬版 ===
-        cond_1 = td['Close'] > td['20MA'] # 條件1: 站上月線
-        # 移除了爆量限制 (cond_2)
-        cond_3 = td['K'] < 50 and td['K'] > td['D'] and y_td['K'] <= y_td['D'] # 條件3: KD < 50 且剛發生金叉
+        # === 條件判斷 (站上月線 + KD<50且剛金叉) ===
+        cond_1 = td['Close'] > td['20MA']
+        cond_3 = td['K'] < 50 and td['K'] > td['D'] and y_td['K'] <= y_td['D']
         
-        # 綜合判定 (站上月線 + 中低檔金叉)
         if cond_1 and cond_3:
             yoy = get_revenue_yoy(symbol)
-            if yoy is not None and yoy < 0: return None # 營收衰退者依舊淘汰 (保留基本面護城河)
+            if yoy is not None and yoy < 0: return None # 營收衰退者淘汰
             
             yoy_str = f"{yoy:.1f}%" if yoy is not None else "無API資料"
             return {"symbol": symbol, "close": td['Close'], "K": td['K'], "D": td['D'], "yoy": yoy_str}
@@ -95,9 +94,27 @@ if __name__ == "__main__":
         if result: found_targets.append(result)
         
     print("\n" + "=" * 60)
+    
+    TARGET_FILE = "radar_targets.json"
+    
     if not found_targets:
         print("🎯 報告總操盤手，目前無符合【KD < 50 金叉 + 站上月線 + 營收成長】之標的。")
+        # 即使沒掃到，也要寫入一個「空字典」，將前一次的雷達名單無情洗掉！
+        with open(TARGET_FILE, "w", encoding="utf-8") as f:
+            json.dump({}, f, ensure_ascii=False, indent=4)
+        print(f"🧹 雷達畫面已清空。戰情室的【🎯 雷達鎖定區】將同步淨空。")
     else:
         print("🎯 發現符合廣域掃描條件的潛力股：")
+        
+        # --- 覆蓋模式：每次都建立全新的字典 ---
+        radar_dict = {}
         for t in found_targets:
-            print(f"🔹 {t['symbol']:>9} | 現價: {
+            print(f"🔹 {t['symbol']:>9} | 現價: {t['close']:>6.1f} | K值: {t['K']:>4.1f} | 營收YoY: {t['yoy']}")
+            radar_dict[t['symbol']] = f"雷達選股 (進場價約 {t['close']:.1f})"
+                
+        # 無情覆蓋存檔
+        with open(TARGET_FILE, "w", encoding="utf-8") as f:
+            json.dump(radar_dict, f, ensure_ascii=False, indent=4)
+        print(f"✅ 雷達畫面已刷新！最新火種已裝填至 {TARGET_FILE}，待戰情室接手追蹤。")
+        
+    print("=" * 60)
