@@ -4,15 +4,22 @@ import datetime
 import pandas as pd
 import os
 
-# === 1. 設定掃描池 (可自行增減) ===
+# === 1. 設定掃描池 (完整台灣50權值股 + 熱門觀察股) ===
 SCAN_LIST = [
-    "2330.TW", "2317.TW", "2454.TW", "2382.TW", "2308.TW", 
-    "2881.TW", "2882.TW", "3231.TW", "3037.TW", "3714.TW",
-    "2603.TW", "2609.TW", "2615.TW", "2352.TW", "2409.TW",
-    "3163.TWO", "5388.TW", "2408.TW", "8299.TWO", "3260.TWO"
+    # 科技與半導體巨頭
+    "2330.TW", "2317.TW", "2454.TW", "2382.TW", "2308.TW", "3231.TW", "3037.TW", 
+    "2303.TW", "3008.TW", "3034.TW", "3711.TW", "2357.TW", "2395.TW", "2408.TW",
+    "2353.TW", "2356.TW", "2379.TW", "4938.TW", "2301.TW", "2345.TW", "2324.TW",
+    "3661.TW", "6669.TW", "3714.TW", "3163.TWO", "5388.TW", "8299.TWO", "3260.TWO",
+    # 金融權值股
+    "2881.TW", "2882.TW", "2891.TW", "2886.TW", "2884.TW", "2892.TW", "2885.TW", 
+    "2880.TW", "2883.TW", "2887.TW", "5871.TW", "2890.TW", "5880.TW",
+    # 傳產、航運與電信巨頭
+    "2412.TW", "3045.TW", "2002.TW", "1216.TW", "1301.TW", "1303.TW", "2912.TW", 
+    "9904.TW", "2603.TW", "2609.TW", "2615.TW", "2207.TW", "1101.TW", "1102.TW"
 ]
 
-FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN", "") # 有就用，沒有也沒關係
+FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN", "")
 
 def get_revenue_yoy(symbol):
     if not FINMIND_TOKEN: return None
@@ -37,38 +44,29 @@ def scan_stock(symbol):
         hist = yf.Ticker(symbol).history(period="3mo").dropna(subset=['Close'])
         if len(hist) < 30: return None
         
-        # 計算均線與均量
         hist['20MA'] = hist['Close'].rolling(20).mean()
         hist['5VMA'] = hist['Volume'].rolling(5).mean()
         
-        # KD 計算 (9,3,3)
         low_9 = hist['Low'].rolling(9).min()
         high_9 = hist['High'].rolling(9).max()
         hist['K'] = (((hist['Close'] - low_9) / (high_9 - low_9)) * 100).ewm(com=2, adjust=False).mean()
         hist['D'] = hist['K'].ewm(com=2, adjust=False).mean()
         
         td = hist.iloc[-1]
-        y_td = hist.iloc[-2] # 昨天
+        y_td = hist.iloc[-2]
         
-        # === 四合一黃金條件判斷 ===
+        # 四合一黃金條件
         cond_1 = td['Close'] > td['20MA'] # 站上月線
         cond_2 = td['Volume'] > (td['5VMA'] * 1.2) # 底部出量
-        cond_3 = td['K'] < 35 and td['K'] > td['D'] and y_td['K'] <= y_td['D'] # KD低檔金叉 (放寬至35方便掃描)
+        cond_3 = td['K'] < 35 and td['K'] > td['D'] and y_td['K'] <= y_td['D'] # KD低檔金叉(放寬至35)
         
         if cond_1 and cond_2 and cond_3:
             yoy = get_revenue_yoy(symbol)
-            if yoy is not None and yoy < 0: return None # 營收衰退者淘汰
+            if yoy is not None and yoy < 0: return None # 營收衰退淘汰
             
             yoy_str = f"{yoy:.1f}%" if yoy is not None else "無API資料"
-            return {
-                "symbol": symbol,
-                "close": td['Close'],
-                "K": td['K'],
-                "D": td['D'],
-                "yoy": yoy_str
-            }
-    except Exception as e:
-        return None
+            return {"symbol": symbol, "close": td['Close'], "K": td['K'], "D": td['D'], "yoy": yoy_str}
+    except: return None
     return None
 
 if __name__ == "__main__":
@@ -81,7 +79,7 @@ if __name__ == "__main__":
         result = scan_stock(sym)
         if result: found_targets.append(result)
         
-    print("=" * 50)
+    print("\n" + "=" * 50)
     if not found_targets:
         print("🎯 報告總操盤手，目前無符合【KD低檔金叉 + 站上月線 + 出量 + 營收成長】之標的。")
     else:
