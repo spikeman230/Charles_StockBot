@@ -1,0 +1,38 @@
+name: NOC 手動閃電突擊雷達
+
+# 關鍵：無排程，純手動按鈕觸發
+on: 
+  workflow_dispatch: 
+
+# 🛡️ 允許機器人將 lightning_targets.json 存回倉庫
+permissions:
+  contents: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      run: pip install yfinance pandas requests
+      
+    - name: Run Lightning Scanner
+      env:
+        FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+      run: python noc_lightning.py
+      
+    # 🚀 關鍵步驟：把 lightning_targets.json 存回 GitHub 倉庫！
+    - name: Commit & Push changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add lightning_targets.json
+        # 檢查如果有變動才 commit，避免報錯閃退
+        git diff-index --quiet HEAD || git commit -m "⚡ 自動同步閃電突擊名單"
+        git push
