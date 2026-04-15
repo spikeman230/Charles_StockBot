@@ -2,26 +2,26 @@
     "3231.TW": {
         "status": "REAL_HOLD",
         "entry": 130.5,
-        "trailing_stop": 129.28571428571428
+        "trailing_stop": 129.78571428571428
     },
     "8431.TWO": {
         "status": "REAL_HOLD",
         "entry": 70.7,
-        "trailing_stop": 58.81428745814732
+        "trailing_stop": 59.34285790579659
     },
     "6116.TW": {
         "status": "REAL_HOLD",
         "entry": 8.4,
-        "trailing_stop": 8.145714214869908
+        "trailing_stop": 8.198570932660784
     },
     "2317.TW": {
         "status": "REAL_HOLD",
         "entry": 201.5,
-        "trailing_stop": 195.21428571428572
+        "trailing_stop": 197.35714285714286
     },
     "NVDA": {
         "status": "REAL_HOLD",
         "entry": 144.5,
-        "trailing_stop": 183.9959215436663
+        "trailing_stop": 185.6614249093192
     }
 }
