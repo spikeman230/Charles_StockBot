@@ -57,7 +57,7 @@ MY_PORTFOLIO = {
     "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
     "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000},
     "6116.TW": {"name": "彩晶", "buy_price": 8.4, "shares": 1000},
-    "2612.TW": {"name": "中航", "buy_price": 201.5, "shares": 1000},
+    "2612.TW": {"name": "中航", "buy_price": 58.7, "shares": 1000},
     "1326.TW"   : {"name": "台化", "buy_price": 50.5, "shares": 1000 } 
 }
 
