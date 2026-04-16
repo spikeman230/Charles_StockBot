@@ -12,7 +12,7 @@
     "6116.TW": {
         "status": "REAL_HOLD",
         "entry": 8.4,
-        "trailing_stop": 8.284285409109932
+        "trailing_stop": 8.524286133902413
     },
     "2317.TW": {
         "status": "REAL_HOLD",
@@ -22,6 +22,6 @@
     "NVDA": {
         "status": "REAL_HOLD",
         "entry": 144.5,
-        "trailing_stop": 185.6614249093192
+        "trailing_stop": 188.21571350097656
     }
 }
