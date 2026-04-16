@@ -58,7 +58,7 @@ MY_PORTFOLIO = {
     "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000},
     "6116.TW": {"name": "彩晶", "buy_price": 8.4, "shares": 1000},
     "2612.TW": {"name": "中航", "buy_price": 201.5, "shares": 1000},
-    "1362.TW"   : {"name": "台化", "buy_price": 50.5, "shares": 1000 } 
+    "1326.TW"   : {"name": "台化", "buy_price": 50.5, "shares": 1000 } 
 }
 
 # === 3. 實體狀態記憶庫與日誌 (Stateful Database) ===
