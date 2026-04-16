@@ -28,5 +28,10 @@
         "status": "REAL_HOLD",
         "entry": 201.5,
         "trailing_stop": 55.58571570260184
+    },
+    "1326.TW": {
+        "status": "REAL_HOLD",
+        "entry": 50.5,
+        "trailing_stop": 45.742855072021484
     }
 }
