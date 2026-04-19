@@ -22,7 +22,7 @@ EMAIL_PASS = os.environ.get("EMAIL_PASS")
 EMAIL_TO = os.environ.get("EMAIL_TO")
 FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 
-# === 1.1 量化基金風控參數 (v8.0 戰略提示版) ===
+# === 1.1 量化基金風控參數 (v8.1 聯電特化版) ===
 TOTAL_CAPITAL = 1000000  # 預設總資金 100 萬台幣
 RISK_PER_TRADE = 0.02    # 單筆風險 2%
 ATR_MULTIPLIER = 2.0     # 2倍 ATR 動態停損
@@ -32,9 +32,9 @@ PE_LIMIT = 40.0          # 本益比上限 (超過 40 倍視為過貴)
 # === 2. 專屬通訊錄 (外部觀察網域) ===
 STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
-    "⚡ 閃電突擊 (短線動能區)": {"2612.TW": "中航 (4天週期，5MA防線)", "2303.TW" : "聯電"},
+    "⚡ 閃電突擊 (短線動能區)": {"2612.TW": "中航 (4天週期，5MA防線)", "6415.TW" : "矽力-KY", "2303.TW" : "聯電 (二波衝鋒)"},
     "🕸️ 陷阱佈署 (等待落底區)": {"9933.TW": "中鼎 (監控日線止跌訊號)"},
-    "🦅 長線復甦 (波段雷達區)": {"6415.TW": "矽力*-KY (20週線支撐對策)"}, 
+    "🦅 長線復甦 (波段雷達區)": {"6415.TW": "矽力*-KY (20週線支撐對策)"},
     "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "0050.TW": "元大台灣50","AAPL": "蘋果","NVDA": "輝達"},
     "💾 記憶體族群 (美光連動網域)": { "2408.TW": "南亞科", "2382.TW": "廣達",  "2886.TW": "兆豐金"},
     "🔍 YAHOO 觀察區": {"2027.TW": "大成鋼",  "2409.TW": "友達", "2352.TW": "佳世達","2317.TW": "鴻海", "6116.TW": "彩晶" },
@@ -225,25 +225,26 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
 
 # === 5.5 特種戰略分析引擎 (AI 提示模組) ===
 def get_strategy_tips(symbol, current_price, k_value, ma5, ma20):
+    # --- 中鼎 (9933) 策略 ---
     if symbol == "9933.TW":
         if current_price > ma5 and k_value < 30:
             return "🔥【NOC 訊號】中鼎疑似止跌！符合第一梯隊進場條件(30%)"
         else:
             return "⏳【NOC 監控】中鼎尚未止跌，請繼續等待 K<20 且站上 5MA。"
             
+    # --- 矽力 (6415) 策略 ---
     if symbol == "6415.TW":
-        # 由於此腳本為日線級別掃描，此處用約當日線價格評估長線20週線(約250附近)
         if current_price <= 260 and current_price >= 240:
             return "💎【NOC 訊號】矽力進入支撐區，適合長線波段建倉(破230停損)。"
         else:
             return "🦅【NOC 監控】矽力距支撐位尚有空間，耐心等待回測。"
-    return ""
+
     # --- 🌟 新增：聯電 (2303) 閃電二波策略 ---
     if symbol == "2303.TW":
         if current_price > ma5:
-            return f"🚀【NOC 訊號】聯電強勢站穩 5MA，目標挑戰前高 79.7！"
+            return f"🚀【NOC 訊號】聯電強勢站穩 5MA，動能強勁，目標挑戰前高 79.7！"
         else:
-            return f"⚠️【NOC 警訊】聯電短線跌破 5MA，4天閃電戰動能轉弱，注意撤退。"
+            return f"⚠️【NOC 警訊】聯電短線跌破 5MA，4天閃電戰動能轉弱，注意撤退防守。"
 
     return ""
 
@@ -386,7 +387,7 @@ if __name__ == "__main__":
     generated_charts = []
     has_data = False
     
-    print(f"[{curr_time}] NOC 終極融合版 (v8.0 戰略提示版) 啟動...")
+    print(f"[{curr_time}] NOC 終極融合版 (v8.1 聯電特化版) 啟動...")
     
     is_bull_market, market_msg = get_market_regime()
     noc_state = load_state()
@@ -464,8 +465,8 @@ if __name__ == "__main__":
             atr = td['ATR']
             rsi = td['RSI']
             vma5 = td['5VMA']
-            ma5 = td['5MA']  # 為 AI 提示新增
-            ma20 = td['20MA'] # 為 AI 提示新增
+            ma5 = td['5MA']
+            ma20 = td['20MA']
             k = td['K']
             d = td['D']
             pe = get_pe_ratio(sym)
@@ -501,7 +502,7 @@ if __name__ == "__main__":
             elif td['BB_Width'] < 0.08: 
                 predict_msg = "⚠️【大變盤預警】通道極度壓縮！"
             
-            # 🛡️ 雙劍合璧與狀態機邏輯 (加入數學除法防呆)
+            # 🛡️ 雙劍合璧與狀態機邏輯
             safe_stop_distance = stop_distance if not pd.isna(stop_distance) and stop_distance > 0 else 999999
             safe_close = close if not pd.isna(close) and close > 0 else 1.0
             
@@ -551,7 +552,7 @@ if __name__ == "__main__":
             stock_msg += f"   💰 籌碼: {td['Chip_Status']}\n"
             stock_msg += f"   🔮 預判: {predict_msg}\n"
             stock_msg += f"   👉 指令: {alert}\n"
-            if tips: stock_msg += f"   <i>{tips}</i>\n"  # 加入斜體提示
+            if tips: stock_msg += f"   <i>{tips}</i>\n"
             stock_msg += "\n"
             
             msg_list.append(stock_msg)
@@ -559,7 +560,7 @@ if __name__ == "__main__":
     # === 完美復原的結尾機制 ===
     if has_data or len(msg_list) > 0:
         save_state(noc_state) 
-        final_text = f"📡 【NOC 終極戰情室 v8.0 (戰略提示版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 終極戰情室 v8.1 (聯電特化版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
             if os.path.exists(chart): 
