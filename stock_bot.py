@@ -22,7 +22,7 @@ EMAIL_PASS = os.environ.get("EMAIL_PASS")
 EMAIL_TO = os.environ.get("EMAIL_TO")
 FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 
-# === 1.1 量化基金風控參數 (v7.9.1 防護升級版) ===
+# === 1.1 量化基金風控參數 (v8.0 戰略提示版) ===
 TOTAL_CAPITAL = 1000000  # 預設總資金 100 萬台幣
 RISK_PER_TRADE = 0.02    # 單筆風險 2%
 ATR_MULTIPLIER = 2.0     # 2倍 ATR 動態停損
@@ -33,24 +33,36 @@ PE_LIMIT = 40.0          # 本益比上限 (超過 40 倍視為過貴)
 STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
     "⚡ 閃電突擊 (短線動能區)": {"2612.TW": "中航 (4天週期，5MA防線)", "6415.TW" : "矽力-KY", "2303.TW" : "聯電"},
-    "🕸️ 陷阱佈署 (等待落底區)": {"9933.TW": "中鼎 (等跌深KD金叉)"},
-    "🔥 潛力種子 ": { "5388.TW": "中磊", "1326.TW": "台化","2337.TW": "旺宏"},
+    "🕸️ 陷阱佈署 (等待落底區)": {"9933.TW": "中鼎 (監控日線止跌訊號)"},
+    "🦅 長線復甦 (波段雷達區)": {"6415.TW": "矽力*-KY (20週線支撐對策)"}, # 這裡修正了原本漏掉的右大括號
     "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "0050.TW": "元大台灣50","AAPL": "蘋果","NVDA": "輝達"},
     "💾 記憶體族群 (美光連動網域)": { "2408.TW": "南亞科", "2382.TW": "廣達",  "2886.TW": "兆豐金"},
     "🔍 YAHOO 觀察區": {"2027.TW": "大成鋼",  "2409.TW": "友達", "2352.TW": "佳世達","2317.TW": "鴻海", "6116.TW": "彩晶" },
     "真實持股 追蹤區" : {"8431.TWO":"匯鑽科","3231.TW":"緯創" }
 }
-# --- 🚀 動態掛載：讀取雷達自動掃描的名單 ---
-TARGET_FILE = "radar_targets.json"
-if os.path.exists(TARGET_FILE):
+
+# --- 🚀 動態掛載：讀取兩大雷達的傳令兵名單 ---
+# 讀取游擊隊雷達 (波段)
+RADAR_FILE = "radar_targets.json"
+if os.path.exists(RADAR_FILE):
     try:
-        with open(TARGET_FILE, "r", encoding="utf-8") as f:
+        with open(RADAR_FILE, "r", encoding="utf-8") as f:
             radar_stocks = json.load(f)
             if radar_stocks:
-                # 把讀到的清單，直接以新群組塞進 STOCK_DICT 裡！
                 STOCK_DICT["🎯 雷達鎖定 (新進火種區)"] = radar_stocks
     except Exception as e:
-        print(f"⚠️ 雷達名單讀取失敗: {e}")
+        print(f"⚠️ 游擊隊雷達名單讀取失敗: {e}")
+
+# 讀取閃電突擊雷達 (短線)
+LIGHTNING_FILE = "lightning_targets.json"
+if os.path.exists(LIGHTNING_FILE):
+    try:
+        with open(LIGHTNING_FILE, "r", encoding="utf-8") as f:
+            lightning_stocks = json.load(f)
+            if lightning_stocks:
+                STOCK_DICT["⚡ 雷達鎖定 (短線飆股區)"] = lightning_stocks
+    except Exception as e:
+        print(f"⚠️ 閃電突擊名單讀取失敗: {e}")
         
 # === 2.1 真實持股庫存 (實體機房配置) ===
 MY_PORTFOLIO = {
@@ -211,6 +223,22 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
         
     return hist
 
+# === 5.5 特種戰略分析引擎 (AI 提示模組) ===
+def get_strategy_tips(symbol, current_price, k_value, ma5, ma20):
+    if symbol == "9933.TW":
+        if current_price > ma5 and k_value < 30:
+            return "🔥【NOC 訊號】中鼎疑似止跌！符合第一梯隊進場條件(30%)"
+        else:
+            return "⏳【NOC 監控】中鼎尚未止跌，請繼續等待 K<20 且站上 5MA。"
+            
+    if symbol == "6415.TW":
+        # 由於此腳本為日線級別掃描，此處用約當日線價格評估長線20週線(約250附近)
+        if current_price <= 260 and current_price >= 240:
+            return "💎【NOC 訊號】矽力進入支撐區，適合長線波段建倉(破230停損)。"
+        else:
+            return "🦅【NOC 監控】矽力距支撐位尚有空間，耐心等待回測。"
+    return ""
+
 # === 6. 核心分析引擎 ===
 def get_analysis_and_chart(symbol, name):
     try:
@@ -350,7 +378,7 @@ if __name__ == "__main__":
     generated_charts = []
     has_data = False
     
-    print(f"[{curr_time}] NOC 終極融合版 (v7.9.1 空值裝甲升級版) 啟動...")
+    print(f"[{curr_time}] NOC 終極融合版 (v8.0 戰略提示版) 啟動...")
     
     is_bull_market, market_msg = get_market_regime()
     noc_state = load_state()
@@ -428,6 +456,8 @@ if __name__ == "__main__":
             atr = td['ATR']
             rsi = td['RSI']
             vma5 = td['5VMA']
+            ma5 = td['5MA']  # 為 AI 提示新增
+            ma20 = td['20MA'] # 為 AI 提示新增
             k = td['K']
             d = td['D']
             pe = get_pe_ratio(sym)
@@ -503,19 +533,25 @@ if __name__ == "__main__":
 
             write_noc_log(curr_date, sym, name, close, rsi, vol_status, trend_status, predict_msg, td['Chip_Status'], alert)
             
+            # --- ✨ 呼叫特種戰略提示 ---
+            tips = get_strategy_tips(symbol=sym, current_price=close, k_value=k, ma5=ma5, ma20=ma20)
+            
             stock_msg = f"🔸 {name} ({sym})\n"
             stock_msg += f"   現價: {close:.2f} | PE: {pe_str} | 營收YoY: {yoy_label}\n"
             stock_msg += f"   指標: {kd_str} | RSI: {rsi:.1f}\n"
             stock_msg += f"   狀態: {trend_status} | {vol_status}\n"
             stock_msg += f"   💰 籌碼: {td['Chip_Status']}\n"
             stock_msg += f"   🔮 預判: {predict_msg}\n"
-            stock_msg += f"   👉 指令: {alert}\n\n"
+            stock_msg += f"   👉 指令: {alert}\n"
+            if tips: stock_msg += f"   <i>{tips}</i>\n"  # 加入斜體提示
+            stock_msg += "\n"
+            
             msg_list.append(stock_msg)
 
     # === 完美復原的結尾機制 ===
     if has_data or len(msg_list) > 0:
         save_state(noc_state) 
-        final_text = f"📡 【NOC 終極戰情室 v7.9.1 (安全防護無敵版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 終極戰情室 v8.0 (戰略提示版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
             if os.path.exists(chart): 
