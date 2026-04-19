@@ -238,6 +238,14 @@ def get_strategy_tips(symbol, current_price, k_value, ma5, ma20):
         else:
             return "🦅【NOC 監控】矽力距支撐位尚有空間，耐心等待回測。"
     return ""
+    # --- 🌟 新增：聯電 (2303) 閃電二波策略 ---
+    if symbol == "2303.TW":
+        if current_price > ma5:
+            return f"🚀【NOC 訊號】聯電強勢站穩 5MA，目標挑戰前高 79.7！"
+        else:
+            return f"⚠️【NOC 警訊】聯電短線跌破 5MA，4天閃電戰動能轉弱，注意撤退。"
+
+    return ""
 
 # === 6. 核心分析引擎 ===
 def get_analysis_and_chart(symbol, name):
