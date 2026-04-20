@@ -1,7 +1,7 @@
 name: Daily Stock Reporter
 
 on:
-  schedule:
+  #schedule:
     # 台灣時間 09:43, 11:43, 13:43, 15:43 執行 (週一至週五)
     #- cron: '43 1 * * 1-5'
     #- cron: '43 4 * * 1-5'
