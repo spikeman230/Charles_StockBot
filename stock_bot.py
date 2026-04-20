@@ -132,7 +132,7 @@ def get_revenue_yoy(symbol):
             "start_date": (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d"), 
             "token": FINMIND_TOKEN
         }
-        r = requests.get(url, params=params, timeout=10)
+        r = requests.get(url, params=params, timeout=6)
         data = r.json()
         
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
@@ -179,7 +179,7 @@ def get_finmind_chip_data(symbol, start_date_str):
     }
     
     try:
-        r = requests.get(url, params=params, timeout=10)
+        r = requests.get(url, params=params, timeout=6)
         data = r.json()
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
             df = pd.DataFrame(data["data"])
