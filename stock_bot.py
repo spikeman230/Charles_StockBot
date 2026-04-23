@@ -217,14 +217,19 @@ def get_pe_ratio(symbol):
 # === 5. FinMind 籌碼分析 ===
 def get_finmind_chip_data(symbol, start_date_str):
     if not FINMIND_TOKEN: return pd.DataFrame()
-    fm_symbol = symbol.replace(".TW", "").replace(".TWO", "")
-    if not fm_symbol.isdigit(): return pd.DataFrame()
+    
+    # 🛡️ 升級版代號淨化器：無視任何後綴或中文，強制只抓連續數字
+    match = re.search(r'\d+', symbol)
+    if not match: 
+        return pd.DataFrame() # 如果完全沒有數字就放棄
+    fm_symbol = match.group()
         
     url = "https://api.finmindtrade.com/api/v4/data"
     params = {"dataset": "TaiwanStockInstitutionalInvestorsBuySell", "data_id": fm_symbol, "start_date": start_date_str, "token": FINMIND_TOKEN}
     
     try:
-        r = requests.get(url, params=params, timeout=5)
+        # 🎯 關鍵修改：將 timeout=5 延長為 timeout=15
+        r = requests.get(url, params=params, timeout=10)
         data = r.json()
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
             df = pd.DataFrame(data["data"])
