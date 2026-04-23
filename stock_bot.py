@@ -7,6 +7,7 @@ import numpy as np
 import csv
 import json
 import math
+import re
 import mplfinance as mpf
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -22,7 +23,12 @@ EMAIL_PASS = os.environ.get("EMAIL_PASS")
 EMAIL_TO = os.environ.get("EMAIL_TO")
 FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 
-# === 1.1 量化基金風控參數 (v8.2 靜默突擊版) ===
+# 🌟 新增：Trello 雲端控制台金鑰
+TRELLO_KEY = os.environ.get("TRELLO_KEY")
+TRELLO_TOKEN = os.environ.get("TRELLO_TOKEN")
+TRELLO_BOARD_ID = os.environ.get("TRELLO_BOARD_ID")
+
+# === 1.1 量化基金風控參數 (v8.3 靜默突擊版) ===
 TOTAL_CAPITAL = 1000000  # 預設總資金 100 萬台幣
 RISK_PER_TRADE = 0.02    # 單筆風險 2%
 ATR_MULTIPLIER = 2.0     # 2倍 ATR 動態停損
@@ -30,18 +36,88 @@ YOY_EXPLOSION_PCT = 50.0 # 業績大爆發閥值 (50%)
 PE_LIMIT = 40.0          # 本益比上限 (超過 40 倍視為過貴)
 SILENT_MODE = True       # 🌟 開啟靜默模式 (只發送有特殊訊號的股票，減少雜訊)
 
-# === 2. 專屬通訊錄 (外部觀察網域) ===
-STOCK_DICT = {
-    "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
-    "⚡ 閃電突擊 (短線動能區)": {"2612.TW": "中航 (4天週期，5MA防線)", "2303.TW" : "聯電 (二波衝鋒)"},
-    "🕸️ 陷阱佈署 (等待落底區)": {"9933.TW": "中鼎 (監控日線止跌訊號)"},
-    "🦅 長線復甦 (波段雷達區)": {"6415.TW": "矽力*-KY (20週線支撐對策)"},
-    "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "0050.TW": "元大台灣50","AAPL": "蘋果","NVDA": "輝達"},
-    "💾 記憶體族群 (美光連動網域)": { "2408.TW": "南亞科", "2382.TW": "廣達",  "2886.TW": "兆豐金"},
-    "🔍 YAHOO 觀察區": {"2027.TW": "大成鋼",  "2409.TW": "友達", "2352.TW": "佳世達","2317.TW": "鴻海", "6116.TW": "彩晶" }
-}
+# === 2. 🌟 Trello 雲端資料庫讀取引擎 ===
+def fetch_trello_deployment():
+    trello_dict = {}
+    my_portfolio = {}
+    
+    if not TRELLO_KEY or not TRELLO_TOKEN or not TRELLO_BOARD_ID:
+        print("⚠️ 未偵測到 Trello 金鑰，將啟用『機房預設』的靜態兵力部署。")
+        return None, None
 
-# --- 🚀 動態掛載：讀取兩大雷達的傳令兵名單 ---
+    print("🌐 正在連線 Trello 戰情看板，讀取最新部署...")
+    url = f"https://api.trello.com/1/boards/{TRELLO_BOARD_ID}/lists"
+    params = {"cards": "open", "key": TRELLO_KEY, "token": TRELLO_TOKEN}
+    
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            lists_data = response.json()
+            for lst in lists_data:
+                list_name = lst['name']
+                cards = lst.get('cards', [])
+                
+                # 特殊處理：實體庫存機櫃 (需解析成本與股數)
+                if list_name == "💼 庫存機櫃":
+                    for card in cards:
+                        parts = card['name'].split(" ", 1)
+                        symbol = parts[0].strip()
+                        name = parts[1].strip() if len(parts) > 1 else symbol
+                        desc = card.get('desc', '')
+                        
+                        buy_price = 0.0
+                        shares = 1000
+                        
+                        # 使用正規表達式解析 Trello 描述欄位 (支援全形/半形冒號)
+                        price_match = re.search(r"成本[：:]\s*([0-9.]+)", desc)
+                        shares_match = re.search(r"股數[：:]\s*([0-9]+)", desc)
+                        
+                        if price_match: buy_price = float(price_match.group(1))
+                        if shares_match: shares = int(shares_match.group(1))
+                        
+                        my_portfolio[symbol] = {"name": name, "buy_price": buy_price, "shares": shares}
+                # 一般處理：各戰區觀察名單
+                else:
+                    stock_list = {}
+                    for card in cards:
+                        parts = card['name'].split(" ", 1)
+                        symbol = parts[0].strip()
+                        name = parts[1].strip() if len(parts) > 1 else symbol
+                        stock_list[symbol] = name
+                    if stock_list:
+                        trello_dict[list_name] = stock_list
+            print("✅ 成功從 Trello 載入最新戰略部署！")
+        else:
+            print(f"⚠️ Trello API 錯誤: {response.text}")
+    except Exception as e:
+        print(f"⚠️ Trello 連線失敗: {e}")
+        
+    return trello_dict, my_portfolio
+
+# 取得 Trello 雲端兵力部署
+TRELLO_DICT, TRELLO_PORTFOLIO = fetch_trello_deployment()
+
+# === 2.1 兵力掛載邏輯 (Trello 優先，無則預設) ===
+if TRELLO_DICT and TRELLO_PORTFOLIO is not None:
+    STOCK_DICT = TRELLO_DICT
+    MY_PORTFOLIO = TRELLO_PORTFOLIO
+else:
+    # 預設觀察網域
+    STOCK_DICT = {
+        "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
+        "⚡ 閃電突擊 (短線動能區)": {"2612.TW": "中航", "6415.TW" : "矽力-KY", "2303.TW" : "聯電"},
+        "🕸️ 陷阱佈署 (等待落底區)": {"9933.TW": "中鼎 (監控日線止跌訊號)"},
+        "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "0050.TW": "元大台灣50","AAPL": "蘋果","NVDA": "輝達"},
+    }
+    # 預設真實庫存
+    MY_PORTFOLIO = {
+        "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
+        "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000},
+        "6116.TW": {"name": "彩晶", "buy_price": 8.4, "shares": 1000},
+        "1326.TW": {"name": "台化", "buy_price": 50.5, "shares": 1000 } 
+    }
+
+# --- 🚀 動態掛載：讀取兩大雷達的傳令兵名單 (海陸雙拼) ---
 RADAR_FILE = "radar_targets.json"
 if os.path.exists(RADAR_FILE):
     try:
@@ -61,15 +137,6 @@ if os.path.exists(LIGHTNING_FILE):
                 STOCK_DICT["⚡ 雷達鎖定 (短線飆股區)"] = lightning_stocks
     except Exception as e:
         print(f"⚠️ 閃電突擊名單讀取失敗: {e}")
-        
-# === 2.1 真實持股庫存 (實體機房配置) ===
-MY_PORTFOLIO = {
-    "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
-    "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000},
-    "6116.TW": {"name": "彩晶", "buy_price": 8.4, "shares": 1000},
-    "2612.TW": {"name": "中航", "buy_price": 58.7, "shares": 1000},
-    "1326.TW": {"name": "台化", "buy_price": 50.5, "shares": 1000 } 
-}
 
 # === 3. 實體狀態記憶庫與日誌 (Stateful Database) ===
 STATE_FILE = "noc_state.json"
@@ -90,17 +157,15 @@ def save_state(state_data):
     except Exception as e:
         print(f"⚠️ 寫入記憶體失敗: {e}")
 
-# 🌟 修正 Bug：嚴格對齊 CSV 寫入順序，確保分析正確
+# 嚴格對齊 CSV 寫入順序，確保分析正確
 def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, predict, chip_signal, alert):
     log_filename = "noc_trading_log.csv"
     file_exists = os.path.exists(log_filename)
     try:
         with open(log_filename, mode='a', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
-            # 欄位標題：共 10 欄
             if not file_exists:
                 writer.writerow(["日期", "代號", "名稱", "收盤價", "RSI", "量能狀態", "趨勢狀態", "戰場預判", "籌碼訊號", "行動指令"])
-            # 資料寫入：嚴格對應上述 10 欄順序
             writer.writerow([date, symbol, name, f"{close_price:.2f}", f"{rsi:.2f}", vol_status, status, predict, chip_signal, alert])
     except Exception as e:
         print(f"⚠️ 日誌寫入失敗: {e}")
@@ -119,24 +184,14 @@ def get_market_regime():
         return True, "🟡 大盤狀態未知"
 
 def get_revenue_yoy(symbol):
-    if not FINMIND_TOKEN: 
-        return "N/A"
+    if not FINMIND_TOKEN: return "N/A"
     fm_symbol = symbol.replace(".TW", "").replace(".TWO", "")
-    if not fm_symbol.isdigit(): 
-        return "N/A"
-    
+    if not fm_symbol.isdigit(): return "N/A"
     try:
         url = "https://api.finmindtrade.com/api/v4/data"
-        params = {
-            "dataset": "TaiwanStockMonthRevenue", 
-            "data_id": fm_symbol, 
-            "start_date": (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d"), 
-            "token": FINMIND_TOKEN
-        }
-        # 🌟 效能升級：將 Timeout 改為 5 秒，取得速度與穩定的最佳平衡
+        params = {"dataset": "TaiwanStockMonthRevenue", "data_id": fm_symbol, "start_date": (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d"), "token": FINMIND_TOKEN}
         r = requests.get(url, params=params, timeout=5)
         data = r.json()
-        
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
             df = pd.DataFrame(data["data"])
             if 'revenue' in df.columns and 'revenue_month' in df.columns and 'revenue_year' in df.columns:
@@ -144,17 +199,12 @@ def get_revenue_yoy(symbol):
                 latest_rev = latest_record['revenue']
                 target_month = latest_record['revenue_month']
                 target_year_last = latest_record['revenue_year'] - 1
-                
                 last_year_record = df[(df['revenue_year'] == target_year_last) & (df['revenue_month'] == target_month)]
-                
                 if not last_year_record.empty:
                     last_year_rev = last_year_record.iloc[-1]['revenue']
-                    if last_year_rev > 0:
-                        yoy = ((latest_rev - last_year_rev) / last_year_rev) * 100
-                        return float(yoy)
+                    if last_year_rev > 0: return float(((latest_rev - last_year_rev) / last_year_rev) * 100)
     except Exception as e: 
         print(f"⚠️ [{symbol}] 營收處理錯誤: {e}")
-        
     return "N/A"
 
 def get_pe_ratio(symbol):
@@ -166,22 +216,14 @@ def get_pe_ratio(symbol):
 
 # === 5. FinMind 籌碼分析 ===
 def get_finmind_chip_data(symbol, start_date_str):
-    if not FINMIND_TOKEN: 
-        return pd.DataFrame()
+    if not FINMIND_TOKEN: return pd.DataFrame()
     fm_symbol = symbol.replace(".TW", "").replace(".TWO", "")
-    if not fm_symbol.isdigit(): 
-        return pd.DataFrame()
+    if not fm_symbol.isdigit(): return pd.DataFrame()
         
     url = "https://api.finmindtrade.com/api/v4/data"
-    params = {
-        "dataset": "TaiwanStockInstitutionalInvestorsBuySell", 
-        "data_id": fm_symbol, 
-        "start_date": start_date_str, 
-        "token": FINMIND_TOKEN
-    }
+    params = {"dataset": "TaiwanStockInstitutionalInvestorsBuySell", "data_id": fm_symbol, "start_date": start_date_str, "token": FINMIND_TOKEN}
     
     try:
-        # 🌟 效能升級：將 Timeout 改為 5 秒
         r = requests.get(url, params=params, timeout=5)
         data = r.json()
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
@@ -194,14 +236,12 @@ def get_finmind_chip_data(symbol, start_date_str):
             
             pivot_df = df.groupby(['date', 'type'])['net_buy'].sum().unstack(fill_value=0).reset_index()
             for col in ['Foreign_Inv', 'Trust_Inv', 'Dealer_Inv']:
-                if col not in pivot_df.columns: 
-                    pivot_df[col] = 0
+                if col not in pivot_df.columns: pivot_df[col] = 0
             pivot_df['Date'] = pd.to_datetime(pivot_df['date']).dt.date
             pivot_df.set_index('Date', inplace=True)
             return pivot_df[['Foreign_Inv', 'Trust_Inv', 'Dealer_Inv']]
     except Exception as e: 
         print(f"⚠️ [{symbol}] 籌碼讀取錯誤: {e}")
-        
     return pd.DataFrame()
 
 def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
@@ -223,29 +263,19 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
         ]
         choices = ["🤝 土洋齊買", "🏦 投信作帳(連買)", "📈 法人偏多"]
         hist['Chip_Status'] = np.select(conditions, choices, default="➖ 中性/偏空")
-        
     return hist
 
 # === 5.5 特種戰略分析引擎 (AI 提示模組) ===
 def get_strategy_tips(symbol, current_price, k_value, ma5, ma20):
     if symbol == "9933.TW":
-        if current_price > ma5 and k_value < 30:
-            return "🔥【NOC 訊號】中鼎疑似止跌！符合第一梯隊進場條件(30%)"
-        else:
-            return "⏳【NOC 監控】中鼎尚未止跌，請繼續等待 K<20 且站上 5MA。"
-            
+        if current_price > ma5 and k_value < 30: return "🔥【NOC 訊號】中鼎疑似止跌！符合第一梯隊進場條件(30%)"
+        else: return "⏳【NOC 監控】中鼎尚未止跌，請繼續等待 K<20 且站上 5MA。"
     if symbol == "6415.TW":
-        if current_price <= 260 and current_price >= 240:
-            return "💎【NOC 訊號】矽力進入支撐區，適合長線波段建倉(破230停損)。"
-        else:
-            return "🦅【NOC 監控】矽力距支撐位尚有空間，耐心等待回測。"
-
+        if current_price <= 260 and current_price >= 240: return "💎【NOC 訊號】矽力進入支撐區，適合長線波段建倉(破230停損)。"
+        else: return "🦅【NOC 監控】矽力距支撐位尚有空間，耐心等待回測。"
     if symbol == "2303.TW":
-        if current_price > ma5:
-            return f"🚀【NOC 訊號】聯電強勢站穩 5MA，動能強勁，目標挑戰前高 79.7！"
-        else:
-            return f"⚠️【NOC 警訊】聯電短線跌破 5MA，4天閃電戰動能轉弱，注意撤退防守。"
-
+        if current_price > ma5: return f"🚀【NOC 訊號】聯電強勢站穩 5MA，動能強勁，目標挑戰前高 79.7！"
+        else: return f"⚠️【NOC 警訊】聯電短線跌破 5MA，4天閃電戰動能轉弱，注意撤退防守。"
     return ""
 
 # === 6. 核心分析引擎 ===
@@ -254,9 +284,7 @@ def get_analysis_and_chart(symbol, name):
         stock = yf.Ticker(symbol)
         hist = stock.history(period="8mo")
         hist = hist.dropna(subset=['Close'])
-        
-        if len(hist) < 40: 
-            return None
+        if len(hist) < 40: return None
             
         hist['Date_Key'] = hist.index.date
         
@@ -273,7 +301,6 @@ def get_analysis_and_chart(symbol, name):
         hist['20MA'] = hist['Close'].rolling(window=20).mean()
         hist['5VMA'] = hist['Volume'].rolling(window=5).mean()
 
-        # KD 計算 (9,3,3)
         low_9 = hist['Low'].rolling(window=9).min()
         high_9 = hist['High'].rolling(window=9).max()
         rsv = ((hist['Close'] - low_9) / (high_9 - low_9)) * 100
@@ -327,12 +354,11 @@ def get_analysis_and_chart(symbol, name):
             mpf.plot(hist[-60:], type='candle', style='yahoo', volume=True, mav=(5, 20), title=f"Stock: {symbol}", savefig=chart_file)
             
         return hist, chart_file
-        
     except Exception as e: 
         print(f"[{symbol}] 核心分析發生錯誤: {e}")
         return None
 
-# === 7. 發送模組 (Telegram 自動分段防阻擋版) ===
+# === 7. 發送模組 ===
 def send_reports(subject, text_body, chart_files):
     if TG_TOKEN and TG_CHAT_ID:
         try:
@@ -344,10 +370,8 @@ def send_reports(subject, text_body, chart_files):
                     json={"chat_id": TG_CHAT_ID, "text": part, "disable_web_page_preview": True},
                     timeout=10
                 )
-                if resp.status_code != 200:
-                    print(f"⚠️ Telegram API 拒絕發送: {resp.text}")
-        except Exception as e:
-            print(f"❌ Telegram 發送失敗: {e}")
+                if resp.status_code != 200: print(f"⚠️ Telegram API 拒絕發送: {resp.text}")
+        except Exception as e: print(f"❌ Telegram 發送失敗: {e}")
     
     if EMAIL_USER and EMAIL_PASS and EMAIL_TO:
         try:
@@ -359,8 +383,7 @@ def send_reports(subject, text_body, chart_files):
             
             for chart in chart_files:
                 if os.path.exists(chart):
-                    with open(chart, 'rb') as f: 
-                        msg.attach(MIMEImage(f.read(), name=os.path.basename(chart)))
+                    with open(chart, 'rb') as f: msg.attach(MIMEImage(f.read(), name=os.path.basename(chart)))
             
             log_file = "noc_trading_log.csv"
             if os.path.exists(log_file):
@@ -373,8 +396,7 @@ def send_reports(subject, text_body, chart_files):
                 server.login(EMAIL_USER, EMAIL_PASS)
                 server.send_message(msg)
             print("✅ 戰報發送成功！")
-        except Exception as e: 
-            print(f"❌ Email 發送失敗: {e}")
+        except Exception as e: print(f"❌ Email 發送失敗: {e}")
 
 # === 8. 主程式執行 ===
 if __name__ == "__main__":
@@ -385,19 +407,18 @@ if __name__ == "__main__":
     generated_charts = []
     has_data = False
     
-    print(f"[{curr_time}] NOC 終極融合版 (v8.2 靜默突擊版) 啟動...")
+    print(f"[{curr_time}] NOC 終極融合版 (v8.3 Trello 雲端控制版) 啟動...")
     
     is_bull_market, market_msg = get_market_regime()
     noc_state = load_state()
     msg_list.append(f"🌐 【大盤風向】: {market_msg}\n")
 
-    # === 處理真實持股 (不受靜默模式限制，永遠發報) ===
+    # === 處理真實持股 (永遠發報) ===
     if MY_PORTFOLIO:
         msg_list.append("━━━━━━━━━━━━━━\n💼 【庫存機櫃 (真實持股動態防禦)】\n━━━━━━━━━━━━━━\n")
         for sym, data in MY_PORTFOLIO.items():
             res = get_analysis_and_chart(sym, data['name'])
-            if not res: 
-                continue
+            if not res: continue
                 
             hist, chart_file = res
             td = hist.iloc[-1]
@@ -413,40 +434,29 @@ if __name__ == "__main__":
             sym_state = noc_state.get(sym, {"status": "NONE"})
             
             if sym_state["status"] != "REAL_HOLD":
-                noc_state[sym] = {
-                    "status": "REAL_HOLD", 
-                    "entry": buy_price, 
-                    "trailing_stop": curr_price - stop_distance
-                }
+                noc_state[sym] = {"status": "REAL_HOLD", "entry": buy_price, "trailing_stop": curr_price - stop_distance}
                 sym_state = noc_state[sym]
                 
             final_stop = max(sym_state["trailing_stop"], curr_price - stop_distance)
             
-            if curr_price < final_stop: 
-                pnl_alert = f"🩸【拔線警戒】跌破動態防守線 {final_stop:.1f}，請嚴格執行離場！"
+            if curr_price < final_stop: pnl_alert = f"🩸【拔線警戒】跌破動態防守線 {final_stop:.1f}，請嚴格執行離場！"
             else:
                 noc_state[sym]["trailing_stop"] = final_stop 
-                if roi_pct > 0: 
-                    pnl_alert = f"🔥 獲利巡航中 | 📍 動態防線墊高至: {final_stop:.1f}"
-                else: 
-                    pnl_alert = f"🟡 暫時浮虧中 | 📍 死守底線: {final_stop:.1f}"
+                if roi_pct > 0: pnl_alert = f"🔥 獲利巡航中 | 📍 動態防線墊高至: {final_stop:.1f}"
+                else: pnl_alert = f"🟡 暫時浮虧中 | 📍 死守底線: {final_stop:.1f}"
                     
-            portfolio_msg = f"🔸 {data['name']} ({sym})\n"
-            portfolio_msg += f"   成本: {buy_price:.2f} | 現價: {curr_price:.2f}\n"
+            portfolio_msg = f"🔸 {data['name']} ({sym})\n   成本: {buy_price:.2f} | 股數: {data['shares']} | 現價: {curr_price:.2f}\n"
             portfolio_msg += f"   損益: {roi_pct:+.2f}% | 👉 {pnl_alert}\n\n"
             msg_list.append(portfolio_msg)
 
     # === 處理觀察網域 ===
     for cat, stocks in STOCK_DICT.items():
-        if not stocks: 
-            continue 
-            
+        if not stocks: continue 
         cat_printed = False 
         
         for sym, name in stocks.items():
             res = get_analysis_and_chart(sym, name)
-            if not res: 
-                continue
+            if not res: continue
                 
             hist, chart_file = res
             td = hist.iloc[-1]
@@ -468,36 +478,25 @@ if __name__ == "__main__":
             yoy = get_revenue_yoy(sym)
             yoy_label = f"{yoy:.2f}%" if isinstance(yoy, float) else yoy
             is_yoy_explosion = isinstance(yoy, float) and yoy >= YOY_EXPLOSION_PCT
-            if is_yoy_explosion: 
-                yoy_label += " (🌟 業績大爆發)"
+            if is_yoy_explosion: yoy_label += " (🌟 業績大爆發)"
 
             kd_str = f"K:{k:.1f} D:{d:.1f}"
-            if k < 30 and k > d and hist['K'].iloc[-2] <= hist['D'].iloc[-2]: 
-                kd_str += " (🌟 KD金叉)"
-            elif k > 80: 
-                kd_str += " (⚠️ 短線過熱)"
+            if k < 30 and k > d and hist['K'].iloc[-2] <= hist['D'].iloc[-2]: kd_str += " (🌟 KD金叉)"
+            elif k > 80: kd_str += " (⚠️ 短線過熱)"
 
             pe_str = f"{pe:.1f}" if isinstance(pe, float) else pe
             is_overvalued = isinstance(pe, float) and pe > PE_LIMIT
 
             predict_msg = "無特殊徵兆"
-            # 🌟 參數優化：調降動能竭盡的觸發門檻 (成交量>2倍且RSI>70)
-            if td['Volume'] > vma5 * 2 and rsi > 70: 
-                predict_msg = "💀【動能竭盡】高檔爆量轉折！"
-            elif td['Shadow_Ratio'] > 0.5 and td['Volume'] > vma5 * 1.5: 
-                predict_msg = "⚠️【避雷針陷阱】高檔長上影線！"
-            elif close > td['20_High'] and td['Volume'] > vma5 * 1.2: 
-                predict_msg = "🚀【無壓巡航】突破 20 日高！"
-            elif td['BB_Width'] < 0.08: 
-                predict_msg = "⚠️【大變盤預警】通道極度壓縮！"
+            if td['Volume'] > vma5 * 2 and rsi > 70: predict_msg = "💀【動能竭盡】高檔爆量轉折！"
+            elif td['Shadow_Ratio'] > 0.5 and td['Volume'] > vma5 * 1.5: predict_msg = "⚠️【避雷針陷阱】高檔長上影線！"
+            elif close > td['20_High'] and td['Volume'] > vma5 * 1.2: predict_msg = "🚀【無壓巡航】突破 20 日高！"
+            elif td['BB_Width'] < 0.08: predict_msg = "⚠️【大變盤預警】通道極度壓縮！"
             
             safe_stop_distance = stop_distance if not pd.isna(stop_distance) and stop_distance > 0 else 999999
             safe_close = close if not pd.isna(close) and close > 0 else 1.0
             
-            suggested_shares = min(
-                math.floor((TOTAL_CAPITAL * RISK_PER_TRADE) / safe_stop_distance), 
-                math.floor(TOTAL_CAPITAL / safe_close)
-            )
+            suggested_shares = min(math.floor((TOTAL_CAPITAL * RISK_PER_TRADE) / safe_stop_distance), math.floor(TOTAL_CAPITAL / safe_close))
             
             sym_state = noc_state.get(sym, {"status": "NONE"})
             alert = "✅ 持股觀望"
@@ -506,12 +505,9 @@ if __name__ == "__main__":
                 alert = f"💼 已列入持股防禦區 | 📍 防線: {sym_state['trailing_stop']:.1f}"
             elif sym_state["status"] == "NONE":
                 if td['Sniper_Signal']: 
-                    if not is_bull_market: 
-                        alert = "🛡️【大盤攔截】大盤偏空，放棄狙擊。"
-                    elif isinstance(yoy, float) and yoy < 0: 
-                        alert = f"🛡️【基本面攔截】營收衰退，避開地雷。"
-                    elif is_overvalued: 
-                        alert = f"🛡️【估值攔截】PE {pe_str} 過高，風險極大。"
+                    if not is_bull_market: alert = "🛡️【大盤攔截】大盤偏空，放棄狙擊。"
+                    elif isinstance(yoy, float) and yoy < 0: alert = f"🛡️【基本面攔截】營收衰退，避開地雷。"
+                    elif is_overvalued: alert = f"🛡️【估值攔截】PE {pe_str} 過高，風險極大。"
                     else:
                         stop_price = close - stop_distance
                         noc_state[sym] = {"status": "HOLD", "entry": close, "trailing_stop": stop_price}
@@ -528,12 +524,9 @@ if __name__ == "__main__":
                     noc_state[sym]["trailing_stop"] = new_stop
                     alert = f"🔥【波段抱牢】損益: {((close - sym_state['entry']) / sym_state['entry']) * 100:+.2f}% | 防守線: {new_stop:.1f}"
 
-            # 🌟 修復 Bug：確保寫入 CSV 的欄位順序 100% 精準對齊標題
             write_noc_log(curr_date, sym, name, close, rsi, vol_status, trend_status, predict_msg, td['Chip_Status'], alert)
-            
             tips = get_strategy_tips(symbol=sym, current_price=close, k_value=k, ma5=ma5, ma20=ma20)
             
-            # 🌟 加入靜默模式過濾器 (Silent Mode Logic)
             is_notable_signal = False
             if alert != "✅ 持股觀望": is_notable_signal = True
             if predict_msg != "無特殊徵兆": is_notable_signal = True
@@ -545,8 +538,7 @@ if __name__ == "__main__":
                     msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
                     cat_printed = True
                 
-                if chart_file not in generated_charts: 
-                    generated_charts.append(chart_file)
+                if chart_file not in generated_charts: generated_charts.append(chart_file)
                     
                 stock_msg = f"🔸 {name} ({sym})\n"
                 stock_msg += f"   現價: {close:.2f} | PE: {pe_str} | 營收YoY: {yoy_label}\n"
@@ -559,20 +551,16 @@ if __name__ == "__main__":
                 stock_msg += "\n"
                 msg_list.append(stock_msg)
             else:
-                # 靜默過濾掉的股票只紀錄進 CSV，不發送 Telegram (節省版面並刪除不需要的圖片)
-                if os.path.exists(chart_file):
-                    os.remove(chart_file)
+                if os.path.exists(chart_file): os.remove(chart_file)
 
     if has_data or len(msg_list) > 0:
         save_state(noc_state) 
-        # 如果靜默過濾後只剩下大盤訊息，加一行提示
         if len(msg_list) == 1 and "大盤風向" in msg_list[0]:
             msg_list.append("\n🔕 【靜默模式】目前觀察網域無特殊狙擊訊號或危機，已省略一般觀望標的，詳細數據請參閱 CSV 日誌。")
             
-        final_text = f"📡 【NOC 終極戰情室 v8.2 (靜默突擊版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 終極戰情室 v8.3 (Trello 雲端控制版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
-            if os.path.exists(chart): 
-                os.remove(chart)
+            if os.path.exists(chart): os.remove(chart)
     else:
         print("休市或資料讀取失敗，伺服器待命。")
