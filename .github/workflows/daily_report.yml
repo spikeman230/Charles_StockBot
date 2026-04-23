@@ -37,6 +37,9 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           # 👇 確保機器人拿得到 FinMind 鑰匙來查營收與籌碼
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+          TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
+          TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
+          TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID }}
         run: python stock_bot.py
 
       - name: 💾 自動備份戰情日誌與狀態記憶
