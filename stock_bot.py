@@ -24,9 +24,9 @@ EMAIL_TO = os.environ.get("EMAIL_TO")
 FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 
 # 🌟 新增：Trello 雲端控制台金鑰
-TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
-TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
-TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID }}
+TRELLO_KEY = os.getenv('TRELLO_KEY')
+TRELLO_TOKEN = os.getenv('TRELLO_TOKEN')
+TRELLO_BOARD_ID = os.getenv('TRELLO_BOARD_ID')
 
 # === 1.1 量化基金風控參數 (v8.3 靜默突擊版) ===
 TOTAL_CAPITAL = 1000000  # 預設總資金 100 萬台幣
