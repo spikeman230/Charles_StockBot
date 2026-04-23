@@ -185,13 +185,26 @@ def get_market_regime():
 
 def get_revenue_yoy(symbol):
     if not FINMIND_TOKEN: return "N/A"
-    fm_symbol = symbol.replace(".TW", "").replace(".TWO", "")
-    if not fm_symbol.isdigit(): return "N/A"
+    
+    # 🛡️ 升級版代號淨化器：無視後綴與中文，強制萃取純數字代號
+    match = re.search(r'\d+', symbol)
+    if not match: 
+        return "N/A"
+    fm_symbol = match.group()
+    
     try:
         url = "https://api.finmindtrade.com/api/v4/data"
-        params = {"dataset": "TaiwanStockMonthRevenue", "data_id": fm_symbol, "start_date": (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d"), "token": FINMIND_TOKEN}
-        r = requests.get(url, params=params, timeout=5)
+        params = {
+            "dataset": "TaiwanStockMonthRevenue", 
+            "data_id": fm_symbol, 
+            "start_date": (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d"), 
+            "token": FINMIND_TOKEN
+        }
+        
+        # 🎯 關鍵防護：連線耐心值延長至 10 秒
+        r = requests.get(url, params=params, timeout=10)
         data = r.json()
+        
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
             df = pd.DataFrame(data["data"])
             if 'revenue' in df.columns and 'revenue_month' in df.columns and 'revenue_year' in df.columns:
@@ -199,12 +212,16 @@ def get_revenue_yoy(symbol):
                 latest_rev = latest_record['revenue']
                 target_month = latest_record['revenue_month']
                 target_year_last = latest_record['revenue_year'] - 1
+                
                 last_year_record = df[(df['revenue_year'] == target_year_last) & (df['revenue_month'] == target_month)]
                 if not last_year_record.empty:
                     last_year_rev = last_year_record.iloc[-1]['revenue']
-                    if last_year_rev > 0: return float(((latest_rev - last_year_rev) / last_year_rev) * 100)
+                    if last_year_rev > 0: 
+                        return float(((latest_rev - last_year_rev) / last_year_rev) * 100)
+                        
     except Exception as e: 
         print(f"⚠️ [{symbol}] 營收處理錯誤: {e}")
+        
     return "N/A"
 
 def get_pe_ratio(symbol):
@@ -228,7 +245,7 @@ def get_finmind_chip_data(symbol, start_date_str):
     params = {"dataset": "TaiwanStockInstitutionalInvestorsBuySell", "data_id": fm_symbol, "start_date": start_date_str, "token": FINMIND_TOKEN}
     
     try:
-        # 🎯 關鍵修改：將 timeout=5 延長為 timeout=15
+        # 🎯 關鍵修改：將 timeout=5 延長為 timeout=10
         r = requests.get(url, params=params, timeout=10)
         data = r.json()
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
