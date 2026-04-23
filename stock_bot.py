@@ -22,27 +22,26 @@ EMAIL_PASS = os.environ.get("EMAIL_PASS")
 EMAIL_TO = os.environ.get("EMAIL_TO")
 FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN")
 
-# === 1.1 量化基金風控參數 (v8.1 聯電特化版) ===
+# === 1.1 量化基金風控參數 (v8.2 靜默突擊版) ===
 TOTAL_CAPITAL = 1000000  # 預設總資金 100 萬台幣
 RISK_PER_TRADE = 0.02    # 單筆風險 2%
 ATR_MULTIPLIER = 2.0     # 2倍 ATR 動態停損
 YOY_EXPLOSION_PCT = 50.0 # 業績大爆發閥值 (50%)
 PE_LIMIT = 40.0          # 本益比上限 (超過 40 倍視為過貴)
+SILENT_MODE = True       # 🌟 開啟靜默模式 (只發送有特殊訊號的股票，減少雜訊)
 
 # === 2. 專屬通訊錄 (外部觀察網域) ===
 STOCK_DICT = {
     "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
-    "⚡ 閃電突擊 (短線動能區)": {"2303.TW" : "聯電 (二波衝鋒)"},
+    "⚡ 閃電突擊 (短線動能區)": {"2612.TW": "中航 (4天週期，5MA防線)", "6415.TW" : "矽力-KY", "2303.TW" : "聯電 (二波衝鋒)"},
     "🕸️ 陷阱佈署 (等待落底區)": {"9933.TW": "中鼎 (監控日線止跌訊號)"},
-    "🦅 長線復甦 (波段雷達區)": {"6415.TW": "矽力*-KY (20週線支撐對策)", "6269.TW" : "台郡"},
+    "🦅 長線復甦 (波段雷達區)": {"6415.TW": "矽力*-KY (20週線支撐對策)"},
     "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "0050.TW": "元大台灣50","AAPL": "蘋果","NVDA": "輝達"},
     "💾 記憶體族群 (美光連動網域)": { "2408.TW": "南亞科", "2382.TW": "廣達",  "2886.TW": "兆豐金"},
-    "🔍 YAHOO 觀察區": {"2027.TW": "大成鋼",  "2409.TW": "友達", "2352.TW": "佳世達","2317.TW": "鴻海", "6116.TW": "彩晶" },
-    "真實持股 追蹤區" : {"8431.TWO":"匯鑽科","3231.TW":"緯創" }
+    "🔍 YAHOO 觀察區": {"2027.TW": "大成鋼",  "2409.TW": "友達", "2352.TW": "佳世達","2317.TW": "鴻海", "6116.TW": "彩晶" }
 }
 
 # --- 🚀 動態掛載：讀取兩大雷達的傳令兵名單 ---
-# 讀取游擊隊雷達 (波段)
 RADAR_FILE = "radar_targets.json"
 if os.path.exists(RADAR_FILE):
     try:
@@ -53,7 +52,6 @@ if os.path.exists(RADAR_FILE):
     except Exception as e:
         print(f"⚠️ 游擊隊雷達名單讀取失敗: {e}")
 
-# 讀取閃電突擊雷達 (短線)
 LIGHTNING_FILE = "lightning_targets.json"
 if os.path.exists(LIGHTNING_FILE):
     try:
@@ -69,7 +67,8 @@ MY_PORTFOLIO = {
     "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
     "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000},
     "6116.TW": {"name": "彩晶", "buy_price": 8.4, "shares": 1000},
-    "1326.TW"   : {"name": "台化", "buy_price": 50.5, "shares": 1000 } 
+    "2612.TW": {"name": "中航", "buy_price": 58.7, "shares": 1000},
+    "1326.TW": {"name": "台化", "buy_price": 50.5, "shares": 1000 } 
 }
 
 # === 3. 實體狀態記憶庫與日誌 (Stateful Database) ===
@@ -91,14 +90,17 @@ def save_state(state_data):
     except Exception as e:
         print(f"⚠️ 寫入記憶體失敗: {e}")
 
-def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, alert, predict, chip_signal):
+# 🌟 修正 Bug：嚴格對齊 CSV 寫入順序，確保分析正確
+def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, predict, chip_signal, alert):
     log_filename = "noc_trading_log.csv"
     file_exists = os.path.exists(log_filename)
     try:
         with open(log_filename, mode='a', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
+            # 欄位標題：共 10 欄
             if not file_exists:
                 writer.writerow(["日期", "代號", "名稱", "收盤價", "RSI", "量能狀態", "趨勢狀態", "戰場預判", "籌碼訊號", "行動指令"])
+            # 資料寫入：嚴格對應上述 10 欄順序
             writer.writerow([date, symbol, name, f"{close_price:.2f}", f"{rsi:.2f}", vol_status, status, predict, chip_signal, alert])
     except Exception as e:
         print(f"⚠️ 日誌寫入失敗: {e}")
@@ -131,7 +133,8 @@ def get_revenue_yoy(symbol):
             "start_date": (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d"), 
             "token": FINMIND_TOKEN
         }
-        r = requests.get(url, params=params, timeout=6)
+        # 🌟 效能升級：將 Timeout 改為 5 秒，取得速度與穩定的最佳平衡
+        r = requests.get(url, params=params, timeout=5)
         data = r.json()
         
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
@@ -178,7 +181,8 @@ def get_finmind_chip_data(symbol, start_date_str):
     }
     
     try:
-        r = requests.get(url, params=params, timeout=6)
+        # 🌟 效能升級：將 Timeout 改為 5 秒
+        r = requests.get(url, params=params, timeout=5)
         data = r.json()
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
             df = pd.DataFrame(data["data"])
@@ -224,21 +228,18 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
 
 # === 5.5 特種戰略分析引擎 (AI 提示模組) ===
 def get_strategy_tips(symbol, current_price, k_value, ma5, ma20):
-    # --- 中鼎 (9933) 策略 ---
     if symbol == "9933.TW":
         if current_price > ma5 and k_value < 30:
             return "🔥【NOC 訊號】中鼎疑似止跌！符合第一梯隊進場條件(30%)"
         else:
             return "⏳【NOC 監控】中鼎尚未止跌，請繼續等待 K<20 且站上 5MA。"
             
-    # --- 矽力 (6415) 策略 ---
     if symbol == "6415.TW":
         if current_price <= 260 and current_price >= 240:
             return "💎【NOC 訊號】矽力進入支撐區，適合長線波段建倉(破230停損)。"
         else:
             return "🦅【NOC 監控】矽力距支撐位尚有空間，耐心等待回測。"
 
-    # --- 🌟 新增：聯電 (2303) 閃電二波策略 ---
     if symbol == "2303.TW":
         if current_price > ma5:
             return f"🚀【NOC 訊號】聯電強勢站穩 5MA，動能強勁，目標挑戰前高 79.7！"
@@ -252,8 +253,6 @@ def get_analysis_and_chart(symbol, name):
     try:
         stock = yf.Ticker(symbol)
         hist = stock.history(period="8mo")
-        
-        # 🛡️ 核心防護罩：把收盤價是 NaN 的髒行數全部砍掉！
         hist = hist.dropna(subset=['Close'])
         
         if len(hist) < 40: 
@@ -386,13 +385,13 @@ if __name__ == "__main__":
     generated_charts = []
     has_data = False
     
-    print(f"[{curr_time}] NOC 終極融合版 (v8.1 聯電特化版) 啟動...")
+    print(f"[{curr_time}] NOC 終極融合版 (v8.2 靜默突擊版) 啟動...")
     
     is_bull_market, market_msg = get_market_regime()
     noc_state = load_state()
     msg_list.append(f"🌐 【大盤風向】: {market_msg}\n")
 
-    # === 處理真實持股 ===
+    # === 處理真實持股 (不受靜默模式限制，永遠發報) ===
     if MY_PORTFOLIO:
         msg_list.append("━━━━━━━━━━━━━━\n💼 【庫存機櫃 (真實持股動態防禦)】\n━━━━━━━━━━━━━━\n")
         for sym, data in MY_PORTFOLIO.items():
@@ -452,13 +451,6 @@ if __name__ == "__main__":
             hist, chart_file = res
             td = hist.iloc[-1]
             has_data = True
-            
-            if chart_file not in generated_charts: 
-                generated_charts.append(chart_file)
-                
-            if not cat_printed: 
-                msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
-                cat_printed = True
                 
             close = td['Close']
             atr = td['ATR']
@@ -473,27 +465,25 @@ if __name__ == "__main__":
             vol_status = "📈 出量" if td['Volume'] > vma5 * 1.2 else "📉 量縮" if td['Volume'] < vma5 * 0.8 else "➖ 量平"
             trend_status = "🔥 多頭" if close > td['5MA'] > td['20MA'] else "🧊 空頭" if close < td['5MA'] < td['20MA'] else "🔄 盤整"
             
-            # 業績爆發判定
             yoy = get_revenue_yoy(sym)
             yoy_label = f"{yoy:.2f}%" if isinstance(yoy, float) else yoy
             is_yoy_explosion = isinstance(yoy, float) and yoy >= YOY_EXPLOSION_PCT
             if is_yoy_explosion: 
                 yoy_label += " (🌟 業績大爆發)"
 
-            # KD 視覺化標籤
             kd_str = f"K:{k:.1f} D:{d:.1f}"
             if k < 30 and k > d and hist['K'].iloc[-2] <= hist['D'].iloc[-2]: 
                 kd_str += " (🌟 KD金叉)"
             elif k > 80: 
                 kd_str += " (⚠️ 短線過熱)"
 
-            # PE 本益比視覺化標籤
             pe_str = f"{pe:.1f}" if isinstance(pe, float) else pe
             is_overvalued = isinstance(pe, float) and pe > PE_LIMIT
 
             predict_msg = "無特殊徵兆"
-            if td['Volume'] > vma5 * 3 and rsi > 75: 
-                predict_msg = "💀【動能竭盡】異常爆量！"
+            # 🌟 參數優化：調降動能竭盡的觸發門檻 (成交量>2倍且RSI>70)
+            if td['Volume'] > vma5 * 2 and rsi > 70: 
+                predict_msg = "💀【動能竭盡】高檔爆量轉折！"
             elif td['Shadow_Ratio'] > 0.5 and td['Volume'] > vma5 * 1.5: 
                 predict_msg = "⚠️【避雷針陷阱】高檔長上影線！"
             elif close > td['20_High'] and td['Volume'] > vma5 * 1.2: 
@@ -501,7 +491,6 @@ if __name__ == "__main__":
             elif td['BB_Width'] < 0.08: 
                 predict_msg = "⚠️【大變盤預警】通道極度壓縮！"
             
-            # 🛡️ 雙劍合璧與狀態機邏輯
             safe_stop_distance = stop_distance if not pd.isna(stop_distance) and stop_distance > 0 else 999999
             safe_close = close if not pd.isna(close) and close > 0 else 1.0
             
@@ -539,27 +528,48 @@ if __name__ == "__main__":
                     noc_state[sym]["trailing_stop"] = new_stop
                     alert = f"🔥【波段抱牢】損益: {((close - sym_state['entry']) / sym_state['entry']) * 100:+.2f}% | 防守線: {new_stop:.1f}"
 
+            # 🌟 修復 Bug：確保寫入 CSV 的欄位順序 100% 精準對齊標題
             write_noc_log(curr_date, sym, name, close, rsi, vol_status, trend_status, predict_msg, td['Chip_Status'], alert)
             
-            # --- ✨ 呼叫特種戰略提示 ---
             tips = get_strategy_tips(symbol=sym, current_price=close, k_value=k, ma5=ma5, ma20=ma20)
             
-            stock_msg = f"🔸 {name} ({sym})\n"
-            stock_msg += f"   現價: {close:.2f} | PE: {pe_str} | 營收YoY: {yoy_label}\n"
-            stock_msg += f"   指標: {kd_str} | RSI: {rsi:.1f}\n"
-            stock_msg += f"   狀態: {trend_status} | {vol_status}\n"
-            stock_msg += f"   💰 籌碼: {td['Chip_Status']}\n"
-            stock_msg += f"   🔮 預判: {predict_msg}\n"
-            stock_msg += f"   👉 指令: {alert}\n"
-            if tips: stock_msg += f"   <i>{tips}</i>\n"
-            stock_msg += "\n"
+            # 🌟 加入靜默模式過濾器 (Silent Mode Logic)
+            is_notable_signal = False
+            if alert != "✅ 持股觀望": is_notable_signal = True
+            if predict_msg != "無特殊徵兆": is_notable_signal = True
+            if tips != "": is_notable_signal = True
+            if td['Chip_Status'] in ["🤝 土洋齊買", "🏦 投信作帳(連買)"]: is_notable_signal = True
             
-            msg_list.append(stock_msg)
+            if (not SILENT_MODE) or is_notable_signal:
+                if not cat_printed: 
+                    msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
+                    cat_printed = True
+                
+                if chart_file not in generated_charts: 
+                    generated_charts.append(chart_file)
+                    
+                stock_msg = f"🔸 {name} ({sym})\n"
+                stock_msg += f"   現價: {close:.2f} | PE: {pe_str} | 營收YoY: {yoy_label}\n"
+                stock_msg += f"   指標: {kd_str} | RSI: {rsi:.1f}\n"
+                stock_msg += f"   狀態: {trend_status} | {vol_status}\n"
+                stock_msg += f"   💰 籌碼: {td['Chip_Status']}\n"
+                stock_msg += f"   🔮 預判: {predict_msg}\n"
+                stock_msg += f"   👉 指令: {alert}\n"
+                if tips: stock_msg += f"   <i>{tips}</i>\n"
+                stock_msg += "\n"
+                msg_list.append(stock_msg)
+            else:
+                # 靜默過濾掉的股票只紀錄進 CSV，不發送 Telegram (節省版面並刪除不需要的圖片)
+                if os.path.exists(chart_file):
+                    os.remove(chart_file)
 
-    # === 完美復原的結尾機制 ===
     if has_data or len(msg_list) > 0:
         save_state(noc_state) 
-        final_text = f"📡 【NOC 終極戰情室 v8.1 (聯電特化版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        # 如果靜默過濾後只剩下大盤訊息，加一行提示
+        if len(msg_list) == 1 and "大盤風向" in msg_list[0]:
+            msg_list.append("\n🔕 【靜默模式】目前觀察網域無特殊狙擊訊號或危機，已省略一般觀望標的，詳細數據請參閱 CSV 日誌。")
+            
+        final_text = f"📡 【NOC 終極戰情室 v8.2 (靜默突擊版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
             if os.path.exists(chart): 
