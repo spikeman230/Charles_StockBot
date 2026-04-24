@@ -57,7 +57,7 @@ def fetch_trello_deployment():
                 list_name = lst['name']
                 cards = lst.get('cards', [])
                 
-                # 🛡️ 升級 1：使用「關鍵字包含(in)」取代「絕對等於(==)」，無視任何 Emoji 或空白！
+                # 🛡️ 升級 1：使用「關鍵字包含(in)」取代「絕對等於(==)」
                 if "庫存" in list_name:
                     for card in cards:
                         raw_name = card['name'].strip()
@@ -89,7 +89,7 @@ def fetch_trello_deployment():
                         name = raw_name[len(symbol):].strip() if ticker_match else raw_name
                         name = name if name else symbol
                         
-                        # 🛡️ 升級 2：修復漏單 Bug！將解析完的卡片加入該清單字典中
+                        # 🛡️ 升級 2：修復漏單 Bug！
                         stock_list[symbol] = name
                         
                     if stock_list:
@@ -103,21 +103,39 @@ def fetch_trello_deployment():
         
     return None, None
 
-    # 取得 Trello 雲端兵力部署
-    TRELLO_DICT, TRELLO_PORTFOLIO = fetch_trello_deployment()
+# 取得 Trello 雲端兵力部署 (✅ 已修正縮排，確保為全域變數)
+TRELLO_DICT, TRELLO_PORTFOLIO = fetch_trello_deployment()
 
-    # === 2.1 兵力掛載邏輯 (強制 Trello 優先，徹底消滅幽靈部隊) ===
-    # 🛡️ 升級 3：只要 API 有成功連線（即使有些清單是空的），也不要啟動寫死的預設資料！
-    if TRELLO_DICT is not None and TRELLO_PORTFOLIO is not None:
-        STOCK_DICT = TRELLO_DICT
-        MY_PORTFOLIO = TRELLO_PORTFOLIO
-    else:
-        print("⚠️ Trello 斷線，啟動緊急預設名單...")
-        STOCK_DICT = {}
-        MY_PORTFOLIO = {}
+# === 2.1 兵力掛載邏輯 (強制 Trello 優先，徹底消滅幽靈部隊) ===
+if TRELLO_DICT is not None and TRELLO_PORTFOLIO is not None:
+    STOCK_DICT = TRELLO_DICT
+    MY_PORTFOLIO = TRELLO_PORTFOLIO
+else:
+    print("⚠️ Trello 斷線，啟動緊急預設名單...")
+    STOCK_DICT = {}
+    MY_PORTFOLIO = {}
 
-        # --- 🚀 動態掛載：讀取兩大雷達的傳令兵名單 (海陸雙拼) ---
-        # (下方接著您原本的 RADAR_FILE 邏輯，完全不動)
+# --- 🚀 動態掛載：讀取兩大雷達的傳令兵名單 (海陸雙拼) ---
+# ✅ 已為您補回原本刪除的雷達與閃電檔案讀取代碼
+RADAR_FILE = "radar_targets.json"
+if os.path.exists(RADAR_FILE):
+    try:
+        with open(RADAR_FILE, "r", encoding="utf-8") as f:
+            radar_stocks = json.load(f)
+            if radar_stocks:
+                STOCK_DICT["🎯 雷達鎖定 (新進火種區)"] = radar_stocks
+    except Exception as e:
+        print(f"⚠️ 游擊隊雷達名單讀取失敗: {e}")
+
+LIGHTNING_FILE = "lightning_targets.json"
+if os.path.exists(LIGHTNING_FILE):
+    try:
+        with open(LIGHTNING_FILE, "r", encoding="utf-8") as f:
+            lightning_stocks = json.load(f)
+            if lightning_stocks:
+                STOCK_DICT["⚡ 雷達鎖定 (短線飆股區)"] = lightning_stocks
+    except Exception as e:
+        print(f"⚠️ 閃電突擊名單讀取失敗: {e}")
 
 # === 3. 實體狀態記憶庫與日誌 (Stateful Database) ===
 STATE_FILE = "noc_state.json"
@@ -138,7 +156,6 @@ def save_state(state_data):
     except Exception as e:
         print(f"⚠️ 寫入記憶體失敗: {e}")
 
-# 嚴格對齊 CSV 寫入順序，確保分析正確
 def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, predict, chip_signal, alert):
     log_filename = "noc_trading_log.csv"
     file_exists = os.path.exists(log_filename)
@@ -166,11 +183,8 @@ def get_market_regime():
 
 def get_revenue_yoy(symbol):
     if not FINMIND_TOKEN: return "N/A"
-    
-    # 🛡️ 升級版代號淨化器：無視後綴與中文，強制萃取純數字代號
     match = re.search(r'\d+', symbol)
-    if not match: 
-        return "N/A"
+    if not match: return "N/A"
     fm_symbol = match.group()
     
     try:
@@ -181,11 +195,8 @@ def get_revenue_yoy(symbol):
             "start_date": (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d"), 
             "token": FINMIND_TOKEN
         }
-        
-        # 🎯 關鍵防護：連線耐心值延長至 10 秒
         r = requests.get(url, params=params, timeout=10)
         data = r.json()
-        
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
             df = pd.DataFrame(data["data"])
             if 'revenue' in df.columns and 'revenue_month' in df.columns and 'revenue_year' in df.columns:
@@ -199,10 +210,8 @@ def get_revenue_yoy(symbol):
                     last_year_rev = last_year_record.iloc[-1]['revenue']
                     if last_year_rev > 0: 
                         return float(((latest_rev - last_year_rev) / last_year_rev) * 100)
-                        
     except Exception as e: 
         print(f"⚠️ [{symbol}] 營收處理錯誤: {e}")
-        
     return "N/A"
 
 def get_pe_ratio(symbol):
@@ -215,18 +224,13 @@ def get_pe_ratio(symbol):
 # === 5. FinMind 籌碼分析 ===
 def get_finmind_chip_data(symbol, start_date_str):
     if not FINMIND_TOKEN: return pd.DataFrame()
-    
-    # 🛡️ 升級版代號淨化器：無視任何後綴或中文，強制只抓連續數字
     match = re.search(r'\d+', symbol)
-    if not match: 
-        return pd.DataFrame() # 如果完全沒有數字就放棄
+    if not match: return pd.DataFrame()
     fm_symbol = match.group()
         
     url = "https://api.finmindtrade.com/api/v4/data"
     params = {"dataset": "TaiwanStockInstitutionalInvestorsBuySell", "data_id": fm_symbol, "start_date": start_date_str, "token": FINMIND_TOKEN}
-    
     try:
-        # 🎯 關鍵修改：將 timeout=5 延長為 timeout=10
         r = requests.get(url, params=params, timeout=10)
         data = r.json()
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
@@ -250,7 +254,6 @@ def get_finmind_chip_data(symbol, start_date_str):
 def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     required_chip_cols = ['Foreign_Inv', 'Trust_Inv', 'Dealer_Inv']
     hist['Chip_Status'] = "無資料"
-    
     if all(col in hist.columns for col in required_chip_cols):
         hist['Total_Institutional'] = hist['Foreign_Inv'] + hist['Trust_Inv'] + hist['Dealer_Inv']
         hist['Foreign_Buy_Flag'] = (hist['Foreign_Inv'] > 0).astype(int)
