@@ -60,9 +60,12 @@ def fetch_trello_deployment():
                 # 特殊處理：實體庫存機櫃 (需解析成本與股數)
                 if list_name == "💼 庫存機櫃":
                     for card in cards:
-                        parts = card['name'].split(" ", 1)
-                        symbol = parts[0].strip()
-                        name = parts[1].strip() if len(parts) > 1 else symbol
+                        # ✅ 新裝甲 (智慧型正規表達式擷取)
+                        raw_name = card['name'].strip()
+                        ticker_match = re.match(r'^[A-Za-z0-9.]+', raw_name)
+                        symbol = ticker_match.group() if ticker_match else raw_name
+                        name = raw_name[len(symbol):].strip() if ticker_match else raw_name
+                        name = name if name else symbol
                         desc = card.get('desc', '')
                         
                         buy_price = 0.0
@@ -80,10 +83,12 @@ def fetch_trello_deployment():
                 else:
                     stock_list = {}
                     for card in cards:
-                        parts = card['name'].split(" ", 1)
-                        symbol = parts[0].strip()
-                        name = parts[1].strip() if len(parts) > 1 else symbol
-                        stock_list[symbol] = name
+                        raw_name = card['name'].strip()
+                        ticker_match = re.match(r'^[A-Za-z0-9.]+', raw_name)
+                        symbol = ticker_match.group() if ticker_match else raw_name
+                        name = raw_name[len(symbol):].strip() if ticker_match else raw_name
+                        name = name if name else symbol
+                        desc = card.get('desc', '')
                     if stock_list:
                         trello_dict[list_name] = stock_list
             print("✅ 成功從 Trello 載入最新戰略部署！")
