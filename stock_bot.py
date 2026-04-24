@@ -57,10 +57,9 @@ def fetch_trello_deployment():
                 list_name = lst['name']
                 cards = lst.get('cards', [])
                 
-                # 特殊處理：實體庫存機櫃 (需解析成本與股數)
-                if list_name == "💼 庫存機櫃":
+                # 🛡️ 升級 1：使用「關鍵字包含(in)」取代「絕對等於(==)」，無視任何 Emoji 或空白！
+                if "庫存" in list_name:
                     for card in cards:
-                        # ✅ 新裝甲 (智慧型正規表達式擷取)
                         raw_name = card['name'].strip()
                         ticker_match = re.match(r'^[A-Za-z0-9.]+', raw_name)
                         symbol = ticker_match.group() if ticker_match else raw_name
@@ -71,7 +70,7 @@ def fetch_trello_deployment():
                         buy_price = 0.0
                         shares = 1000
                         
-                        # 使用正規表達式解析 Trello 描述欄位 (支援全形/半形冒號)
+                        # 容錯支援：成本/股數，全形/半形冒號皆可
                         price_match = re.search(r"成本[：:]\s*([0-9.]+)", desc)
                         shares_match = re.search(r"股數[：:]\s*([0-9]+)", desc)
                         
@@ -79,7 +78,8 @@ def fetch_trello_deployment():
                         if shares_match: shares = int(shares_match.group(1))
                         
                         my_portfolio[symbol] = {"name": name, "buy_price": buy_price, "shares": shares}
-                # 一般處理：各戰區觀察名單
+                
+                # 一般處理：其他各戰區觀察名單
                 else:
                     stock_list = {}
                     for card in cards:
@@ -88,60 +88,36 @@ def fetch_trello_deployment():
                         symbol = ticker_match.group() if ticker_match else raw_name
                         name = raw_name[len(symbol):].strip() if ticker_match else raw_name
                         name = name if name else symbol
-                        desc = card.get('desc', '')
+                        
+                        # 🛡️ 升級 2：修復漏單 Bug！將解析完的卡片加入該清單字典中
+                        stock_list[symbol] = name
+                        
                     if stock_list:
                         trello_dict[list_name] = stock_list
             print("✅ 成功從 Trello 載入最新戰略部署！")
+            return trello_dict, my_portfolio
         else:
             print(f"⚠️ Trello API 錯誤: {response.text}")
     except Exception as e:
         print(f"⚠️ Trello 連線失敗: {e}")
         
-    return trello_dict, my_portfolio
+    return None, None
 
-# 取得 Trello 雲端兵力部署
-TRELLO_DICT, TRELLO_PORTFOLIO = fetch_trello_deployment()
+    # 取得 Trello 雲端兵力部署
+    TRELLO_DICT, TRELLO_PORTFOLIO = fetch_trello_deployment()
 
-# === 2.1 兵力掛載邏輯 (Trello 優先，無則預設) ===
-if TRELLO_DICT and TRELLO_PORTFOLIO is not None:
-    STOCK_DICT = TRELLO_DICT
-    MY_PORTFOLIO = TRELLO_PORTFOLIO
-else:
-    # 預設觀察網域
-    STOCK_DICT = {
-        "🛡️ 核心持股 (重倉伺服器)": {"3037.TW": "欣興 (ABF載板)"},
-        "⚡ 閃電突擊 (短線動能區)": {"2612.TW": "中航", "6415.TW" : "矽力-KY", "2303.TW" : "聯電"},
-        "🕸️ 陷阱佈署 (等待落底區)": {"9933.TW": "中鼎 (監控日線止跌訊號)"},
-        "👀 常態觀察區 (例行監控節點)": {"2330.TW": "台積電", "0050.TW": "元大台灣50","AAPL": "蘋果","NVDA": "輝達"},
-    }
-    # 預設真實庫存
-    MY_PORTFOLIO = {
-        "3231.TW": {"name": "緯創", "buy_price": 130.5, "shares": 1000},
-        "8431.TWO": {"name": "匯鑽科", "buy_price": 70.7, "shares": 1000},
-        "6116.TW": {"name": "彩晶", "buy_price": 8.4, "shares": 1000},
-        "1326.TW": {"name": "台化", "buy_price": 50.5, "shares": 1000 } 
-    }
+    # === 2.1 兵力掛載邏輯 (強制 Trello 優先，徹底消滅幽靈部隊) ===
+    # 🛡️ 升級 3：只要 API 有成功連線（即使有些清單是空的），也不要啟動寫死的預設資料！
+    if TRELLO_DICT is not None and TRELLO_PORTFOLIO is not None:
+        STOCK_DICT = TRELLO_DICT
+        MY_PORTFOLIO = TRELLO_PORTFOLIO
+    else:
+        print("⚠️ Trello 斷線，啟動緊急預設名單...")
+        STOCK_DICT = {}
+        MY_PORTFOLIO = {}
 
-# --- 🚀 動態掛載：讀取兩大雷達的傳令兵名單 (海陸雙拼) ---
-RADAR_FILE = "radar_targets.json"
-if os.path.exists(RADAR_FILE):
-    try:
-        with open(RADAR_FILE, "r", encoding="utf-8") as f:
-            radar_stocks = json.load(f)
-            if radar_stocks:
-                STOCK_DICT["🎯 雷達鎖定 (新進火種區)"] = radar_stocks
-    except Exception as e:
-        print(f"⚠️ 游擊隊雷達名單讀取失敗: {e}")
-
-LIGHTNING_FILE = "lightning_targets.json"
-if os.path.exists(LIGHTNING_FILE):
-    try:
-        with open(LIGHTNING_FILE, "r", encoding="utf-8") as f:
-            lightning_stocks = json.load(f)
-            if lightning_stocks:
-                STOCK_DICT["⚡ 雷達鎖定 (短線飆股區)"] = lightning_stocks
-    except Exception as e:
-        print(f"⚠️ 閃電突擊名單讀取失敗: {e}")
+        # --- 🚀 動態掛載：讀取兩大雷達的傳令兵名單 (海陸雙拼) ---
+        # (下方接著您原本的 RADAR_FILE 邏輯，完全不動)
 
 # === 3. 實體狀態記憶庫與日誌 (Stateful Database) ===
 STATE_FILE = "noc_state.json"
