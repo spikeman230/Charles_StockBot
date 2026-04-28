@@ -381,7 +381,7 @@ if __name__ == "__main__":
     generated_charts = []
     has_data = False
     
-    print(f"[{curr_time}] NOC 終極戰情室 v8.8 (四大戰區分流版) 啟動...")
+    print(f"[{curr_time}] NOC 終極戰情室 v8.9 (庫藏股辨識修復版) 啟動...")
     
     is_bull_market, market_msg = get_market_regime()
     noc_state = load_state()
@@ -413,8 +413,11 @@ if __name__ == "__main__":
                 noc_state[sym]["trailing_stop"] = final_stop 
                 if roi_pct > 0: pnl_alert = f"🔥 獲利巡航 | 📍 防線: {final_stop:.1f}"
                 else: pnl_alert = f"🟡 浮虧防禦 | 📍 死守底線: {final_stop:.1f}"
+            
+            # 🌟 修復：在此補回 ETF 與標的類型辨識邏輯
+            etf_icon, _, _ = get_etf_strategy(sym, data['name'])
                     
-            portfolio_msg = f"🔸 {data['name']} ({sym})\n"
+            portfolio_msg = f"{etf_icon} {data['name']} ({sym})\n"
             portfolio_msg += f"   成本: {buy_price:.2f} | 現價: {curr_price:.2f} | 損益: {roi_pct:+.2f}%\n"
             portfolio_msg += f"   👉 指令: {pnl_alert}\n\n"
             msg_list.append(portfolio_msg)
@@ -565,7 +568,7 @@ if __name__ == "__main__":
         if len(msg_list) == 1 and "大盤風向" in msg_list[0]:
             msg_list.append("\n🔕 【靜默模式】目前各戰區無特殊異動或觸發條件，詳細數據請參閱 CSV 日誌。")
             
-        final_text = f"📡 【NOC 終極戰情室 v8.8 (四大戰區分流版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 終極戰情室 v8.9 (庫藏股辨識修復版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for chart in generated_charts:
             if os.path.exists(chart): os.remove(chart)
