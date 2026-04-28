@@ -12,11 +12,11 @@
     "NVDA": {
         "status": "REAL_HOLD",
         "entry": 144.5,
-        "trailing_stop": 196.84071786063058
+        "trailing_stop": 205.3500039236886
     },
     "00881.TW": {
         "status": "REAL_HOLD",
         "entry": 26.0,
-        "trailing_stop": 44.74285997663225
+        "trailing_stop": 45.15428652082171
     }
 }
