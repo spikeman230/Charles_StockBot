@@ -129,10 +129,21 @@ def get_analysis_and_chart(symbol, name):
         hist['Upper_Shadow'] = hist['High'] - hist['Body_Top']
         hist['K_Length'] = (hist['High'] - hist['Low']).replace(0, 0.001)
         hist['Shadow_Ratio'] = hist['Upper_Shadow'] / hist['K_Length']
+        
         chart_file = f"{symbol}_chart.png"
-        mc = mpf.make_marketcolors(up='red', down='green', edge='black', wick='black', volume='gray')
-        tw_style = mpf.make_mpf_style(base_style='yahoo', marketcolors=mc)
-        mpf.plot(hist[-60:], type='candle', style=tw_style, volume=True, mav=(5, 20), savefig=chart_file)
+        try:
+            # 修正相容性問題：移除 base_style，改用 try-except 包裝
+            mc = mpf.make_marketcolors(up='red', down='green', edge='black', wick='black', volume='gray')
+            try:
+                s = mpf.make_mpf_style(base_style='yahoo', marketcolors=mc)
+            except:
+                s = mpf.make_mpf_style(marketcolors=mc)
+            mpf.plot(hist[-60:], type='candle', style=s, volume=True, mav=(5, 20), savefig=chart_file)
+        except Exception as chart_err:
+            print(f"[{symbol}] 畫圖模組跳過: {chart_err}")
+            # 建立空的檔名確保後續不崩潰，或者用最簡風格
+            mpf.plot(hist[-60:], type='candle', savefig=chart_file)
+
         return hist, chart_file
     except Exception as e:
         print(f"[{symbol}] 分析核心錯誤: {e}"); return None
@@ -164,7 +175,7 @@ if __name__ == "__main__":
     curr_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
     msg_list = []; generated_charts = []; has_data = False
 
-    print(f"[{curr_time}] NOC 戰情室 v6.1 (自動判定/乖離預警版) 啟動...")
+    print(f"[{curr_time}] NOC 戰情室 v6.1 (相容修復版) 啟動...")
 
     # A. 💼 實體機房配置 (真實持股)
     if MY_PORTFOLIO:
@@ -172,26 +183,25 @@ if __name__ == "__main__":
         for sym, data in MY_PORTFOLIO.items():
             res = get_analysis_and_chart(sym, data['name'])
             if not res: continue
-            hist, chart_file = res; td = hist.iloc[-1]; yd = hist.iloc[-2]
+            hist, chart_file = res; td = hist.iloc[-1]
             has_data = True; generated_charts.append(chart_file)
             
             curr_price = td['Close']; buy_price = data['buy_price']
             roi_pct = ((curr_price - buy_price) / buy_price) * 100
             tag, b_limit, b_desc = get_etf_tag(sym, data['name'])
             
-            # 正乖離計算
             ma20 = td['20MA']
             bias = ((curr_price - ma20) / ma20) * 100
-            bias_alert = "🚨 正乖離過大" if bias > b_limit else "✅ 乖離正常"
+            bias_alert = "🚨乖離過大" if bias > b_limit else "✅穩定"
 
-            pnl_alert = "💰達標" if roi_pct >= TAKE_PROFIT_PCT else "🩸破網" if roi_pct <= STOP_LOSS_PCT else "🟢正常"
+            pnl_alert = "💰達標" if roi_pct >= TAKE_PROFIT_PCT else "🩸破網" if roi_pct <= STOP_LOSS_PCT else "🟢持平"
             
             vol_status = "📈出量" if td['Volume'] > td['5VMA']*1.2 else "➖量縮"
             trend_status = "🔥多頭" if td['Close'] > td['5MA'] > td['20MA'] else "🔄盤整"
 
             write_noc_log(curr_date, sym, f"{tag}{data['name']}", curr_price, td['RSI'], vol_status, trend_status, pnl_alert, bias_alert, td['Chip_Status'])
             
-            msg_list.append(f"{tag} {data['name']} ({sym})\n   損益: {roi_pct:+.2f}% | {bias_alert}({bias:+.1f}%)\n   👉 {pnl_alert}\n\n")
+            msg_list.append(f"{tag} {data['name']} ({sym})\n   損益: {roi_pct:+.2f}% | 乖離: {bias:+.1f}% ({bias_alert})\n   👉 {pnl_alert}\n\n")
 
     # B. 👀 一般外部網域監控
     for cat, stocks in STOCK_DICT.items():
@@ -219,6 +229,9 @@ if __name__ == "__main__":
             msg_list.append(f"{tag} {name} ({sym})\n   現價: {td['Close']:.2f} | 乖離: {bias:+.1f}% ({bias_status})\n   👉 {alert} | {predict}\n\n")
 
     if has_data:
-        send_reports(f"NOC 戰情報告 {curr_date}", f"📡 NOC 戰情室 v6.1\n📅 時間：{curr_time}\n" + "".join(msg_list), generated_charts)
+        final_text = f"📡 NOC 戰情室 v6.1\n📅 時間：{curr_time}\n" + "".join(msg_list)
+        send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         for c in generated_charts: 
             if os.path.exists(c): os.remove(c)
+    else:
+        print("休市或資料讀取失敗。")
