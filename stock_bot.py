@@ -210,7 +210,7 @@ def get_pe_ratio(symbol):
     except: 
         return "N/A"
 
-# === 5. FinMind 籌碼分析 ===
+# === 5. FinMind 籌碼分析 (🌟 增強：投信連買賣天數) ===
 def get_finmind_chip_data(symbol, start_date_str):
     if not FINMIND_TOKEN: return pd.DataFrame()
     match = re.search(r'\d+', symbol)
@@ -239,12 +239,18 @@ def get_finmind_chip_data(symbol, start_date_str):
 
 def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     hist['Chip_Status'] = "無資料"
+    hist['Trust_Streak'] = 0
     if all(col in hist.columns for col in ['Foreign_Inv', 'Trust_Inv', 'Dealer_Inv']):
         hist['Total_Institutional'] = hist['Foreign_Inv'] + hist['Trust_Inv'] + hist['Dealer_Inv']
         hist['Signal_CoBuy'] = (hist['Foreign_Inv'] > 0) & (hist['Trust_Inv'] > 0)
         hist['Signal_Trust_Trend'] = ((hist['Trust_Inv'] > 0).astype(int).rolling(5).sum() >= 4) & (hist['Trust_Inv'] > 0)
+        
+        # 🌟 精準計算投信連續買賣天數
+        trust_dir = np.sign(hist['Trust_Inv'])
+        hist['Trust_Streak'] = trust_dir.groupby((trust_dir != trust_dir.shift()).cumsum()).cumsum()
+        
         conds = [(hist['Signal_CoBuy'] == True), (hist['Signal_Trust_Trend'] == True), (hist['Total_Institutional'] > 0)]
-        hist['Chip_Status'] = np.select(conds, ["🤝 土洋齊買", "🏦 投信作帳(連買)", "📈 法人偏多"], default="➖ 中性/偏空")
+        hist['Chip_Status'] = np.select(conds, ["🤝 土洋齊買", "🏦 投信作帳", "📈 法人偏多"], default="➖ 中性/偏空")
     return hist
 
 # === 5.5 特種戰略分析引擎 ===
@@ -288,6 +294,11 @@ def get_analysis_and_chart(symbol, name):
         hist['5MA'] = hist['Close'].rolling(5).mean()
         hist['20MA'] = hist['Close'].rolling(20).mean()
         hist['5VMA'] = hist['Volume'].rolling(5).mean()
+
+        # 🌟 增強：計算 60 日相對位階 (Price_Position)
+        hist['High_60'] = hist['High'].rolling(window=60, min_periods=20).max()
+        hist['Low_60'] = hist['Low'].rolling(window=60, min_periods=20).min()
+        hist['Price_Position'] = (hist['Close'] - hist['Low_60']) / (hist['High_60'] - hist['Low_60'])
 
         l9 = hist['Low'].rolling(9).min()
         h9 = hist['High'].rolling(9).max()
@@ -363,7 +374,7 @@ if __name__ == "__main__":
     generated_charts = []
     has_data = False
     
-    print(f"[{curr_time}] NOC 終極戰情室 v8.11 (五大戰區全展開版) 啟動...")
+    print(f"[{curr_time}] NOC 終極戰情室 v8.12 (量價位階與籌碼強化版) 啟動...")
     
     is_bull_market, market_msg = get_market_regime()
     noc_state = load_state()
@@ -444,6 +455,10 @@ if __name__ == "__main__":
             d = td['D']
             pe = get_pe_ratio(sym)
             
+            # 取得新計算的位階與投信連買賣資料
+            pos = td['Price_Position'] if 'Price_Position' in td and not pd.isna(td['Price_Position']) else 0.5
+            trust_streak = int(td['Trust_Streak']) if 'Trust_Streak' in td and not pd.isna(td['Trust_Streak']) else 0
+            
             bias = ((close - ma20) / ma20) * 100 if ma20 else 0
             
             if td['Volume'] > vma5 * 1.2:
@@ -474,11 +489,27 @@ if __name__ == "__main__":
             pe_str = f"{pe:.1f}" if isinstance(pe, float) else pe
             is_overvalued = isinstance(pe, float) and pe > PE_LIMIT
 
+            # 🌟 籌碼增強：將投信天數整合進狀態顯示
+            chip_msg = td['Chip_Status']
+            if trust_streak > 0:
+                chip_msg += f" (連買 {trust_streak} 天)"
+            elif trust_streak < 0:
+                chip_msg += f" (連賣 {abs(trust_streak)} 天)"
+
+            # 🌟 預判增強：納入 60 日股價位階 (高於 0.7 屬高檔，低於 0.3 屬低檔)
             predict_msg = "無特殊徵兆"
-            if td['Volume'] > vma5 * 2 and rsi > 70: 
-                predict_msg = "💀【動能竭盡】高檔爆量轉折！"
+            if td['Volume'] > vma5 * 2: 
+                if pos > 0.7:
+                    predict_msg = "💀【動能竭盡】高檔爆量轉折！"
+                elif pos < 0.3:
+                    predict_msg = "🔥【底部換手】低檔爆量，醞釀反彈！"
+                else:
+                    predict_msg = "⚠️【中繼爆量】留意方向表態！"
             elif td['Shadow_Ratio'] > 0.5 and td['Volume'] > vma5 * 1.5: 
-                predict_msg = "⚠️【避雷針陷阱】高檔長上影線！"
+                if pos > 0.7:
+                    predict_msg = "⚠️【避雷針陷阱】高檔長上影線！"
+                elif pos < 0.3:
+                    predict_msg = "🌟【仙人指路】低檔長上影線試盤！"
             elif close > td['20_High'] and td['Volume'] > vma5 * 1.2: 
                 predict_msg = "🚀【無壓巡航】突破 20 日高！"
             elif td['BB_Width'] < 0.08: 
@@ -519,7 +550,7 @@ if __name__ == "__main__":
                     noc_state[sym]["trailing_stop"] = new_stop
                     alert = f"🔥【波段抱牢】防守線: {new_stop:.1f}"
 
-            write_noc_log(curr_date, sym, name, close, rsi, vol_status, trend_status, predict_msg, td['Chip_Status'], alert)
+            write_noc_log(curr_date, sym, name, close, rsi, vol_status, trend_status, predict_msg, chip_msg, alert)
             tips = get_strategy_tips(sym, close, k, ma5, ma20)
 
             # --- 戰區 2：ETF 專區 ---
@@ -548,6 +579,7 @@ if __name__ == "__main__":
                 stock_msg = f"🎯 {name} ({sym})\n"
                 stock_msg += f"   現價: {close:.2f} | 狀態: {trend_status} | {vol_status}\n"
                 stock_msg += f"   指標: {kd_str} | RSI: {rsi:.1f}\n"
+                stock_msg += f"   💰 籌碼: {chip_msg}\n"
                 stock_msg += f"   👉 指令: {alert}\n"
                 if tips: 
                     stock_msg += f"   💡 戰略提示: {tips}\n"
@@ -564,6 +596,7 @@ if __name__ == "__main__":
                 stock_msg += f"   現價: {close:.2f} | 乖離: {bias:+.1f}% | PE: {pe_str}\n"
                 stock_msg += f"   指標: {kd_str} | RSI: {rsi:.1f} | 類型: {etf_desc}\n"
                 stock_msg += f"   狀態: {trend_status} | YoY: {yoy_label}\n"
+                stock_msg += f"   💰 籌碼: {chip_msg}\n"
                 stock_msg += f"   🔮 預判: {predict_msg}\n"
                 stock_msg += f"   👉 指令: {alert}\n"
                 if tips: 
@@ -576,14 +609,16 @@ if __name__ == "__main__":
 
             # --- 戰區 4：觀察區 (條件觸發才顯示) ---
             elif is_normal_obs:
+                # 🌟 更新陷阱與復甦的觸發條件，納入新版位階預判
                 is_trap = predict_msg in ["💀【動能竭盡】高檔爆量轉折！", "⚠️【避雷針陷阱】高檔長上影線！", "⚠️【大變盤預警】通道極度壓縮！"]
-                is_recovery = td['Sniper_Signal'] or (k < 30 and k > d) or ("止跌" in tips or "支撐" in tips)
+                is_recovery = td['Sniper_Signal'] or (k < 30 and k > d) or ("止跌" in tips or "支撐" in tips) or predict_msg in ["🔥【底部換手】低檔爆量，醞釀反彈！", "🌟【仙人指路】低檔長上影線試盤！"]
                 
                 if is_trap or is_recovery:
                     stock_msg = f"👀 {name} ({sym})\n"
                     stock_msg += f"   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
+                    stock_msg += f"   💰 籌碼: {chip_msg}\n"
                     stock_msg += f"   🎯 條件觸發: {'🚨 陷阱預警' if is_trap else '🔥 復甦/狙擊訊號'}\n"
-                    stock_msg += f"   👉 指令: {predict_msg if is_trap else alert}\n"
+                    stock_msg += f"   👉 預判/指令: {predict_msg if is_trap else alert}\n"
                     if tips: 
                         stock_msg += f"   💡 NOC訊號: {tips}\n"
                     stock_msg += "\n"
@@ -615,7 +650,7 @@ if __name__ == "__main__":
         if len(msg_list) == 1 and "大盤風向" in msg_list[0]: 
             msg_list.append("\n🔕 【靜默模式】無觸發條件。")
             
-        final_text = f"📡 【NOC 終極戰情室 v8.11 (五大戰區全展開版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 終極戰情室 v8.12 (量價位階強化版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         
         for chart in generated_charts:
