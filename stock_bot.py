@@ -666,7 +666,95 @@ if __name__ == "__main__":
         if cat_msg_list:
             msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
             msg_list.extend(cat_msg_list)
+    # =========================================================
+    # === 9. 🏆 ETF 雙引擎績效競技場 (自動汰弱留強模組) ===
+    # =========================================================
+    etf_arena = {"💰高股息防禦組": [], "🚀市值與主題成長組": []}
+    current_year = curr_date.year
 
+    # 收集所有出現在雷達與庫藏中的唯一 ETF 標的
+    all_etfs = {}
+    if MY_PORTFOLIO:
+        for sym, data in MY_PORTFOLIO.items():
+            all_etfs[sym] = data['name']
+    for cat, stocks in STOCK_DICT.items():
+        if stocks:
+            for sym, name in stocks.items():
+                all_etfs[sym] = name
+
+    # 進入競技場後台運算
+    for sym, name in all_etfs.items():
+        etf_icon, _, _ = get_etf_strategy(sym, name)
+        is_etf = "一般型" not in etf_icon
+        
+        if is_etf:
+            # 取得歷史資料 (由於前面戰區可能已抓過，若有快取機制更好，這裡為求穩定直接調用)
+            res = get_analysis_and_chart(sym, name)
+            if not res: 
+                continue
+            hist, _ = res
+            
+            if len(hist) < 10: 
+                continue
+            
+            close_price = hist['Close'].iloc[-1]
+            
+            # 運算 1：近一季 (60個交易日) 動能
+            qtr_days = min(60, len(hist)-1)
+            qtr_price = hist['Close'].iloc[-(qtr_days+1)]
+            qtr_roi = ((close_price - qtr_price) / qtr_price) * 100
+            
+            # 運算 2：今年以來 (YTD) 績效
+            hist_ytd = hist[hist.index.year == current_year]
+            if not hist_ytd.empty:
+                ytd_start_price = hist_ytd['Close'].iloc[0]
+                ytd_roi = ((close_price - ytd_start_price) / ytd_start_price) * 100
+            else:
+                ytd_roi = qtr_roi # 若無今年初資料防呆機制
+                
+            group_key = "💰高股息防禦組" if "高股息" in etf_icon else "🚀市值與主題成長組"
+            etf_arena[group_key].append({
+                "name": name, 
+                "sym": sym, 
+                "qtr_roi": qtr_roi, 
+                "ytd_roi": ytd_roi
+            })
+
+    # 產出競技場戰報文字
+    arena_msg = []
+    if etf_arena["💰高股息防禦組"] or etf_arena["🚀市值與主題成長組"]:
+        arena_msg.append("━━━━━━━━━━━━━━\n🏆 【ETF 雙引擎績效競技場 (自動汰弱留強)】\n━━━━━━━━━━━━━━\n")
+        
+        for group_name, group_data in etf_arena.items():
+            if not group_data: 
+                continue
+            arena_msg.append(f"**{group_name}**\n")
+            
+            # 依據季動能 (qtr_roi) 降冪排序，動能強的排前面
+            sorted_etfs = sorted(group_data, key=lambda x: x['qtr_roi'], reverse=True)
+            
+            medals = ["🥇", "🥈", "🥉"]
+            for idx, etf in enumerate(sorted_etfs):
+                medal = medals[idx] if idx < 3 else "🔸"
+                q_str = f"{etf['qtr_roi']:+.1f}%"
+                y_str = f"{etf['ytd_roi']:+.1f}%"
+                
+                # AI 智能評語邏輯
+                if etf['qtr_roi'] > 5.0 and etf['ytd_roi'] > 10.0:
+                    status = "🔥 雙料強勢"
+                elif etf['qtr_roi'] < 0 and etf['ytd_roi'] > 0:
+                    status = "⏳ 短線洗盤，長線穩健"
+                elif etf['qtr_roi'] < -2.0 and etf['ytd_roi'] < 0:
+                    status = "⚠️ 嚴重落後，請檢視佔比"
+                else:
+                    status = "✅ 穩定跟隨"
+                    
+                arena_msg.append(f"{medal} {etf['name']} ({etf['sym']})\n   季動能 {q_str} ｜ 本年累計 {y_str} ({status})\n")
+            arena_msg.append("\n")
+            
+        msg_list.extend(arena_msg)
+    # =========================================================
+    
     if has_data or len(msg_list) > 0:
         save_state(noc_state) 
         if len(msg_list) == 1 and "大盤風向" in msg_list[0]: 
