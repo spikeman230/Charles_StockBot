@@ -398,29 +398,51 @@ if __name__ == "__main__":
             buy_price = data['buy_price']
             roi_pct = ((curr_price - buy_price) / buy_price) * 100
             
-            stop_distance = atr * ATR_MULTIPLIER
+            # 🌟 1. 提早呼叫 ETF 判定引擎，確認標的屬性
+            etf_icon, bias_limit, etf_desc = get_etf_strategy(sym, data['name'])
+            is_etf = "一般型" not in etf_icon  # 如果不是一般型，就是大盤或高股息 ETF
+            
             sym_state = noc_state.get(sym, {"status": "NONE"})
             
-            if sym_state["status"] != "REAL_HOLD":
-                noc_state[sym] = {"status": "REAL_HOLD", "entry": buy_price, "trailing_stop": curr_price - stop_distance}
-                sym_state = noc_state[sym]
+            # 🌟 2. 啟動分流防禦機制
+            if is_etf:
+                # 🛡️ 【ETF 紀律模式】：關閉 ATR 停損，啟動越跌越買邏輯
+                if sym_state["status"] != "REAL_HOLD_ETF":
+                    noc_state[sym] = {"status": "REAL_HOLD_ETF", "entry": buy_price}
                 
-            final_stop = max(sym_state["trailing_stop"], curr_price - stop_distance)
-            
-            if curr_price < final_stop: 
-                pnl_alert = f"🩸【拔線警戒】跌破防守線 {final_stop:.1f}，請嚴格執行離場！"
+                # ETF 的操作指令：不看防守線，看回檔深度
+                if roi_pct <= -10.0:
+                    pnl_alert = f"💎【黃金坑加碼】帳面回檔 {roi_pct:.2f}%，啟動大額建倉！"
+                elif roi_pct <= -5.0:
+                    pnl_alert = f"📉【紀律扣款】帳面回檔 {roi_pct:.2f}%，維持定期定額。"
+                else:
+                    pnl_alert = f"🧘‍♂️【長線鎖籌】無懼波動，靜待資產翻倍。"
+                    
             else:
-                noc_state[sym]["trailing_stop"] = final_stop 
-                if roi_pct > 0: 
-                    pnl_alert = f"🔥 獲利巡航 | 📍 防線: {final_stop:.1f}"
-                else: 
-                    pnl_alert = f"🟡 浮虧防禦 | 📍 死守底線: {final_stop:.1f}"
+                # ⚔️ 【個股波段模式】：維持原有的 2倍 ATR 動態停損
+                stop_distance = atr * ATR_MULTIPLIER
+                
+                if sym_state["status"] != "REAL_HOLD":
+                    # 重新進場或初次抓取，設定初始防線
+                    noc_state[sym] = {"status": "REAL_HOLD", "entry": buy_price, "trailing_stop": curr_price - stop_distance}
+                    sym_state = noc_state[sym]
+                    
+                # 計算當前應該墊高到的防守線
+                final_stop = max(sym_state["trailing_stop"], curr_price - stop_distance)
+                
+                if curr_price < final_stop: 
+                    pnl_alert = f"🩸【拔線警戒】跌破防守線 {final_stop:.1f}，請嚴格執行離場！"
+                else:
+                    noc_state[sym]["trailing_stop"] = final_stop 
+                    if roi_pct > 0: 
+                        pnl_alert = f"🔥 獲利巡航 | 📍 防線墊高至: {final_stop:.1f}"
+                    else: 
+                        pnl_alert = f"🟡 浮虧防禦 | 📍 死守底線: {final_stop:.1f}"
             
-            etf_icon, _, _ = get_etf_strategy(sym, data['name'])
-            
+            # 🌟 3. 輸出戰報訊息
             portfolio_msg = f"{etf_icon} {data['name']} ({sym})\n"
-            portfolio_msg += f"   成本: {buy_price:.2f} | 現價: {curr_price:.2f} | 損益: {roi_pct:+.2f}%\n"
-            portfolio_msg += f"   👉 指令: {pnl_alert}\n\n"
+            portfolio_msg += f"   成本: {buy_price:.2f} | 股數: {data['shares']} | 現價: {curr_price:.2f}\n"
+            portfolio_msg += f"   損益: {roi_pct:+.2f}% | 👉 指令: {pnl_alert}\n\n"
             msg_list.append(portfolio_msg)
 
     # === Trello & 本地雷達 觀察網域分流 ===
