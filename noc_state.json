@@ -26,8 +26,7 @@
         "entry": 23.0
     },
     "009816.TW": {
-        "status": "REAL_HOLD",
-        "entry": 10.73,
-        "trailing_stop": 12.55571460723877
+        "status": "REAL_HOLD_ETF",
+        "entry": 10.73
     }
 }
