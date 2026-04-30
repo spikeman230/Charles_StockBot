@@ -14,9 +14,8 @@
         "entry": 144.5
     },
     "00881.TW": {
-        "status": "REAL_HOLD",
-        "entry": 26.0,
-        "trailing_stop": 45.15428652082171
+        "status": "REAL_HOLD_ETF",
+        "entry": 26.0
     },
     "00878.TW": {
         "status": "REAL_HOLD_ETF",
