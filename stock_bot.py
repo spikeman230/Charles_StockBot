@@ -298,7 +298,22 @@ def get_analysis_and_chart(symbol, name):
         hist['5MA'] = hist['Close'].rolling(5).mean()
         hist['20MA'] = hist['Close'].rolling(20).mean()
         hist['5VMA'] = hist['Volume'].rolling(5).mean()
-
+        # 🌟 新增：2560 戰法指標與回踩觸發邏輯
+        hist['25MA'] = hist['Close'].rolling(25).mean()
+        hist['60VMA'] = hist['Volume'].rolling(60).mean()
+        
+        # 條件1：25MA 趨勢向上 (今天大於三天前)
+        cond_trend = hist['25MA'] > hist['25MA'].shift(3)
+        # 條件2：動能確認 (5均量大於60均量，代表近期有資金進駐)
+        cond_vol_mom = hist['5VMA'] > hist['60VMA']
+        # 條件3：精準回踩 (最低價碰到25MA附近1.5%，且收盤價沒嚴重跌破)
+        cond_pullback = (hist['Low'] <= hist['25MA'] * 1.015) & (hist['Close'] >= hist['25MA'] * 0.985)
+        # 條件4：量縮沉澱 (當日成交量低於5日均量)
+        cond_shrink = hist['Volume'] < hist['5VMA']
+        
+        # 結合成布林訊號
+        hist['Signal_2560'] = cond_trend & cond_vol_mom & cond_pullback & cond_shrink
+        # ====================================================
         # 🌟 增強：計算 60 日相對位階 (Price_Position)
         hist['High_60'] = hist['High'].rolling(window=60, min_periods=20).max()
         hist['Low_60'] = hist['Low'].rolling(window=60, min_periods=20).min()
@@ -633,17 +648,33 @@ if __name__ == "__main__":
                 if chart_file not in generated_charts: 
                     generated_charts.append(chart_file)
 
-            # --- 戰區 4：觀察區 (條件觸發才顯示) ---
+           # --- 戰區 4：觀察區 (條件觸發才顯示) ---
             elif is_normal_obs:
-                # 🌟 更新陷阱與復甦的觸發條件，納入新版位階預判
-                is_trap = predict_msg in ["💀【動能竭盡】高檔爆量轉折！", "⚠️【避雷針陷阱】高檔長上影線！", "⚠️【大變盤預警】通道極度壓縮！"]
-                is_recovery = td['Sniper_Signal'] or (k < 30 and k > d) or ("止跌" in tips or "支撐" in tips) or predict_msg in ["🔥【底部換手】低檔爆量，醞釀反彈！", "🌟【仙人指路】低檔長上影線試盤！"]
+                # 🌟 更新：抓取 2560 訊號
+                is_2560 = td.get('Signal_2560', False)
                 
+                # 更新陷阱與復甦的觸發條件
+                is_trap = predict_msg in ["💀【動能竭盡】高檔爆量轉折！", "⚠️【避雷針陷阱】高檔長上影線！", "⚠️【大變盤預警】通道極度壓縮！"]
+                
+                # 🌟 將 is_2560 加入復甦訊號中
+                is_recovery = td['Sniper_Signal'] or (k < 30 and k > d) or ("止跌" in tips or "支撐" in tips) or predict_msg in ["🔥【底部換手】低檔爆量，醞釀反彈！", "🌟【仙人指路】低檔長上影線試盤！"] or is_2560
+                
+                # 如果觸發 2560，覆寫預判訊息
+                if is_2560:
+                    predict_msg = "🎯【2560戰法】量縮回踩 25MA，絕佳左側佈局點！"
+                    alert = "✅ 準備進場 (請留意停損設 25MA 下方 3%)"
+
                 if is_trap or is_recovery:
                     stock_msg = f"👀 {name} ({sym})\n"
                     stock_msg += f"   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
                     stock_msg += f"   💰 籌碼: {chip_msg}\n"
-                    stock_msg += f"   🎯 條件觸發: {'🚨 陷阱預警' if is_trap else '🔥 復甦/狙擊訊號'}\n"
+                    
+                    # 依據觸發類型給予不同標題
+                    if is_2560:
+                        stock_msg += f"   🎯 條件觸發: 🌟 高勝率回踩狙擊\n"
+                    else:
+                        stock_msg += f"   🎯 條件觸發: {'🚨 陷阱預警' if is_trap else '🔥 復甦/狙擊訊號'}\n"
+                        
                     stock_msg += f"   👉 預判/指令: {predict_msg if is_trap else alert}\n"
                     if tips: 
                         stock_msg += f"   💡 NOC訊號: {tips}\n"
