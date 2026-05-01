@@ -10,6 +10,7 @@ import math
 import re
 import mplfinance as mpf
 import smtplib
+import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
@@ -50,6 +51,20 @@ def get_etf_strategy(symbol, name):
         return "🚀市值/主題型", 10.0, "成長動能區 (10%乖離預警)"
         
     return "🔸一般型", 8.0, "趨勢防禦區 (8%乖離預警)"
+
+# === 1.3 🌟 開市絕對攔截機制 ===
+def is_trading_day(curr_date):
+    try:
+        # 盤中大盤易延遲，用 2330.TW(台積電) 當作開盤心跳測試最靈敏
+        tsm = yf.Ticker("2330.TW").history(period="1d")
+        if tsm.empty: 
+            return False
+        last_trade_date = tsm.index[-1].date()
+        return last_trade_date == curr_date
+    except Exception as e:
+        print(f"⚠️ 交易日判斷 API 異常: {e}")
+        # 備用方案：退回週一至週五判斷
+        return curr_date.weekday() < 5
 
 # === 2. Trello 雲端資料庫讀取引擎 ===
 def fetch_trello_deployment():
@@ -171,7 +186,7 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, pred
         with open(log_filename, mode='a', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
             if not file_exists:
-                writer.writerow(["日期", "代號", "名稱", "收盤價", "RSI", "量能狀態", "趨勢狀態", "戰場預判", "籌碼訊號", "行動指令"])
+                writer.writerow(["日期", "代號", "名稱", "收盤價", "RSI", "量能狀態", "趨勢狀態", "战場預判", "籌碼訊號", "行動指令"])
             writer.writerow([date, symbol, name, f"{close_price:.2f}", f"{rsi:.2f}", vol_status, status, predict, chip_signal, alert])
     except Exception as e: 
         print(f"⚠️ 日誌寫入失敗: {e}")
@@ -214,7 +229,7 @@ def get_pe_ratio(symbol):
     except: 
         return "N/A"
 
-# === 5. FinMind 籌碼分析 (🌟 增強：投信連買賣天數) ===
+# === 5. FinMind 籌碼分析 ===
 def get_finmind_chip_data(symbol, start_date_str):
     if not FINMIND_TOKEN: return pd.DataFrame()
     match = re.search(r'\d+', symbol)
@@ -249,7 +264,6 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
         hist['Signal_CoBuy'] = (hist['Foreign_Inv'] > 0) & (hist['Trust_Inv'] > 0)
         hist['Signal_Trust_Trend'] = ((hist['Trust_Inv'] > 0).astype(int).rolling(5).sum() >= 4) & (hist['Trust_Inv'] > 0)
         
-        # 🌟 精準計算投信連續買賣天數
         trust_dir = np.sign(hist['Trust_Inv'])
         hist['Trust_Streak'] = trust_dir.groupby((trust_dir != trust_dir.shift()).cumsum()).cumsum()
         
@@ -260,20 +274,14 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
 # === 5.5 特種戰略分析引擎 ===
 def get_strategy_tips(symbol, current_price, k_value, ma5, ma20):
     if symbol == "9933.TW": 
-        if current_price > ma5 and k_value < 30:
-            return "🔥【NOC 訊號】中鼎疑似止跌！符合進場條件"
-        else:
-            return "⏳【NOC 監控】尚未止跌，繼續等待。"
+        if current_price > ma5 and k_value < 30: return "🔥【NOC 訊號】中鼎疑似止跌！符合進場條件"
+        else: return "⏳【NOC 監控】尚未止跌，繼續等待。"
     if symbol == "6415.TW": 
-        if 240 <= current_price <= 260:
-            return "💎【NOC 訊號】矽力進入支撐區" 
-        else:
-            return "🦅【NOC 監控】等待回測。"
+        if 240 <= current_price <= 260: return "💎【NOC 訊號】矽力進入支撐區" 
+        else: return "🦅【NOC 監控】等待回測。"
     if symbol == "2303.TW": 
-        if current_price > ma5:
-            return "🚀【NOC 訊號】聯電強勢站穩 5MA！" 
-        else:
-            return "⚠️【NOC 警訊】聯電轉弱。"
+        if current_price > ma5: return "🚀【NOC 訊號】聯電強勢站穩 5MA！" 
+        else: return "⚠️【NOC 警訊】聯電轉弱。"
     return ""
 
 # === 6. 核心分析引擎 ===
@@ -297,24 +305,40 @@ def get_analysis_and_chart(symbol, name):
         
         hist['5MA'] = hist['Close'].rolling(5).mean()
         hist['20MA'] = hist['Close'].rolling(20).mean()
-        hist['5VMA'] = hist['Volume'].rolling(5).mean()
-        # 🌟 新增：2560 戰法指標與回踩觸發邏輯
+        
+        # =========================================================
+        # 🌟 新增：動態預估量引擎 (解決盤中假訊號)
+        # =========================================================
+        curr_hour = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).hour
+        vol_multiplier = 1.0
+        
+        # 依據盤中不同時段放大今日成交量
+        if curr_hour == 10:
+            vol_multiplier = 4.5
+        elif curr_hour == 12:
+            vol_multiplier = 1.5
+        elif curr_hour == 13: # 13:15 觸發時
+            vol_multiplier = 1.1 
+
+        hist['Est_Volume'] = hist['Volume'].copy()
+        if len(hist) > 0:
+            hist.iloc[-1, hist.columns.get_loc('Est_Volume')] = hist['Volume'].iloc[-1] * vol_multiplier
+            
+        hist['5VMA'] = hist['Est_Volume'].rolling(5).mean()
+
+        # 🌟 2560 戰法指標與回踩觸發邏輯 (使用動態預估量)
         hist['25MA'] = hist['Close'].rolling(25).mean()
-        hist['60VMA'] = hist['Volume'].rolling(60).mean()
+        hist['60VMA'] = hist['Volume'].rolling(60).mean() # 長線不放大
         
-        # 條件1：25MA 趨勢向上 (今天大於三天前)
         cond_trend = hist['25MA'] > hist['25MA'].shift(3)
-        # 條件2：動能確認 (5均量大於60均量，代表近期有資金進駐)
         cond_vol_mom = hist['5VMA'] > hist['60VMA']
-        # 條件3：精準回踩 (最低價碰到25MA附近1.5%，且收盤價沒嚴重跌破)
         cond_pullback = (hist['Low'] <= hist['25MA'] * 1.015) & (hist['Close'] >= hist['25MA'] * 0.985)
-        # 條件4：量縮沉澱 (當日成交量低於5日均量)
-        cond_shrink = hist['Volume'] < hist['5VMA']
+        cond_shrink = hist['Est_Volume'] < hist['5VMA'] # 預估量必須低於均量
         
-        # 結合成布林訊號
         hist['Signal_2560'] = cond_trend & cond_vol_mom & cond_pullback & cond_shrink
-        # ====================================================
-        # 🌟 增強：計算 60 日相對位階 (Price_Position)
+        # =========================================================
+
+        # 🌟 計算 60 日相對位階 (Price_Position)
         hist['High_60'] = hist['High'].rolling(window=60, min_periods=20).max()
         hist['Low_60'] = hist['Low'].rolling(window=60, min_periods=20).min()
         hist['Price_Position'] = (hist['Close'] - hist['Low_60']) / (hist['High_60'] - hist['Low_60'])
@@ -338,7 +362,8 @@ def get_analysis_and_chart(symbol, name):
         hist['BB_Width'] = (4 * hist['STD20']) / hist['20MA']
         
         hist['Is_Bottoming'] = ((hist['Close'] < hist['5MA']) & (hist['MACD_Hist'].shift(2) < hist['MACD_Hist'].shift(1)) & (hist['MACD_Hist'].shift(1) < hist['MACD_Hist']) & (hist['MACD_Hist'] < 0)).astype(int)
-        hist['Is_Breakout'] = (hist['Close'].shift(1) < hist['5MA'].shift(1)) & (hist['Close'] > hist['5MA']) & (hist['Volume'] > hist['5VMA'] * 1.2)
+        # 突破判斷也切換為 Est_Volume
+        hist['Is_Breakout'] = (hist['Close'].shift(1) < hist['5MA'].shift(1)) & (hist['Close'] > hist['5MA']) & (hist['Est_Volume'] > hist['5VMA'] * 1.2)
         hist['Sniper_Signal'] = hist['Is_Bottoming'].rolling(3).max().fillna(0).astype(bool) & hist['Is_Breakout']
         hist['Sniper_Memory_5D'] = hist['Sniper_Signal'].rolling(5).max().fillna(0)
         
@@ -389,11 +414,21 @@ if __name__ == "__main__":
     tw_tz = datetime.timezone(datetime.timedelta(hours=8))
     curr_date = datetime.datetime.now(tw_tz).date()
     curr_time = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
+
+    # ==========================================
+    # 🌟 新增：開市日絕對攔截機制
+    # ==========================================
+    print(f"[{curr_time}] NOC 終極戰情室啟動，檢查開市狀態...")
+    if not is_trading_day(curr_date):
+        print("📅 今日為週末或國定假日休市，戰情室暫停推播，伺服器進入休眠。")
+        sys.exit()  # 直接結束程式
+    # ==========================================
+
     msg_list = []
     generated_charts = []
     has_data = False
     
-    print(f"[{curr_time}] NOC 終極戰情室 v8.12 (量價位階與籌碼強化版) 啟動...")
+    print(f"[{curr_time}] NOC 終極戰情室 v8.12 (盤中狙擊防禦強化版) 執行中...")
     
     is_bull_market, market_msg = get_market_regime()
     noc_state = load_state()
@@ -417,19 +452,15 @@ if __name__ == "__main__":
             buy_price = data['buy_price']
             roi_pct = ((curr_price - buy_price) / buy_price) * 100
             
-            # 🌟 1. 提早呼叫 ETF 判定引擎，確認標的屬性
             etf_icon, bias_limit, etf_desc = get_etf_strategy(sym, data['name'])
-            is_etf = "一般型" not in etf_icon  # 如果不是一般型，就是大盤或高股息 ETF
+            is_etf = "一般型" not in etf_icon  
             
             sym_state = noc_state.get(sym, {"status": "NONE"})
             
-            # 🌟 2. 啟動分流防禦機制
             if is_etf:
-                # 🛡️ 【ETF 紀律模式】：關閉 ATR 停損，啟動越跌越買邏輯
                 if sym_state["status"] != "REAL_HOLD_ETF":
                     noc_state[sym] = {"status": "REAL_HOLD_ETF", "entry": buy_price}
                 
-                # ETF 的操作指令：不看防守線，看回檔深度
                 if roi_pct <= -10.0:
                     pnl_alert = f"💎【黃金坑加碼】帳面回檔 {roi_pct:.2f}%，啟動大額建倉！"
                 elif roi_pct <= -5.0:
@@ -438,15 +469,12 @@ if __name__ == "__main__":
                     pnl_alert = f"🧘‍♂️【長線鎖籌】無懼波動，靜待資產翻倍。"
                     
             else:
-                # ⚔️ 【個股波段模式】：維持原有的 2倍 ATR 動態停損
                 stop_distance = atr * ATR_MULTIPLIER
                 
                 if sym_state["status"] != "REAL_HOLD":
-                    # 重新進場或初次抓取，設定初始防線
                     noc_state[sym] = {"status": "REAL_HOLD", "entry": buy_price, "trailing_stop": curr_price - stop_distance}
                     sym_state = noc_state[sym]
                     
-                # 計算當前應該墊高到的防守線
                 final_stop = max(sym_state["trailing_stop"], curr_price - stop_distance)
                 
                 if curr_price < final_stop: 
@@ -458,7 +486,6 @@ if __name__ == "__main__":
                     else: 
                         pnl_alert = f"🟡 浮虧防禦 | 📍 死守底線: {final_stop:.1f}"
             
-            # 🌟 3. 輸出戰報訊息
             portfolio_msg = f"{etf_icon} {data['name']} ({sym})\n"
             portfolio_msg += f"   成本: {buy_price:.2f} | 股數: {data['shares']} | 現價: {curr_price:.2f}\n"
             portfolio_msg += f"   損益: {roi_pct:+.2f}% | 👉 指令: {pnl_alert}\n\n"
@@ -469,7 +496,6 @@ if __name__ == "__main__":
         if not stocks: 
             continue 
         
-        # 🌟 判定五大戰區類別
         is_etf_zone = "ETF" in cat.upper()
         is_radar_zone = "雷達" in cat
         is_key_obs = "重點觀測" in cat
@@ -496,15 +522,17 @@ if __name__ == "__main__":
             d = td['D']
             pe = get_pe_ratio(sym)
             
-            # 取得新計算的位階與投信連買賣資料
+            # 🌟 盤中策略：全面抓取預估量
+            est_vol = td.get('Est_Volume', td['Volume'])
             pos = td['Price_Position'] if 'Price_Position' in td and not pd.isna(td['Price_Position']) else 0.5
             trust_streak = int(td['Trust_Streak']) if 'Trust_Streak' in td and not pd.isna(td['Trust_Streak']) else 0
             
             bias = ((close - ma20) / ma20) * 100 if ma20 else 0
             
-            if td['Volume'] > vma5 * 1.2:
+            # 使用預估量判斷狀態
+            if est_vol > vma5 * 1.2:
                 vol_status = "📈 出量"
-            elif td['Volume'] < vma5 * 0.8:
+            elif est_vol < vma5 * 0.8:
                 vol_status = "📉 量縮"
             else:
                 vol_status = "➖ 量平"
@@ -530,28 +558,22 @@ if __name__ == "__main__":
             pe_str = f"{pe:.1f}" if isinstance(pe, float) else pe
             is_overvalued = isinstance(pe, float) and pe > PE_LIMIT
 
-            # 🌟 籌碼增強：將投信天數整合進狀態顯示
             chip_msg = td['Chip_Status']
             if trust_streak > 0:
                 chip_msg += f" (連買 {trust_streak} 天)"
             elif trust_streak < 0:
                 chip_msg += f" (連賣 {abs(trust_streak)} 天)"
 
-            # 🌟 預判增強：納入 60 日股價位階 (高於 0.7 屬高檔，低於 0.3 屬低檔)
             predict_msg = "無特殊徵兆"
-            if td['Volume'] > vma5 * 2: 
-                if pos > 0.7:
-                    predict_msg = "💀【動能竭盡】高檔爆量轉折！"
-                elif pos < 0.3:
-                    predict_msg = "🔥【底部換手】低檔爆量，醞釀反彈！"
-                else:
-                    predict_msg = "⚠️【中繼爆量】留意方向表態！"
-            elif td['Shadow_Ratio'] > 0.5 and td['Volume'] > vma5 * 1.5: 
-                if pos > 0.7:
-                    predict_msg = "⚠️【避雷針陷阱】高檔長上影線！"
-                elif pos < 0.3:
-                    predict_msg = "🌟【仙人指路】低檔長上影線試盤！"
-            elif close > td['20_High'] and td['Volume'] > vma5 * 1.2: 
+            # 預判引擎全面升級為使用 Est_Volume 預估量
+            if est_vol > vma5 * 2: 
+                if pos > 0.7: predict_msg = "💀【動能竭盡】高檔爆量轉折！"
+                elif pos < 0.3: predict_msg = "🔥【底部換手】低檔爆量，醞釀反彈！"
+                else: predict_msg = "⚠️【中繼爆量】留意方向表態！"
+            elif td['Shadow_Ratio'] > 0.5 and est_vol > vma5 * 1.5: 
+                if pos > 0.7: predict_msg = "⚠️【避雷針陷阱】高檔長上影線！"
+                elif pos < 0.3: predict_msg = "🌟【仙人指路】低檔長上影線試盤！"
+            elif close > td['20_High'] and est_vol > vma5 * 1.2: 
                 predict_msg = "🚀【無壓巡航】突破 20 日高！"
             elif td['BB_Width'] < 0.08: 
                 predict_msg = "⚠️【大變盤預警】通道極度壓縮！"
@@ -578,10 +600,8 @@ if __name__ == "__main__":
                         noc_state[sym] = {"status": "HOLD", "entry": close, "trailing_stop": stop_price}
                         alert = f"{'⚔️【雙劍合璧】' if isinstance(yoy, float) and yoy >= YOY_EXPLOSION_PCT else '🚀【啟動狙擊】'}買入 {suggested_shares/1000:.1f} 張，停損 {stop_price:.1f}"
                 elif td['Sniper_Memory_5D'] == 1: 
-                    if close > ma5:
-                        alert = "🔥【狙擊延續】站穩5日線！" 
-                    else:
-                        alert = "⚠️【狙擊失效】跌破5日線！"
+                    if close > ma5: alert = "🔥【狙擊延續】站穩5日線！" 
+                    else: alert = "⚠️【狙擊失效】跌破5日線！"
             elif sym_state["status"] == "HOLD":
                 new_stop = max(sym_state["trailing_stop"], close - stop_distance)
                 if close < new_stop: 
@@ -597,23 +617,17 @@ if __name__ == "__main__":
             # --- 戰區 2：ETF 專區 ---
             if is_etf_zone:
                 etf_type, bias_limit, etf_desc = get_etf_strategy(sym, name)
-                if bias > bias_limit: 
-                    etf_cmd = "⚠️ 乖離過熱，建議分批獲利了結"
-                elif k < 30 and k > d: 
-                    etf_cmd = "🔥 KD低檔金叉，建議佈局買進"
-                elif close > ma5: 
-                    etf_cmd = "✅ 趨勢向上，續抱"
-                else: 
-                    etf_cmd = "⏳ 趨勢偏弱，觀望"
+                if bias > bias_limit: etf_cmd = "⚠️ 乖離過熱，建議分批獲利了結"
+                elif k < 30 and k > d: etf_cmd = "🔥 KD低檔金叉，建議佈局買進"
+                elif close > ma5: etf_cmd = "✅ 趨勢向上，續抱"
+                else: etf_cmd = "⏳ 趨勢偏弱，觀望"
                 
                 stock_msg = f"{etf_type} {name} ({sym})\n"
                 stock_msg += f"   現價: {close:.2f} | 乖離: {bias:+.1f}% ({'🚨過熱' if bias > bias_limit else '✅穩定'})\n"
                 stock_msg += f"   屬性: {etf_desc}\n"
                 stock_msg += f"   👉 指令: {etf_cmd}\n\n"
                 cat_msg_list.append(stock_msg)
-                
-                if chart_file not in generated_charts: 
-                    generated_charts.append(chart_file)
+                if chart_file not in generated_charts: generated_charts.append(chart_file)
 
             # --- 戰區 5：🎯 雷達鎖定區 (短線狙擊專用) ---
             elif is_radar_zone:
@@ -622,13 +636,10 @@ if __name__ == "__main__":
                 stock_msg += f"   指標: {kd_str} | RSI: {rsi:.1f}\n"
                 stock_msg += f"   💰 籌碼: {chip_msg}\n"
                 stock_msg += f"   👉 指令: {alert}\n"
-                if tips: 
-                    stock_msg += f"   💡 戰略提示: {tips}\n"
+                if tips: stock_msg += f"   💡 戰略提示: {tips}\n"
                 stock_msg += "\n"
                 cat_msg_list.append(stock_msg)
-                
-                if chart_file not in generated_charts: 
-                    generated_charts.append(chart_file)
+                if chart_file not in generated_charts: generated_charts.append(chart_file)
 
             # --- 戰區 3：重點觀測區 ---
             elif is_key_obs:
@@ -640,26 +651,17 @@ if __name__ == "__main__":
                 stock_msg += f"   💰 籌碼: {chip_msg}\n"
                 stock_msg += f"   🔮 預判: {predict_msg}\n"
                 stock_msg += f"   👉 指令: {alert}\n"
-                if tips: 
-                    stock_msg += f"   💡 NOC訊號: {tips}\n"
+                if tips: stock_msg += f"   💡 NOC訊號: {tips}\n"
                 stock_msg += "\n"
                 cat_msg_list.append(stock_msg)
-                
-                if chart_file not in generated_charts: 
-                    generated_charts.append(chart_file)
+                if chart_file not in generated_charts: generated_charts.append(chart_file)
 
-           # --- 戰區 4：觀察區 (條件觸發才顯示) ---
+            # --- 戰區 4：觀察區 (條件觸發才顯示) ---
             elif is_normal_obs:
-                # 🌟 更新：抓取 2560 訊號
                 is_2560 = td.get('Signal_2560', False)
-                
-                # 更新陷阱與復甦的觸發條件
                 is_trap = predict_msg in ["💀【動能竭盡】高檔爆量轉折！", "⚠️【避雷針陷阱】高檔長上影線！", "⚠️【大變盤預警】通道極度壓縮！"]
-                
-                # 🌟 將 is_2560 加入復甦訊號中
                 is_recovery = td['Sniper_Signal'] or (k < 30 and k > d) or ("止跌" in tips or "支撐" in tips) or predict_msg in ["🔥【底部換手】低檔爆量，醞釀反彈！", "🌟【仙人指路】低檔長上影線試盤！"] or is_2560
                 
-                # 如果觸發 2560，覆寫預判訊息
                 if is_2560:
                     predict_msg = "🎯【2560戰法】量縮回踩 25MA，絕佳左側佈局點！"
                     alert = "✅ 準備進場 (請留意停損設 25MA 下方 3%)"
@@ -669,23 +671,16 @@ if __name__ == "__main__":
                     stock_msg += f"   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
                     stock_msg += f"   💰 籌碼: {chip_msg}\n"
                     
-                    # 依據觸發類型給予不同標題
-                    if is_2560:
-                        stock_msg += f"   🎯 條件觸發: 🌟 高勝率回踩狙擊\n"
-                    else:
-                        stock_msg += f"   🎯 條件觸發: {'🚨 陷阱預警' if is_trap else '🔥 復甦/狙擊訊號'}\n"
+                    if is_2560: stock_msg += f"   🎯 條件觸發: 🌟 高勝率回踩狙擊\n"
+                    else: stock_msg += f"   🎯 條件觸發: {'🚨 陷阱預警' if is_trap else '🔥 復甦/狙擊訊號'}\n"
                         
                     stock_msg += f"   👉 預判/指令: {predict_msg if is_trap else alert}\n"
-                    if tips: 
-                        stock_msg += f"   💡 NOC訊號: {tips}\n"
+                    if tips: stock_msg += f"   💡 NOC訊號: {tips}\n"
                     stock_msg += "\n"
                     cat_msg_list.append(stock_msg)
-                    
-                    if chart_file not in generated_charts: 
-                        generated_charts.append(chart_file)
+                    if chart_file not in generated_charts: generated_charts.append(chart_file)
                 else:
-                    if os.path.exists(chart_file): 
-                        os.remove(chart_file)
+                    if os.path.exists(chart_file): os.remove(chart_file)
                     continue
                     
             # --- 其他未分類戰區 ---
@@ -694,20 +689,18 @@ if __name__ == "__main__":
                 stock_msg += f"   現價: {close:.2f} | 狀態: {trend_status}\n"
                 stock_msg += f"   👉 指令: {alert}\n\n"
                 cat_msg_list.append(stock_msg)
-                
-                if chart_file not in generated_charts: 
-                    generated_charts.append(chart_file)
+                if chart_file not in generated_charts: generated_charts.append(chart_file)
 
         if cat_msg_list:
             msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
             msg_list.extend(cat_msg_list)
+
     # =========================================================
     # === 9. 🏆 ETF 雙引擎績效競技場 (自動汰弱留強模組) ===
     # =========================================================
     etf_arena = {"💰高股息防禦組": [], "🚀市值與主題成長組": []}
     current_year = curr_date.year
 
-    # 收集所有出現在雷達與庫藏中的唯一 ETF 標的
     all_etfs = {}
     if MY_PORTFOLIO:
         for sym, data in MY_PORTFOLIO.items():
@@ -717,72 +710,50 @@ if __name__ == "__main__":
             for sym, name in stocks.items():
                 all_etfs[sym] = name
 
-    # 進入競技場後台運算
     for sym, name in all_etfs.items():
         etf_icon, _, _ = get_etf_strategy(sym, name)
         is_etf = "一般型" not in etf_icon
         
         if is_etf:
-            # 取得歷史資料 (由於前面戰區可能已抓過，若有快取機制更好，這裡為求穩定直接調用)
             res = get_analysis_and_chart(sym, name)
-            if not res: 
-                continue
+            if not res: continue
             hist, _ = res
-            
-            if len(hist) < 10: 
-                continue
+            if len(hist) < 10: continue
             
             close_price = hist['Close'].iloc[-1]
-            
-            # 運算 1：近一季 (60個交易日) 動能
             qtr_days = min(60, len(hist)-1)
             qtr_price = hist['Close'].iloc[-(qtr_days+1)]
             qtr_roi = ((close_price - qtr_price) / qtr_price) * 100
             
-            # 運算 2：今年以來 (YTD) 績效
             hist_ytd = hist[hist.index.year == current_year]
             if not hist_ytd.empty:
                 ytd_start_price = hist_ytd['Close'].iloc[0]
                 ytd_roi = ((close_price - ytd_start_price) / ytd_start_price) * 100
             else:
-                ytd_roi = qtr_roi # 若無今年初資料防呆機制
+                ytd_roi = qtr_roi 
                 
             group_key = "💰高股息防禦組" if "高股息" in etf_icon else "🚀市值與主題成長組"
-            etf_arena[group_key].append({
-                "name": name, 
-                "sym": sym, 
-                "qtr_roi": qtr_roi, 
-                "ytd_roi": ytd_roi
-            })
+            etf_arena[group_key].append({"name": name, "sym": sym, "qtr_roi": qtr_roi, "ytd_roi": ytd_roi})
 
-    # 產出競技場戰報文字
     arena_msg = []
     if etf_arena["💰高股息防禦組"] or etf_arena["🚀市值與主題成長組"]:
         arena_msg.append("━━━━━━━━━━━━━━\n🏆 【ETF 雙引擎績效競技場 (自動汰弱留強)】\n━━━━━━━━━━━━━━\n")
         
         for group_name, group_data in etf_arena.items():
-            if not group_data: 
-                continue
+            if not group_data: continue
             arena_msg.append(f"**{group_name}**\n")
             
-            # 依據季動能 (qtr_roi) 降冪排序，動能強的排前面
             sorted_etfs = sorted(group_data, key=lambda x: x['qtr_roi'], reverse=True)
-            
             medals = ["🥇", "🥈", "🥉"]
             for idx, etf in enumerate(sorted_etfs):
                 medal = medals[idx] if idx < 3 else "🔸"
                 q_str = f"{etf['qtr_roi']:+.1f}%"
                 y_str = f"{etf['ytd_roi']:+.1f}%"
                 
-                # AI 智能評語邏輯
-                if etf['qtr_roi'] > 5.0 and etf['ytd_roi'] > 10.0:
-                    status = "🔥 雙料強勢"
-                elif etf['qtr_roi'] < 0 and etf['ytd_roi'] > 0:
-                    status = "⏳ 短線洗盤，長線穩健"
-                elif etf['qtr_roi'] < -2.0 and etf['ytd_roi'] < 0:
-                    status = "⚠️ 嚴重落後，請檢視佔比"
-                else:
-                    status = "✅ 穩定跟隨"
+                if etf['qtr_roi'] > 5.0 and etf['ytd_roi'] > 10.0: status = "🔥 雙料強勢"
+                elif etf['qtr_roi'] < 0 and etf['ytd_roi'] > 0: status = "⏳ 短線洗盤，長線穩健"
+                elif etf['qtr_roi'] < -2.0 and etf['ytd_roi'] < 0: status = "⚠️ 嚴重落後，請檢視佔比"
+                else: status = "✅ 穩定跟隨"
                     
                 arena_msg.append(f"{medal} {etf['name']} ({etf['sym']})\n   季動能 {q_str} ｜ 本年累計 {y_str} ({status})\n")
             arena_msg.append("\n")
@@ -795,11 +766,10 @@ if __name__ == "__main__":
         if len(msg_list) == 1 and "大盤風向" in msg_list[0]: 
             msg_list.append("\n🔕 【靜默模式】無觸發條件。")
             
-        final_text = f"📡 【NOC 終極戰情室 v8.12 (量價位階強化版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 終極戰情室 v8.12 (盤中狙擊強化版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         
         for chart in generated_charts:
-            if os.path.exists(chart): 
-                os.remove(chart)
+            if os.path.exists(chart): os.remove(chart)
     else:
         print("休市或資料讀取失敗，伺服器待命。")
