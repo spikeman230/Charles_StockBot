@@ -116,7 +116,7 @@ def fetch_trello_deployment():
                         title_tip_match = re.search(r'\((.*?)\)', name_part)
                         trello_tip = title_tip_match.group(1) if title_tip_match else card.get('desc', '').strip()
                         
-                        stock_list[symbol] = {"name": name, "trello_tip": trello_tip}
+                        stock_list[symbol] = {"name": name, "trello_tip": trerello_tip}
                         
                     if stock_list:
                         trello_dict[list_name] = stock_list
@@ -139,7 +139,7 @@ else:
     STOCK_DICT = {}
     MY_PORTFOLIO = {}
 
-# === 2.2 🚀 動態掛載：讀取兩大雷達名單 ===
+# === 2.2 🚀 動態掛載：讀取兩大雷達名單 (由 Auto-commit 與分離程式產生) ===
 RADAR_FILE = "radar_targets.json"
 if os.path.exists(RADAR_FILE):
     try:
@@ -177,7 +177,7 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, pred
     try:
         with open(log_filename, mode='a', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
-            if not file_exists: writer.writerow(["日期", "代號", "名稱", "收盤價", "RSI", "量能狀態", "趨勢狀態", "战場預判", "籌碼訊號", "行動指令"])
+            if not file_exists: writer.writerow(["日期", "代號", "名稱", "收盤價", "RSI", "量能狀態", "趨勢狀態", "戰場預判", "籌碼訊號", "行動指令"])
             writer.writerow([date, symbol, name, f"{close_price:.2f}", f"{rsi:.2f}", vol_status, status, predict, chip_signal, alert])
     except: pass
 
@@ -385,7 +385,7 @@ if __name__ == "__main__":
     generated_charts = []
     has_data = False
     
-    print(f"[{curr_time}] NOC 終極戰情室 v9.0 (快取引擎與 Trello 解耦版) 執行中...")
+    print(f"[{curr_time}] NOC 終極戰情室 v10.0 (全模組整合企業版) 執行中...")
     
     is_bull_market, market_msg = get_market_regime()
     noc_state = load_state()
@@ -454,7 +454,7 @@ if __name__ == "__main__":
         cat_msg_list = [] 
         
         for sym, item in stocks.items():
-            # 🌟 解耦處理：判斷來源是 Trello 字典還是 JSON 字串
+            # 解耦處理：判斷來源是 Trello 字典還是 JSON 字串
             if isinstance(item, dict):
                 name = item.get("name", sym)
                 tips = item.get("trello_tip", "")
@@ -602,7 +602,6 @@ if __name__ == "__main__":
             elif is_normal_obs:
                 is_2560 = td.get('Signal_2560', False)
                 is_trap = predict_msg in ["💀【動能竭盡】高檔爆量轉折！", "⚠️【避雷針陷阱】高檔長上影線！", "⚠️【大變盤預警】通道極度壓縮！"]
-                # 🌟 Trello 上的自訂字眼會透過 tips 自動觸發 is_recovery
                 is_recovery = td['Sniper_Signal'] or (k < 30 and k > d) or ("止跌" in tips or "支撐" in tips) or predict_msg in ["🔥【底部換手】低檔爆量，醞釀反彈！", "🌟【仙人指路】低檔長上影線試盤！"] or is_2560
                 
                 if is_2560:
@@ -664,7 +663,7 @@ if __name__ == "__main__":
         is_etf = "一般型" not in etf_icon
         
         if is_etf:
-            # ⚡ 秒速從記憶體提取資料，無需再次爬取
+            # ⚡ 秒速從記憶體提取資料
             hist = get_stock_data(sym, name)
             if hist is None or len(hist) < 10: continue
             
@@ -714,7 +713,7 @@ if __name__ == "__main__":
         if len(msg_list) == 1 and "大盤風向" in msg_list[0]: 
             msg_list.append("\n🔕 【靜默模式】無觸發條件。")
             
-        final_text = f"📡 【NOC 終極戰情室 v9.0 (快取引擎與解耦升級版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
+        final_text = f"📡 【NOC 終極戰情室 v10.0 (全模組整合企業版)】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list)
         send_reports(f"NOC 戰情報告 {curr_date}", final_text, generated_charts)
         
         for chart in generated_charts:
