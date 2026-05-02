@@ -116,7 +116,7 @@ def fetch_trello_deployment():
                         title_tip_match = re.search(r'\((.*?)\)', name_part)
                         trello_tip = title_tip_match.group(1) if title_tip_match else card.get('desc', '').strip()
                         
-                        stock_list[symbol] = {"name": name, "trello_tip": trerello_tip}
+                        stock_list[symbol] = {"name": name, "trello_tip": trello_tip}
                         
                     if stock_list:
                         trello_dict[list_name] = stock_list
