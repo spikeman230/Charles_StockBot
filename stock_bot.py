@@ -543,16 +543,20 @@ if __name__ == "__main__":
     # --- 交易日檢查與背景狀態更新 ---
     if not is_trading_day(curr_date):
         logger.info("今日為休市日，戰情室發送休市通知後休眠。")
-        update_trello_system_status_bg("週末/國定假日休市", "🔴")
+        update_trello_system_status_bg("國定假日/休市", "🔴")
         
-        # 🌟 新增：推播休市專屬通知
-        closed_msg = (
-            f"📡 【NOC 終極戰情室 休市通知】\n"
-            f"📅 時間：{curr_time}\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"🔴 今日為週末或國定假日休市，戰情室暫停盤勢分析，伺服器已進入休眠模式。祝您假期愉快！"
-        )
-        send_reports(f"NOC 戰情報告 {curr_date} (休市)", closed_msg, [])
+        # 🌟 既然排程是週一到週五，會觸發這裡通常就是遇到國定假日或颱風假。
+        # 為了避免同一天內被排程重複打擾，我們限定只在「早上 10 點前」的那波喚醒才發送推播。
+        curr_hour = curr_dt.hour
+        if curr_hour <= 10:
+            closed_msg = (
+                f"📡 【NOC 終極戰情室 休市通知】\n"
+                f"📅 時間：{curr_time}\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"🔴 今日為國定假日或台股未開盤，戰情室暫停盤勢分析。\n"
+                f"伺服器已自動進入休眠模式，祝您假期愉快！"
+            )
+            send_reports(f"NOC 戰情報告 {curr_date} (休市)", closed_msg, [])
         
         sys.exit(0)
 
