@@ -454,12 +454,19 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
+    # 🌟 補回這行 Log：顯示開機狀態
+    logger.info(f"NOC 終極戰情室 v12.1 啟動，時間：{curr_time}")
+
     if not is_trading_day(curr_date):
+        # 🌟 補回這行 Log：顯示休市狀態
+        logger.info("今日為週末或國定假日休市，戰情室準備休眠。")
         update_trello_system_status_bg("國定假日/休市", "🔴")
         if curr_dt.hour <= 10:
             send_reports(f"NOC 戰情報告 {curr_date} (休市)", f"📡 【NOC 休市通知】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n🔴 今日休市，伺服器已休眠。", [])
         sys.exit(0)
 
+    # 🌟 補回這行 Log：顯示正常開盤狀態
+    logger.info("今日為交易日，開始執行資料抓取與戰略分析...")
     update_trello_system_status_bg("交易日運作中", "🟢")
 
     TRELLO_DICT, TRELLO_PORTFOLIO = fetch_trello_deployment()
