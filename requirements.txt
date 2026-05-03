@@ -2,3 +2,4 @@ yfinance
 requests
 mplfinance
 matplotlib
+python-dotenv
