@@ -11,22 +11,27 @@
     },
     "NVDA": {
         "status": "REAL_HOLD_ETF",
-        "entry": 144.5
+        "entry": 144.5,
+        "trailing_stop": 0.0
     },
     "00881.TW": {
         "status": "REAL_HOLD_ETF",
-        "entry": 26.0
+        "entry": 26.0,
+        "trailing_stop": 0.0
     },
     "00878.TW": {
         "status": "REAL_HOLD_ETF",
-        "entry": 22.21
+        "entry": 22.21,
+        "trailing_stop": 0.0
     },
     "00919.TW": {
         "status": "REAL_HOLD_ETF",
-        "entry": 23.0
+        "entry": 23.0,
+        "trailing_stop": 0.0
     },
     "009816.TW": {
         "status": "REAL_HOLD_ETF",
-        "entry": 10.73
+        "entry": 10.73,
+        "trailing_stop": 0.0
     }
 }
