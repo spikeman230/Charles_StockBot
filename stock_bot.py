@@ -590,6 +590,10 @@ if __name__ == "__main__":
             chip_msg = td["Chip_Status"]
             if trust_streak > 0: chip_msg += f" (連買 {trust_streak} 天)"
             elif trust_streak < 0: chip_msg += f" (連賣 {abs(trust_streak)} 天)"
+            # 🌟 向 SQLite 本地戰情室調閱「散戶融資動向」
+            local_chip_analysis = strategy.analyze_stock_opportunity(sym)
+            if local_chip_analysis != "資料不足":
+                chip_msg += f" | {local_chip_analysis}"
 
             predict_msg = "無特殊徵兆"
             if est_vol > vma5 * 2:
@@ -614,6 +618,7 @@ if __name__ == "__main__":
                     if not is_bull_market: alert = "🛡️【大盤攔截】大盤偏空，放棄狙擊。"
                     elif isinstance(yoy, float) and yoy < 0: alert = "🛡️【基本面攔截】營收衰退，避開地雷。"
                     elif is_overvalued: alert = f"🛡️【估值攔截】PE {pe_str} 過高，風險極大。"
+                    elif "融資暴增" in local_chip_analysis: alert = "🛡️【籌碼攔截】散戶瘋狂上車中，容易假突破，建議觀望。"
                     else:
                         stop_price = close - (atr * cfg.ATR_MULTIPLIER)
                         noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
