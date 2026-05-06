@@ -21,7 +21,10 @@ jobs:
         
     - name: Install dependencies
       # 確保 requirements.txt 裡有 FinMind, pandas, yfinance 等套件
-      run: pip install -r requirements.txt
+      # python -m pip install --upgrade pip
+      run: | 
+        pip install FinMind pandas yfinance python-dotenv
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       
     - name: Run Database Initialization
       env:
