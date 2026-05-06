@@ -5,7 +5,7 @@ import datetime
 import os
 
 # ==========================================
-# ⚙️ 模組 1：SQLite 戰情資料庫建置
+# ⚙️ 模組 1：SQLite 戰情資料庫建置 (v2.1 裝甲防禦版)
 # ==========================================
 class NOCDatabase:
     def __init__(self, db_name="noc_warroom.db"):
@@ -20,17 +20,17 @@ class NOCDatabase:
             date TEXT, stock_id TEXT, open REAL, max REAL, min REAL, close REAL, Trading_Volume INTEGER,
             PRIMARY KEY (date, stock_id)
         )''')
-        # 2. 融資融券表 (散戶動向)
+        # 2. 融資融券表 (修正對應 FinMind 的 MarginPurchaseTodayBalance 欄位)
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS margin_trades (
-            date TEXT, stock_id TEXT, MarginPurchaseBuy INTEGER, MarginPurchaseSell INTEGER, MarginPurchaseBalance INTEGER,
+            date TEXT, stock_id TEXT, MarginPurchaseBuy INTEGER, MarginPurchaseSell INTEGER, MarginPurchaseTodayBalance INTEGER,
             PRIMARY KEY (date, stock_id)
         )''')
-        # 3. 大戶持股比例表 (籌碼集中度)
+        # 3. 大戶持股比例表
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS large_holders (
             date TEXT, stock_id TEXT, HoldingSharesLevel TEXT, percent REAL,
             PRIMARY KEY (date, stock_id, HoldingSharesLevel)
         )''')
-        # 4. 外資期貨未平倉表 (大盤防空警報用)
+        # 4. 外資期貨未平倉表
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS futures_institutional (
             date TEXT, name TEXT, item TEXT, OpenInterestNetLot INTEGER,
             PRIMARY KEY (date, name, item)
@@ -38,12 +38,32 @@ class NOCDatabase:
         self.conn.commit()
 
     def save_df_to_db(self, df, table_name):
-        """將 Pandas DataFrame 高速寫入 SQLite"""
-        if not df.empty:
-            df.to_sql(table_name, self.conn, if_exists='append', index=False, method='multi')
+        """將 Pandas DataFrame 高速寫入 SQLite (具備自動過濾與防重複寫入機制)"""
+        if df is None or df.empty:
+            return
+
+        # 1. 取得資料庫中該資料表的真實欄位名稱
+        self.cursor.execute(f"PRAGMA table_info({table_name})")
+        db_columns = [col[1] for col in self.cursor.fetchall()]
+
+        # 2. 自動過濾 DataFrame，只保留資料庫有定義的欄位，丟棄 FinMind 塞進來的額外欄位
+        valid_cols = [c for c in df.columns if c in db_columns]
+        df_filtered = df[valid_cols]
+
+        # 3. 寫入資料庫 (防衝突處理)
+        try:
+            # 先嘗試整批高速寫入
+            df_filtered.to_sql(table_name, self.conn, if_exists='append', index=False, method='multi')
+        except sqlite3.IntegrityError:
+            # 若發生重複 (Primary Key 衝突)，改為逐筆寫入並忽略重複項
+            for _, row in df_filtered.iterrows():
+                try:
+                    row.to_frame().T.to_sql(table_name, self.conn, if_exists='append', index=False)
+                except sqlite3.IntegrityError:
+                    pass # 忽略已經存在的歷史數據
 
 # ==========================================
-# 📡 模組 2：FinMind 數據抓取與更新 (包含三大金礦)
+# 📡 模組 2：FinMind 數據抓取與更新
 # ==========================================
 class NOCDataFetcher:
     def __init__(self, token=None):
@@ -59,7 +79,7 @@ class NOCDataFetcher:
         df_kline = self.api.taiwan_stock_daily(stock_id=stock_id, start_date=start_date)
         db_instance.save_df_to_db(df_kline, 'daily_kline')
         
-        # 2. 金礦一：融資融券餘額 (MarginPurchaseBalance)
+        # 2. 金礦一：融資融券餘額
         df_margin = self.api.taiwan_stock_margin_purchase_short_sale(stock_id=stock_id, start_date=start_date)
         db_instance.save_df_to_db(df_margin, 'margin_trades')
         
@@ -99,8 +119,7 @@ class NOCStrategy:
         ma60 = df_taiex['close'].mean()
         is_broken_ma60 = current_close < ma60
         
-        # 2. 取得外資最新期貨淨未平倉口數 (OpenInterestNetLot)
-        # item: 'Foreign_Investor' (外資)
+        # 2. 取得外資最新期貨淨未平倉口數
         df_fii = pd.read_sql("SELECT * FROM futures_institutional WHERE name='外資及陸資' ORDER BY date DESC LIMIT 1", self.db.conn)
         fii_net_oi = df_fii.iloc[0]['OpenInterestNetLot'] if not df_fii.empty else 0
         is_heavy_short = fii_net_oi < -30000  # 外資淨空單超過三萬口
@@ -112,12 +131,11 @@ class NOCStrategy:
 
     def analyze_stock_opportunity(self, stock_id):
         """整合 K線與籌碼金礦的進階過濾器"""
-        # 這裡示範如何從 SQLite 讀取數據並判斷
         df_margin = pd.read_sql(f"SELECT * FROM margin_trades WHERE stock_id='{stock_id}' ORDER BY date DESC LIMIT 5", self.db.conn)
         
         if len(df_margin) >= 2:
-            current_margin = df_margin.iloc[0]['MarginPurchaseBalance']
-            prev_margin = df_margin.iloc[4]['MarginPurchaseBalance']
+            current_margin = df_margin.iloc[0]['MarginPurchaseTodayBalance']
+            prev_margin = df_margin.iloc[-1]['MarginPurchaseTodayBalance']
             
             # 判斷標準：近五日融資必須是「減少」的 (散戶退場)
             if current_margin < prev_margin:
@@ -125,38 +143,3 @@ class NOCStrategy:
             else:
                 return "⚠️ 融資暴增，散戶上車，建議觀望。"
         return "資料不足"
-
-# ==========================================
-# 🚀 總司令執行中樞 (Main)
-# ==========================================
-if __name__ == "__main__":
-    # 1. 初始化資料庫與爬蟲
-    db = NOCDatabase()
-    fetcher = NOCDataFetcher() # 如果有 FinMind Token 請傳入 token="YOUR_TOKEN"
-    strategy = NOCStrategy(db)
-    
-    # 設定抓取起點 (實戰中可設為近三個月，每日例行更新只需抓近三天)
-    start_date = (datetime.datetime.now() - datetime.timedelta(days=90)).strftime("%Y-%m-%d")
-    
-    # 2. 執行每日數據更新 (建議設定在 Cronjob 每天下午 15:30 執行)
-    try:
-        fetcher.fetch_market_health_data(start_date, db)
-        fetcher.fetch_and_store_stock_data("2353", start_date, db) # 以宏碁為例
-        print("✅ 戰情資料庫更新完畢！")
-    except Exception as e:
-        print(f"⚠️ 數據抓取失敗，可能觸發 API 限制：{e}")
-
-    # 3. 系統性風險掃描 (拔插頭協議)
-    print("\n--- 🚨 執行 DEFCON 大盤掃描 ---")
-    is_defcon_1 = strategy.check_defcon_1_status()
-    
-    if is_defcon_1:
-        print("🟥【警告】觸發 DEFCON 1 拔插頭協議！大盤跌破季線且外資空單破三萬口！")
-        print("指令：強制鎖定買盤，通知 Telegram，調高現有持股停損點！")
-        # 這裡可以寫入發送 Telegram 的程式碼
-    else:
-        print("🟩 大盤狀態安全，防空警報解除。繼續執行個股雷達掃描...")
-        
-        # 4. 個股籌碼金礦分析 (以宏碁為例)
-        analysis_result = strategy.analyze_stock_opportunity("2353")
-        print(f"🎯 宏碁 (2353) 籌碼判定：{analysis_result}")
