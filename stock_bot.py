@@ -28,6 +28,8 @@ from email.mime.image import MIMEImage
 from dotenv import load_dotenv
 from typing import Optional, Dict, Tuple, Any
 from pathlib import Path
+# 🌟 新增引入 NOC 核心防禦模組
+from noc_core import NOCDatabase, NOCStrategy
 
 # =============================================================================
 # === 0. 初始化：載入環境變數 & 日誌系統 ===
@@ -456,6 +458,20 @@ if __name__ == "__main__":
 
     # 🌟 補回這行 Log：顯示開機狀態
     logger.info(f"NOC 終極戰情室 v12.1 啟動，時間：{curr_time}")
+    # 🌟 啟動 SQLite 資料庫與戰略防空系統
+    db = NOCDatabase()
+    strategy = NOCStrategy(db)
+    
+    # 🚨 執行 DEFCON 大盤掃描
+    if strategy.check_defcon_1_status():
+        logger.warning("觸發 DEFCON 1 拔插頭協議！大盤跌破季線且外資空單破三萬口！")
+        update_trello_system_status_bg("⚠️ DEFCON 1 大盤警戒", "🔴")
+        send_reports(f"🚨 NOC 防空警報 {curr_date}", "🟥【大盤崩盤警告】\n已觸發拔插頭協議，系統強制停止雷達買進！請立即檢視庫存準備變現！", [])
+        # 防空生效時，直接終止程式，不進行後續的選股與買進判斷
+        sys.exit(0) 
+        
+    # 如果大盤安全，才繼續往下執行原本的 Trello 讀取與雷達掃描
+    TRELLO_DICT, TRELLO_PORTFOLIO = fetch_trello_deployment()
 
     if not is_trading_day(curr_date):
         # 🌟 補回這行 Log：顯示休市狀態
