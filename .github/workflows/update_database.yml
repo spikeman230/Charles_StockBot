@@ -3,7 +3,7 @@ name: NOC 每日盤後資料庫補給
 on:
   schedule:
     # ⏰ 這是 UTC 時間。08:30 等於台灣時間下午 16:30 (每週一到週五執行)
-    - cron: '30 8 * * 1-5'
+    - cron: '30 12 * * 1-5'
   workflow_dispatch: # 保留手動按鈕以防萬一
 
 permissions:
