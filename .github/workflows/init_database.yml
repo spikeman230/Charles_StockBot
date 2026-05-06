@@ -1,0 +1,43 @@
+name: NOC 戰情室初始建庫大補丸
+
+# 關鍵：無排程，純手動按鈕觸發 (這支程式通常建庫時只執行一次)
+on: 
+  workflow_dispatch: 
+
+# 🛡️ 允許 GitHub 機器人將生成的 noc_warroom.db 存回您的代碼倉庫
+permissions:
+  contents: write
+
+jobs:
+  initialize-db:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      # 確保 requirements.txt 裡有 FinMind, pandas, yfinance 等套件
+      run: pip install -r requirements.txt
+      
+    - name: Run Database Initialization
+      env:
+        # 調用您設定在 GitHub Secrets 中的 FinMind 權限金鑰
+        FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+      run: python init_db.py
+      
+    # 🚀 關鍵步驟：把建好的 noc_warroom.db 存回 GitHub 倉庫！
+    - name: Commit & Push database
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        # 使用 -f 強制加入，避免 db 檔案不小心被您的 .gitignore 規則擋住
+        git add -f noc_warroom.db
+        
+        # 檢查資料庫如果有成功生成且變動，才進行 commit
+        git diff-index --quiet HEAD || git commit -m "🗄️ 初始建置 NOC 歷史戰情資料庫 (SQLite)"
+        git push
