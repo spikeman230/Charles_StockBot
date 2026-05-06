@@ -77,6 +77,7 @@ class Config:
     LOG_FILE_CSV       : str   = "noc_trading_log.csv"
     RADAR_FILE         : str   = "radar_targets.json"
     LIGHTNING_FILE     : str   = "lightning_targets.json"
+    GUERRILLA_FILE     : str   = "guerrilla_targets.json"
 
 cfg = Config()
 
