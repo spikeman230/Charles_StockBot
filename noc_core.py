@@ -95,9 +95,11 @@ class NOCDataFetcher:
         df_taiex = self.api.taiwan_stock_daily(stock_id='TAIEX', start_date=start_date)
         db_instance.save_df_to_db(df_taiex, 'daily_kline')
         
-        # 抓取外資台指期未平倉口數
-        df_futures = self.api.taiwan_futures_institutional_investors(
-            commodity_id='TX', start_date=start_date
+        # 抓取外資台指期未平倉口數 (改用底層 get_data，避開版本參數衝突)
+        df_futures = self.api.get_data(
+            dataset='TaiwanFuturesInstitutionalInvestors',
+            data_id='TX',
+            start_date=start_date
         )
         db_instance.save_df_to_db(df_futures, 'futures_institutional')
 
