@@ -84,8 +84,8 @@ class NOCDataFetcher:
         db_instance.save_df_to_db(df_margin, 'margin_trades')
         
         # 3. 金礦二：股權分散表 (大戶持股比例)
-        df_holders = self.api.taiwan_stock_holding_shares_per(stock_id=stock_id, start_date=start_date)
-        db_instance.save_df_to_db(df_holders, 'large_holders')
+        # df_holders = self.api.taiwan_stock_holding_shares_per(stock_id=stock_id, start_date=start_date)
+        # db_instance.save_df_to_db(df_holders, 'large_holders')
 
     def fetch_market_health_data(self, start_date, db_instance):
         """金礦三：抓取大盤與外資期貨空單 (用於拔插頭協議)"""
