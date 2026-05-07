@@ -135,7 +135,7 @@ DATA_CACHE = DataCacheManager(ttl_minutes=cfg.CACHE_TTL_MINUTES, max_items=cfg.C
 # === 2. ETF 策略判定引擎 ===
 # =============================================================================
 _ETF_DIV_KEYS = ["高股息","優息","0056","00878","00919","00929","00915","00713","00939","00940","00936"]
-_ETF_MKT_KEYS = ["0050","006208","市值","AAPL","NVDA","TSM","00881","科技","半導體","5G","00891","00892","009816"]
+_ETF_MKT_KEYS = ["0050","006208","市值","00881","科技","半導體","5G","00891","00892","009816"]
 
 def get_etf_strategy(symbol: str, name: str) -> Tuple[str, float, str]:
     if any(k in name or k in symbol for k in _ETF_DIV_KEYS): return "💰高股息", 5.0, "控管殖利率 (5%乖離預警)"
