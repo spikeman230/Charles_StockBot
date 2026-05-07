@@ -33,5 +33,10 @@
         "status": "REAL_HOLD_ETF",
         "entry": 10.73,
         "trailing_stop": 0.0
+    },
+    "2353.TW": {
+        "status": "REAL_HOLD",
+        "entry": 28.15,
+        "trailing_stop": 26.900000163487025
     }
 }
