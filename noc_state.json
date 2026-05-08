@@ -12,7 +12,7 @@
     "NVDA": {
         "status": "REAL_HOLD",
         "entry": 144.5,
-        "trailing_stop": 194.00928824288505
+        "trailing_stop": 197.05714198521204
     },
     "00881.TW": {
         "status": "REAL_HOLD_ETF",
@@ -37,6 +37,6 @@
     "2353.TW": {
         "status": "REAL_HOLD",
         "entry": 28.15,
-        "trailing_stop": 26.900000163487025
+        "trailing_stop": 27.278571810041154
     }
 }
