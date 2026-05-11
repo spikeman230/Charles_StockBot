@@ -1,5 +1,5 @@
 # =============================================================================
-# NOC 終極戰情室 v12.3 - 戰略統一輸出升級版 (修復重點觀測區支援 & 型態警告)
+# NOC 終極戰情室 v12.4 - 戰略全時待命升級版 (無訊號強制啟動戰備計畫)
 # 優化項目：背景非同步 Trello、快取並發、25MA高階濾網、通用【作戰指令】全戰區覆蓋
 # =============================================================================
 
@@ -142,7 +142,7 @@ def get_etf_strategy(symbol: str, name: str) -> Tuple[str, float, str]:
     elif any(k in name or k in symbol for k in _ETF_MKT_KEYS): return "🚀市值/主題型", 10.0, "成長動能區 (10%乖離預警)"
     return "🔸一般型", 8.0, "趨勢防禦區 (8%乖離預警)"
 
-# 🌟 新增：戰術指令生成模組 (Tactical Engine v2 - 擴充詞庫支援重點觀測)
+# 🌟 新增：戰術指令生成模組 (Tactical Engine v3 - 全時待命版)
 def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: float, ma25: float, ma25_rising: bool, chip_msg: str, is_trap: bool) -> str:
     """根據觸發的條件動態生成標準化作戰指令"""
     chip_weak = "中性/偏空" in chip_msg or "無資料" in chip_msg
@@ -189,6 +189,14 @@ def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: fl
         stop_loss = close - (atr * 1.5)
         stop_reason = "跌破近期支撐或 1.5ATR"
         target = ma25 if ma25 > close else close + (atr * 3)
+    # 🌟 新增：針對沒有訊號的觀測股，強制給予「戰備計畫」
+    elif "戰備" in trigger_type or "等待" in trigger_type:
+        action = "預先規劃/觀望 (尚未觸發正式進場訊號)"
+        cap_suggest = "等待確認，暫不動用資金"
+        entry_zone = f"{ma25 * 0.995:.2f} - {ma25 * 1.015:.2f} (回踩25MA) 或 突破 {high_20:.2f}"
+        stop_loss = close - (atr * cfg.ATR_MULTIPLIER)
+        stop_reason = f"現價下方 {cfg.ATR_MULTIPLIER}ATR"
+        target = high_20 if high_20 > close else close + (atr * 3)
     else:
         return "" # 若無明確戰術則不顯示作戰指令區塊
 
@@ -530,7 +538,7 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v12.3 啟動，時間：{curr_time}")
+    logger.info(f"NOC 終極戰情室 v12.4 啟動，時間：{curr_time}")
     db = NOCDatabase()
     strategy = NOCStrategy(db)
     
@@ -718,7 +726,7 @@ if __name__ == "__main__":
 
             write_noc_log(curr_date, sym, name, close, rsi, vol_status, trend_status, predict_msg, chip_msg, alert)
 
-            # --- 報表輸出邏輯 (套用 Tactical Engine v2) ---
+            # --- 報表輸出邏輯 (套用 Tactical Engine v3 - 全時待命) ---
             s = ""
             need_chart = False
 
@@ -737,9 +745,12 @@ if __name__ == "__main__":
                 if trigger_label == "" and is_2560: trigger_label = "🌟 高勝率回踩狙擊"
                 elif trigger_label == "" and is_kd_cross: trigger_label = "🔥 底部復甦金叉"
                 elif trigger_label == "" and is_trap: trigger_label = "🚨 風險陷阱預警"
-                # 🌟 新增：將重點觀測區的專屬預判（爆量換手、無壓巡航等）直接轉為戰術觸發條件！
+                # 將重點觀測區的專屬預判（爆量換手、無壓巡航等）直接轉為戰術觸發條件！
                 elif trigger_label == "" and is_key_obs and predict_msg != "無特殊徵兆":
                     trigger_label = predict_msg 
+                # 🌟 新增：如果什麼訊號都沒觸發，只要它在雷達/觀測區，強制進入戰備狀態
+                elif trigger_label == "":
+                    trigger_label = "⏳ 戰備狀態 (等待訊號確認)"
 
                 if trigger_label: 
                     # 若觸發了條件且尚未有 Action Plan，則呼叫引擎生成
@@ -835,6 +846,6 @@ if __name__ == "__main__":
         if cfg.SILENT_MODE: sys.exit(0)
         else: msg_list.append("\n🔕 【靜默模式】無觸發條件。")
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v12.3】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v12.4】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
     for chart in generated_charts:
         if Path(chart).exists(): Path(chart).unlink()
