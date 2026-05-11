@@ -422,7 +422,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         curr_hour = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).hour
         vol_mult = {10: 4.5, 12: 1.5, 13: 1.1}.get(curr_hour, 1.0)
         hist["Est_Volume"] = hist["Volume"].copy()
-        if len(hist) > 0: hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = hist["Volume"].iloc[-1] * vol_mult
+        if len(hist) > 0: hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = int(hist["Volume"].iloc[-1] * vol_mult)
 
         hist["5MA"]   = hist["Close"].rolling(5).mean()
         hist["20MA"]  = hist["Close"].rolling(20).mean()
