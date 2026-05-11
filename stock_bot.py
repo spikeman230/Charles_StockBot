@@ -426,7 +426,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
             chip_df = get_finmind_chip_data(symbol, (datetime.datetime.now() - datetime.timedelta(days=200)).strftime("%Y-%m-%d"))
             if not chip_df.empty:
-                hist = hist.merge(chip_df, left_on="Date_Key", right_index=True, how="left").fillna(0)
+                hist = hist.merge(chip_df, left_on="Date_Key", right_index=True, how="left").ffill().fillna(0)
 
         hist = calculate_chip_signals(hist)
 
