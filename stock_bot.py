@@ -1,6 +1,6 @@
 # =============================================================================
 # NOC 終極戰情室 v12.1 - 非同步全快取終極版 (解決 Blocking I/O 效能瓶頸)
-# 優化項目：背景非同步 Trello、基本面/籌碼/技術面全快取並發、防爬蟲隨機延遲
+# 優化項目：背景非同步 Trello、基本面/籌碼/技術面全快取並發、防爬蟲隨機延遲、25MA回踩高階濾網
 # =============================================================================
 
 import yfinance as yf
@@ -362,8 +362,14 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         hist["5MA"]   = hist["Close"].rolling(5).mean()
         hist["20MA"]  = hist["Close"].rolling(20).mean()
         hist["25MA"]  = hist["Close"].rolling(25).mean()
+        hist["60MA"]  = hist["Close"].rolling(60).mean()
         hist["5VMA"]  = hist["Est_Volume"].rolling(5).mean()
         hist["60VMA"] = hist["Volume"].rolling(60).mean()
+
+        # 🌟 新增：均線斜率與 K 棒型態濾網
+        hist["25MA_Rising"] = hist["25MA"] > hist["25MA"].shift(1)
+        hist["Is_Red_Candle"] = hist["Close"] > hist["Open"]
+        hist["Lower_Shadow_Ratio"] = (hist[["Open", "Close"]].min(axis=1) - hist["Low"]) / (hist["High"] - hist["Low"]).replace(0, 0.001)
 
         hist["Signal_2560"] = (hist["25MA"] > hist["25MA"].shift(3)) & (hist["5VMA"] > hist["60VMA"]) & (hist["Low"] <= hist["25MA"] * 1.015) & (hist["Close"] >= hist["25MA"] * 0.985) & (hist["Est_Volume"] < hist["5VMA"])
         hist["High_60"] = hist["High"].rolling(window=60, min_periods=20).max()
@@ -666,10 +672,59 @@ if __name__ == "__main__":
                 
                 if is_trap or is_recovery:
                     if is_2560:
-                        predict_msg = "🎯【2560戰法】量縮回踩 25MA，絕佳左側佈局點！"
-                        alert = "✅ 準備進場 (停損設 25MA 下方 3%)"
-                    trigger_label = "🌟 高勝率回踩狙擊" if is_2560 else ("🚨 陷阱預警" if is_trap else "🔥 復甦/狙擊訊號")
-                    s = f"👀 {name} ({sym})\n   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n   💰 籌碼: {chip_msg}\n   🎯 條件觸發: {trigger_label}\n   👉 預判/指令: {predict_msg if is_trap else alert}\n"
+                        # 🌟 新增：高勝率回踩狙擊 - 三大濾網與資金控管升級
+                        ma25 = td["25MA"]
+                        is_25MA_rising = td["25MA_Rising"]
+                        lower_shadow = td["Lower_Shadow_Ratio"]
+                        is_red = td["Is_Red_Candle"]
+                        high_20 = td["20_High"]
+                        
+                        chip_weak = "中性/偏空" in chip_msg
+                        valid_reversal = (lower_shadow > 0.4) or is_red
+                        
+                        if not is_25MA_rising:
+                            action = "嚴格觀望 (25MA下彎，支撐無效)"
+                            cap_suggest = "0% (勿接刀)"
+                        elif chip_weak and not valid_reversal:
+                            action = "嚴格觀望 (籌碼偏弱且未見止跌K棒)"
+                            cap_suggest = "0% (再等一天確認)"
+                        else:
+                            if chip_weak:
+                                action = "左側分批試單 (籌碼偏弱，請縮小部位)"
+                                cap_suggest = "總部位 10% 以內"
+                            else:
+                                action = "積極建倉 (均線向上且籌碼配合)"
+                                cap_suggest = "總部位 10% - 20%"
+                                
+                        entry_zone = f"{ma25 * 0.995:.2f} - {ma25 * 1.015:.2f} (貼近 25MA)"
+                        stop_loss_price = ma25 * 0.97
+                        
+                        # 計算風報比 (Risk/Reward Ratio)
+                        risk = close - stop_loss_price
+                        reward = high_20 - close
+                        if risk > 0 and reward > 0:
+                            rr_str = f"風報比約 1 : {(reward/risk):.1f}"
+                        else:
+                            rr_str = "上方空間有限或現價已破防守"
+                            
+                        predict_msg = f"📈 趨勢：25MA {'上揚中 🔼' if is_25MA_rising else '下彎中 🔻'} | 量能：{vol_status}"
+                        trigger_label = "🌟 高勝率回踩狙擊 (動態濾網版)"
+                        
+                        s = (f"👀 {name} ({sym})\n"
+                             f"   現價: {close:.2f} | RSI: {rsi:.1f} | 25MA乖離: {((close-ma25)/ma25)*100:+.1f}%\n"
+                             f"   {predict_msg}\n"
+                             f"   💰 籌碼: {chip_msg}\n"
+                             f"   🎯 條件觸發: {trigger_label}\n"
+                             f"   👉 【作戰指令】\n"
+                             f"      * 策略：{action}\n"
+                             f"      * 進場區間：{entry_zone}\n"
+                             f"      * 資金建議：{cap_suggest}\n"
+                             f"      * 防守底線：跌破 {stop_loss_price:.2f} (25MA 下方 3%) 且收盤未站回，強制停損。\n"
+                             f"      * 初步目標：{high_20:.2f} (近期前高壓力區)，{rr_str}\n")
+                    else:
+                        trigger_label = "🚨 陷阱預警" if is_trap else "🔥 復甦/狙擊訊號"
+                        s = f"👀 {name} ({sym})\n   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n   💰 籌碼: {chip_msg}\n   🎯 條件觸發: {trigger_label}\n   👉 預判/指令: {predict_msg if is_trap else alert}\n"
+                    
                     need_chart = True
 
             else:
