@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from noc_core import NOCDatabase, NOCDataFetcher
 
 load_dotenv()
-FINMIND_TOKEN = os.getenv("FINMIND_TOKEN")
+    FINMIND_TOKEN = os.getenv("FINMIND_TOKEN")
 
 # === 1. 直接寫死掃描池 (162檔台股前150大中大型權值股 + 產業指標股) ===
 SCAN_LIST = [
