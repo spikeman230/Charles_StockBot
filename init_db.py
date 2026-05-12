@@ -40,7 +40,7 @@ SCAN_LIST = [
 ]
 
 if __name__ == "__main__":
-    print("🚀 啟動 NOC 戰情室「建庫大補丸」歷史資料載入作業 (修復版)...")
+    print("🚀 啟動 NOC 戰情室「建庫大補丸」歷史資料載入作業 (加上防護罩版)...")
     db = NOCDatabase()
     fetcher = NOCDataFetcher(token=FINMIND_TOKEN)
     
@@ -51,9 +51,8 @@ if __name__ == "__main__":
         print("1️⃣ 正在下載大盤與防空歷史數據 (近400天)...")
         fetcher.fetch_market_health_data(start_date, db)
         
-        # 🌟 修正點：保留完整的 .TW 與 .TWO 尾綴，僅執行去重複 (set) 動作
-        # (Yahoo Finance 需要完整尾綴，FinMind 在底層 noc_core 會自動用正則提取數字)
-        target_stocks = list(set(SCAN_LIST))
+        # 2. 自動清洗名單：去除 .TW 與 .TWO，保留純數字給 FinMind，並去重複
+        target_stocks = list(set([s.split('.')[0] for s in SCAN_LIST if s.split('.')[0].isdigit()]))
         
         print(f"🎯 成功讀取硬體編碼名單！最終鎖定 {len(target_stocks)} 檔股票，準備進行 400 天歷史大補給！")
         print("⚠️ 預計耗時 15-25 分鐘，請耐心等候...")
@@ -61,9 +60,15 @@ if __name__ == "__main__":
         # 3. 執行各股籌碼與 K 線歷史抓取
         for i, sym in enumerate(target_stocks, 1):
             print(f"[{i}/{len(target_stocks)}] 正在抓取 {sym} 的歷史戰情數據...")
-            fetcher.fetch_and_store_stock_data(sym, start_date, db)
-            time.sleep(1.0) # 確保 API 不塞車
             
+            # 🛡️ 加上單檔防護罩，避免一檔失敗全盤皆崩
+            try:
+                fetcher.fetch_and_store_stock_data(sym, start_date, db)
+            except Exception as inner_e:
+                print(f"  ⚠️ {sym} 抓取失敗跳過，原因: {inner_e}")
+                
+            time.sleep(2.0) # ⏳ 將休息時間從 1.0 改為 2.0 秒，確保不被 FinMind 鎖定
+
         print("\n✅ 歷史戰情資料庫 (SQLite) 初始建置與灌水完成！")
         
     except Exception as e:
