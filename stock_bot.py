@@ -1,6 +1,6 @@
 # =============================================================================
 # NOC 終極戰情室 v12.4 - 戰略全時待命升級版 (無訊號強制啟動戰備計畫)
-# 優化項目：背景非同步 Trello、快取並發、25MA高階濾網、通用【作戰指令】全戰區覆蓋
+# 優化項目：背景非同步 Trello、快取並發、25MA高階濾網、通用【作戰指令】全戰區覆蓋、Bug修復版
 # =============================================================================
 
 import yfinance as yf
@@ -142,9 +142,14 @@ def get_etf_strategy(symbol: str, name: str) -> Tuple[str, float, str]:
     elif any(k in name or k in symbol for k in _ETF_MKT_KEYS): return "🚀市值/主題型", 10.0, "成長動能區 (10%乖離預警)"
     return "🔸一般型", 8.0, "趨勢防禦區 (8%乖離預警)"
 
-# 🌟 新增：戰術指令生成模組 (Tactical Engine v3 - 全時待命版)
+# 🌟 戰術指令生成模組 (Tactical Engine v3 - 全時待命版)
 def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: float, ma25: float, ma25_rising: bool, chip_msg: str, is_trap: bool) -> str:
     """根據觸發的條件動態生成標準化作戰指令"""
+    
+    # 新增 ATR 防呆機制，避免低波動個股算出 0 導致除以 0 的錯誤
+    if pd.isna(atr) or atr < (close * 0.005):
+        atr = close * 0.01
+        
     chip_weak = "中性/偏空" in chip_msg or "無資料" in chip_msg
     
     # 擴充了竭盡、陷阱、壓縮等風險詞彙
@@ -189,7 +194,7 @@ def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: fl
         stop_loss = close - (atr * 1.5)
         stop_reason = "跌破近期支撐或 1.5ATR"
         target = ma25 if ma25 > close else close + (atr * 3)
-    # 🌟 新增：針對沒有訊號的觀測股，強制給予「戰備計畫」
+    # 針對沒有訊號的觀測股，強制給予「戰備計畫」
     elif "戰備" in trigger_type or "等待" in trigger_type:
         action = "預先規劃/觀望 (尚未觸發正式進場訊號)"
         cap_suggest = "等待確認，暫不動用資金"
@@ -203,10 +208,17 @@ def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: fl
     # 計算風報比 (Risk/Reward Ratio)
     risk = close - stop_loss
     reward = target - close
-    if risk > 0 and reward > 0:
-        rr_str = f"風報比約 1 : {(reward/risk):.1f}"
+    
+    # 🌟 新增防呆攔截：處理觀望狀態下的 0 目標價顯示問題
+    if target == 0:
+        target_str = "不適用 (觀望/防禦階段)"
+        rr_str = "不適用 (無進場計畫)"
     else:
-        rr_str = "上方空間受限或現價已破防線"
+        target_str = f"{target:.2f}"
+        if risk > 0 and reward > 0:
+            rr_str = f"風報比約 1 : {(reward/risk):.1f}"
+        else:
+            rr_str = "上方空間受限或現價已破防線"
 
     plan = (
         f"   👉 【作戰指令】\n"
@@ -214,21 +226,29 @@ def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: fl
         f"      * 進場區間：{entry_zone}\n"
         f"      * 資金建議：{cap_suggest}\n"
         f"      * 防守底線：跌破 {stop_loss:.2f} ({stop_reason}) 且收盤未站回，強制停損。\n"
-        f"      * 初步目標：{target:.2f}，{rr_str}\n"
+        f"      * 初步目標：{target_str}，{rr_str}\n"
     )
     return plan
 
 # =============================================================================
-# === 3. 交易日判斷 ===
+# === 3. 交易日判斷 (修復雲端延遲問題) ===
 # =============================================================================
 def is_trading_day(curr_date: datetime.date) -> bool:
+    # 最具防禦性的雲端解法：直接以台灣工作日作為基準，排除週末即可
+    if curr_date.weekday() >= 5: # 5: 星期六, 6: 星期日
+        return False
+    
     try:
-        tsm = yf.Ticker("2330.TW").history(period="1d")
-        if tsm.empty: return False
-        return tsm.index[-1].date() == curr_date
+        tsm = yf.Ticker("2330.TW").history(period="5d")
+        if tsm.empty: return True # API 掛掉時，預設放行讓系統繼續執行
+        
+        # 容忍伺服器資料延遲 1 天 (防範 YF 早上 9 點還沒吐出今日 K 線)
+        last_trading_date = tsm.index[-1].date()
+        diff_days = (curr_date - last_trading_date).days
+        return diff_days <= 1 
     except Exception as e:
         logger.warning(f"交易日 API 異常，降級為工作日判斷: {e}")
-        return curr_date.weekday() < 5
+        return True
 
 # =============================================================================
 # === 4. Trello 整合模組 ===
@@ -337,12 +357,15 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, pred
 
 def get_market_regime() -> Tuple[bool, str]:
     try:
-        twii = yf.Ticker("^TWII").history(period="1mo")
+        # 修改期間為 2mo 確保可以順利產出 20MA
+        twii = yf.Ticker("^TWII").history(period="2mo")
         if twii.empty: raise ValueError("TWII 資料為空")
         twii["20MA"] = twii["Close"].rolling(20).mean()
         is_bull = twii["Close"].iloc[-1] > twii["20MA"].iloc[-1]
         return is_bull, "🟢 多頭格局 (站上月線)" if is_bull else "🔴 空頭警戒 (跌破月線)"
-    except: return True, "🟡 大盤狀態未知"
+    except Exception as e:
+        logger.error(f"大盤狀態獲取異常: {e}")
+        return True, "🟡 大盤狀態未知"
 
 def get_revenue_yoy(symbol: str):
     if not FINMIND_TOKEN: return "N/A"
@@ -433,7 +456,6 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         curr_hour = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).hour
         vol_mult = {10: 4.5, 12: 1.5, 13: 1.1}.get(curr_hour, 1.0)
         hist["Est_Volume"] = hist["Volume"].copy()
-        # 🌟 修復 FutureWarning: 將小數強轉為整數 int()
         if len(hist) > 0: hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = int(hist["Volume"].iloc[-1] * vol_mult)
 
         hist["5MA"]   = hist["Close"].rolling(5).mean()
@@ -748,7 +770,7 @@ if __name__ == "__main__":
                 # 將重點觀測區的專屬預判（爆量換手、無壓巡航等）直接轉為戰術觸發條件！
                 elif trigger_label == "" and is_key_obs and predict_msg != "無特殊徵兆":
                     trigger_label = predict_msg 
-                # 🌟 新增：如果什麼訊號都沒觸發，只要它在雷達/觀測區，強制進入戰備狀態
+                # 🌟 如果什麼訊號都沒觸發，只要它在雷達/觀測區，強制進入戰備狀態
                 elif trigger_label == "":
                     trigger_label = "⏳ 戰備狀態 (等待訊號確認)"
 
