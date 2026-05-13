@@ -1,6 +1,6 @@
 # =============================================================================
-# NOC 終極戰情室 v12.5 - 量價覆蓋機制 (PVO) 正式版
-# 優化項目：技術面優先於籌碼面、散戶退場轉綠燈、ETF 獨立決策、修正進場指令 Bug
+# NOC 終極戰情室 v12.4 - 戰略全時待命升級版 (無訊號強制啟動戰備計畫)
+# 優化項目：背景非同步 Trello、快取並發、25MA高階濾網、通用【作戰指令】全戰區覆蓋
 # =============================================================================
 
 import yfinance as yf
@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 from typing import Optional, Dict, Tuple, Any
 from pathlib import Path
 # 🌟 新增引入 NOC 核心防禦模組
-#from noc_core import NOCDatabase, NOCStrategy
+from noc_core import NOCDatabase, NOCStrategy
 
 # =============================================================================
 # === 0. 初始化：載入環境變數 & 日誌系統 ===
@@ -142,33 +142,19 @@ def get_etf_strategy(symbol: str, name: str) -> Tuple[str, float, str]:
     elif any(k in name or k in symbol for k in _ETF_MKT_KEYS): return "🚀市值/主題型", 10.0, "成長動能區 (10%乖離預警)"
     return "🔸一般型", 8.0, "趨勢防禦區 (8%乖離預警)"
 
-# 🌟 v12.5 戰術指令生成模組 (導入 PVO 與 ETF 優先機制)
-def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: float, ma25: float, ma25_rising: bool, chip_msg: str, is_trap: bool, is_etf: bool = False) -> str:
+# 🌟 新增：戰術指令生成模組 (Tactical Engine v3 - 全時待命版)
+def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: float, ma25: float, ma25_rising: bool, chip_msg: str, is_trap: bool) -> str:
     """根據觸發的條件動態生成標準化作戰指令"""
     chip_weak = "中性/偏空" in chip_msg or "無資料" in chip_msg
-    is_pvo = "突破" in trigger_type or "換手" in trigger_type or "底部" in trigger_type or "巡航" in trigger_type or "狙擊" in trigger_type
     
-    if is_etf:
-        action = "✅ 指標佈局 (ETF獨立決策)"
-        cap_suggest = "10% - 20%"
-        entry_zone = f"{close * 0.99:.2f} - {close * 1.01:.2f} (順勢買進)"
-        stop_loss = close * 0.95
-        stop_reason = "波段回檔 5%"
-        target = close * 1.10
-    elif is_trap or "竭盡" in trigger_type or "陷阱" in trigger_type or "壓縮" in trigger_type:
-        action = "🚨 嚴格觀望 (風險訊號觸發)"
+    # 擴充了竭盡、陷阱、壓縮等風險詞彙
+    if is_trap or "竭盡" in trigger_type or "陷阱" in trigger_type or "壓縮" in trigger_type:
+        action = "嚴格觀望 (風險訊號觸發)"
         cap_suggest = "0% (空手不接刀)"
         entry_zone = "暫停進場"
         stop_loss = close * 0.95
         stop_reason = "規避下行風險"
         target = 0
-    elif is_pvo:
-        action = "🟡 右側試單 (量價強勢覆蓋籌碼)" if "突破" in trigger_type or "狙擊" in trigger_type or "巡航" in trigger_type else "🟡 左側試單 (底部量能轉強)"
-        cap_suggest = "總部位 15% - 25%" if not chip_weak else "總部位 10% 以內 (籌碼待確認)"
-        entry_zone = f"{close * 0.99:.2f} - {close * 1.01:.2f} (量價確認區)"
-        stop_loss = close - (atr * cfg.ATR_MULTIPLIER)
-        stop_reason = f"跌破 {cfg.ATR_MULTIPLIER}ATR 動能失效"
-        target = high_20 if high_20 > close else close + (atr * 4)
     elif "回踩" in trigger_type or "2560" in trigger_type:
         if not ma25_rising:
             action = "嚴格觀望 (25MA下彎，支撐無效)"
@@ -183,6 +169,27 @@ def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: fl
         stop_loss = ma25 * 0.97
         stop_reason = "25MA 下方 3%"
         target = high_20
+    # 擴充了「巡航」以支援重點觀測區的突破
+    elif "突破" in trigger_type or "狙擊" in trigger_type or "巡航" in trigger_type:
+        if chip_weak:
+            action = "右側小注試單 (籌碼未明顯跟上)"
+            cap_suggest = "總部位 5% - 10%"
+        else:
+            action = "強勢追擊 (籌碼配合突破)"
+            cap_suggest = "總部位 15% - 25%"
+        entry_zone = f"{close * 0.99:.2f} - {close * 1.01:.2f} (突破確認價)"
+        stop_loss = close - (atr * cfg.ATR_MULTIPLIER)
+        stop_reason = f"跌破 {cfg.ATR_MULTIPLIER}ATR 動能失效"
+        target = close + (atr * 4) # 突破通常看更遠
+    # 擴充了「換手」、「仙人」以支援重點觀測區的底部試盤
+    elif "底部" in trigger_type or "復甦" in trigger_type or "金叉" in trigger_type or "換手" in trigger_type or "仙人" in trigger_type:
+        action = "左側佈局 (試探底部支撐)"
+        cap_suggest = "總部位 5% - 10% (切勿重倉)"
+        entry_zone = f"{close * 0.98:.2f} - {close * 1.01:.2f} (打底區間)"
+        stop_loss = close - (atr * 1.5)
+        stop_reason = "跌破近期支撐或 1.5ATR"
+        target = ma25 if ma25 > close else close + (atr * 3)
+    # 🌟 新增：針對沒有訊號的觀測股，強制給予「戰備計畫」
     elif "戰備" in trigger_type or "等待" in trigger_type:
         action = "預先規劃/觀望 (尚未觸發正式進場訊號)"
         cap_suggest = "等待確認，暫不動用資金"
@@ -191,8 +198,9 @@ def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: fl
         stop_reason = f"現價下方 {cfg.ATR_MULTIPLIER}ATR"
         target = high_20 if high_20 > close else close + (atr * 3)
     else:
-        return "" 
+        return "" # 若無明確戰術則不顯示作戰指令區塊
 
+    # 計算風報比 (Risk/Reward Ratio)
     risk = close - stop_loss
     reward = target - close
     if risk > 0 and reward > 0:
@@ -386,9 +394,8 @@ def get_finmind_chip_data(symbol: str, start_date_str: str) -> pd.DataFrame:
     except: pass
     return pd.DataFrame()
 
-# 🌟 v12.5：籌碼感測器降階，新增 🟢籌碼穩定
 def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
-    hist["Chip_Status"] = "➖ 中性/偏空"
+    hist["Chip_Status"] = "無資料"
     hist["Trust_Streak"] = 0
     if not {"Foreign_Inv", "Trust_Inv", "Dealer_Inv"}.issubset(hist.columns): return hist
 
@@ -401,10 +408,6 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
 
     conds = [hist["Signal_CoBuy"], hist["Signal_Trust_Trend"], hist["Total_Institutional"] > 0]
     hist["Chip_Status"] = np.select(conds, ["🤝 土洋齊買", "🏦 投信作帳", "📈 法人偏多"], default="➖ 中性/偏空")
-    
-    # 🌟 只要法人不賣且股價多頭，就算綠燈籌碼穩定
-    hist.loc[(hist["Trust_Inv"] >= 0) & (hist["Foreign_Inv"] >= 0) & (hist["Close"] > hist["Close"].rolling(20).mean()) & (hist["Chip_Status"] == "➖ 中性/偏空"), "Chip_Status"] = "🟢 籌碼穩定"
-    
     return hist
 
 # =============================================================================
@@ -423,7 +426,6 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
             chip_df = get_finmind_chip_data(symbol, (datetime.datetime.now() - datetime.timedelta(days=200)).strftime("%Y-%m-%d"))
             if not chip_df.empty:
-                # 🌟 v12.5 修復：使用 ffill() 解決當日資料延遲導致的 Bug
                 hist = hist.merge(chip_df, left_on="Date_Key", right_index=True, how="left").ffill().fillna(0)
 
         hist = calculate_chip_signals(hist)
@@ -431,6 +433,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         curr_hour = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).hour
         vol_mult = {10: 4.5, 12: 1.5, 13: 1.1}.get(curr_hour, 1.0)
         hist["Est_Volume"] = hist["Volume"].copy()
+        # 🌟 修復 FutureWarning: 將小數強轉為整數 int()
         if len(hist) > 0: hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = int(hist["Volume"].iloc[-1] * vol_mult)
 
         hist["5MA"]   = hist["Close"].rolling(5).mean()
@@ -535,9 +538,9 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v12.5 啟動，時間：{curr_time}")
-    #db = NOCDatabase()
-    #strategy = NOCStrategy(db)
+    logger.info(f"NOC 終極戰情室 v12.4 啟動，時間：{curr_time}")
+    db = NOCDatabase()
+    strategy = NOCStrategy(db)
     
     if strategy.check_defcon_1_status():
         logger.warning("觸發 DEFCON 1 拔插頭協議！大盤跌破季線且外資空單破三萬口！")
@@ -670,35 +673,23 @@ if __name__ == "__main__":
             elif trust_streak < 0: chip_msg += f" (連賣 {abs(trust_streak)} 天)"
             
             local_chip_analysis = strategy.analyze_stock_opportunity(sym)
-            
-            # 🌟 v12.5 綠燈：散戶退場視為籌碼洗淨
-            if "散戶退場" in local_chip_analysis:
-                chip_msg += " | 🟢 籌碼洗淨"
-            elif local_chip_analysis != "資料不足":
+            if local_chip_analysis != "資料不足":
                 chip_msg += f" | {local_chip_analysis}"
 
             predict_msg = "無特殊徵兆"
             is_trap = False
-            is_pvo = False # 🌟 新增 PVO 標記
-
             if est_vol > vma5 * 2:
                 if pos > 0.7: 
                     predict_msg = "💀【動能竭盡】高檔爆量轉折！"
                     is_trap = True
-                elif pos < 0.3: 
-                    predict_msg = "🔥【底部換手】低檔爆量，醞釀反彈！"
-                    is_pvo = True
+                elif pos < 0.3: predict_msg = "🔥【底部換手】低檔爆量，醞釀反彈！"
                 else: predict_msg = "⚠️【中繼爆量】留意方向表態！"
             elif td["Shadow_Ratio"] > 0.5 and est_vol > vma5 * 1.5:
                 if pos > 0.7: 
                     predict_msg = "⚠️【避雷針陷阱】高檔長上影線！"
                     is_trap = True
-                elif pos < 0.3: 
-                    predict_msg = "🌟【仙人指路】低檔長上影線試盤！"
-                    is_pvo = True
-            elif close > high_20 and est_vol > vma5 * 1.2: 
-                predict_msg = "🚀【無壓巡航】突破 20 日高！"
-                is_pvo = True
+                elif pos < 0.3: predict_msg = "🌟【仙人指路】低檔長上影線試盤！"
+            elif close > high_20 and est_vol > vma5 * 1.2: predict_msg = "🚀【無壓巡航】突破 20 日高！"
             elif not pd.isna(td["BB_Width"]) and td["BB_Width"] < 0.08: 
                 predict_msg = "⚠️【大變盤預警】通道極度壓縮！"
                 is_trap = True
@@ -707,27 +698,21 @@ if __name__ == "__main__":
             alert = "✅ 持股觀望"
             trigger_label = ""
             action_plan_text = ""
-            
-            # 🌟 判斷是否為 ETF
-            is_etf = "一般型" not in get_etf_strategy(sym, name)[0]
 
             # 狀態機與防護網邏輯
             if sym_state.status == "REAL_HOLD": alert = f"💼 持股防禦區 | 📍 防線: {sym_state.trailing_stop:.1f}"
             elif sym_state.status == "NONE":
                 if td["Sniper_Signal"]:
                     trigger_label = "🌟 主力狙擊突破"
-                    is_pvo = True # 狙擊視為 PVO
                     if not is_bull_market: alert = "🛡️【大盤攔截】大盤偏空，放棄狙擊。"
                     elif isinstance(yoy, float) and yoy < 0: alert = "🛡️【基本面攔截】營收衰退，避開地雷。"
                     elif is_overvalued: alert = f"🛡️【估值攔截】PE {pe_str} 過高，風險極大。"
-                    # 🌟 v12.5 修復：ETF 與 PVO 狀態下，無視融資攔截
-                    elif "融資暴增" in local_chip_analysis and not is_pvo and not is_etf: 
-                        alert = "🛡️【籌碼攔截】散戶瘋狂上車中，建議觀望。"
+                    elif "融資暴增" in local_chip_analysis: alert = "🛡️【籌碼攔截】散戶瘋狂上車中，容易假突破，建議觀望。"
                     else:
                         stop_price = close - (atr * cfg.ATR_MULTIPLIER)
                         noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
                         alert = f"{'⚔️【雙劍合璧】' if isinstance(yoy, float) and yoy >= cfg.YOY_EXPLOSION_PCT else '🚀【啟動狙擊】'}"
-                        action_plan_text = build_tactical_plan("突破", close, atr, high_20, ma25, is_25MA_rising, chip_msg, is_trap, is_etf)
+                        action_plan_text = build_tactical_plan("突破", close, atr, high_20, ma25, is_25MA_rising, chip_msg, is_trap)
                 elif td["Sniper_Memory_5D"] == 1:
                     alert = "🔥【狙擊延續】站穩5日線！" if close > ma5 else "⚠️【狙擊失效】跌破5日線！"
             elif sym_state.status == "HOLD":
@@ -741,7 +726,7 @@ if __name__ == "__main__":
 
             write_noc_log(curr_date, sym, name, close, rsi, vol_status, trend_status, predict_msg, chip_msg, alert)
 
-            # --- 報表輸出邏輯 ---
+            # --- 報表輸出邏輯 (套用 Tactical Engine v3 - 全時待命) ---
             s = ""
             need_chart = False
 
@@ -757,15 +742,20 @@ if __name__ == "__main__":
             elif is_radar_zone or is_key_obs:
                 is_2560 = bool(td["Signal_2560"])
                 
-                if trigger_label == "":
-                    if is_2560: trigger_label = "🌟 高勝率回踩狙擊"
-                    elif is_kd_cross: trigger_label = "🔥 底部復甦金叉"
-                    elif is_trap: trigger_label = "🚨 風險陷阱預警"
-                    elif is_key_obs and predict_msg != "無特殊徵兆": trigger_label = predict_msg 
-                    else: trigger_label = "⏳ 戰備狀態 (等待訊號確認)"
+                if trigger_label == "" and is_2560: trigger_label = "🌟 高勝率回踩狙擊"
+                elif trigger_label == "" and is_kd_cross: trigger_label = "🔥 底部復甦金叉"
+                elif trigger_label == "" and is_trap: trigger_label = "🚨 風險陷阱預警"
+                # 將重點觀測區的專屬預判（爆量換手、無壓巡航等）直接轉為戰術觸發條件！
+                elif trigger_label == "" and is_key_obs and predict_msg != "無特殊徵兆":
+                    trigger_label = predict_msg 
+                # 🌟 新增：如果什麼訊號都沒觸發，只要它在雷達/觀測區，強制進入戰備狀態
+                elif trigger_label == "":
+                    trigger_label = "⏳ 戰備狀態 (等待訊號確認)"
 
-                if trigger_label and not action_plan_text: 
-                    action_plan_text = build_tactical_plan(trigger_label, close, atr, high_20, ma25, is_25MA_rising, chip_msg, is_trap, is_etf)
+                if trigger_label: 
+                    # 若觸發了條件且尚未有 Action Plan，則呼叫引擎生成
+                    if not action_plan_text:
+                        action_plan_text = build_tactical_plan(trigger_label, close, atr, high_20, ma25, is_25MA_rising, chip_msg, is_trap)
                 
                 header_icon = "🎯" if is_radar_zone else get_etf_strategy(sym, name)[0]
                 
@@ -775,6 +765,7 @@ if __name__ == "__main__":
                 
                 s += f"   💰 籌碼: {chip_msg}\n"
                 
+                # 統一由 Tactical Engine 輸出指令
                 if trigger_label:
                     s += f"   🎯 條件觸發: {trigger_label}\n"
                     if action_plan_text: s += f"{action_plan_text}"
@@ -790,7 +781,7 @@ if __name__ == "__main__":
                 
                 if is_trap or is_recovery:
                     trigger_label = "🌟 高勝率回踩狙擊" if is_2560 else ("🚨 陷阱預警" if is_trap else "🔥 復甦/狙擊訊號")
-                    action_plan_text = build_tactical_plan(trigger_label, close, atr, high_20, ma25, is_25MA_rising, chip_msg, is_trap, is_etf)
+                    action_plan_text = build_tactical_plan(trigger_label, close, atr, high_20, ma25, is_25MA_rising, chip_msg, is_trap)
                     
                     s = (f"👀 {name} ({sym})\n"
                          f"   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
@@ -855,6 +846,6 @@ if __name__ == "__main__":
         if cfg.SILENT_MODE: sys.exit(0)
         else: msg_list.append("\n🔕 【靜默模式】無觸發條件。")
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v12.5】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v12.4】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
     for chart in generated_charts:
         if Path(chart).exists(): Path(chart).unlink()
