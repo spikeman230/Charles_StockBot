@@ -1,10 +1,24 @@
 import os
+import sys
 from dotenv import load_dotenv
-from noc_core import NOCDatabase,NOCDataFetcher,NOCStrategy
+
+# 🛡️ 裝甲自檢程序：先列出當前目錄的所有檔案，確認 GitHub 真的有抓到最新版
+print("🔍 [裝甲自檢] 正在掃描當前雲端機房的檔案清單...")
+print(os.listdir('.'))
+
+# 確保 noc_core 存在於目錄中
+if not os.path.exists('noc_core.py'):
+    print("❌ 致命錯誤：找不到 noc_core.py！請確認檔案已成功 push 到 GitHub。")
+    sys.exit(1)
+
+# 🌟 正式載入模組
+from noc_core import NOCDatabase, NOCDataFetcher, NOCStrategy
 
 # 載入環境變數 (確保 FINMIND_TOKEN 有抓到)
 load_dotenv()
 FINMIND_TOKEN = os.getenv("FINMIND_TOKEN")
+if not FINMIND_TOKEN:
+    print("⚠️ 警告：未偵測到 FINMIND_TOKEN，可能導致抓取受限。")
 
 print("🔌 [測試 1] 啟動本地軍火庫...")
 db = NOCDatabase()
