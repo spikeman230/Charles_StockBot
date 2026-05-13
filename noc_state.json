@@ -38,5 +38,15 @@
         "status": "REAL_HOLD",
         "entry": 28.15,
         "trailing_stop": 27.721428189958846
+    },
+    "2356.TW": {
+        "status": "REAL_HOLD",
+        "entry": 52.8,
+        "trailing_stop": 48.62142889840262
+    },
+    "3481.TW": {
+        "status": "REAL_HOLD",
+        "entry": 36.85,
+        "trailing_stop": 32.80714062282017
     }
 }
