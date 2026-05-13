@@ -536,8 +536,8 @@ if __name__ == "__main__":
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
     logger.info(f"NOC 終極戰情室 v12.5 啟動，時間：{curr_time}")
-    db = NOCDatabase()
-    strategy = NOCStrategy(db)
+    #db = NOCDatabase()
+    #strategy = NOCStrategy(db)
     
     if strategy.check_defcon_1_status():
         logger.warning("觸發 DEFCON 1 拔插頭協議！大盤跌破季線且外資空單破三萬口！")
