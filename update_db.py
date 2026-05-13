@@ -9,7 +9,7 @@ from noc_core import NOCDatabase, NOCDataFetcher
 load_dotenv()
 FINMIND_TOKEN = os.getenv("FINMIND_TOKEN")
 
-# === 1. 直接寫死掃描池 ===
+# === 1. 直接寫死掃描池 (與 init_db.py 完全相同) ===
 SCAN_LIST = [
     "2330.TW", "2317.TW", "2454.TW", "2382.TW", "2308.TW", "3231.TW", "3037.TW", "2303.TW",
     "3008.TW", "3034.TW", "3711.TW", "2357.TW", "2395.TW", "2408.TW", "2353.TW", "2356.TW",
@@ -35,45 +35,25 @@ SCAN_LIST = [
 ]
 
 if __name__ == "__main__":
-    print("🚚 開始執行 NOC 盤後戰情資料庫補給作業 (強固升級版)...")
+    print("🚚 開始執行 NOC 盤後戰情資料庫補給作業 (鋼鐵直寫版)...")
     db = NOCDatabase()
     fetcher = NOCDataFetcher(token=FINMIND_TOKEN)
     
-    # 每日補給抓取近 5 天，確保覆蓋週末與假日
-    start_date = (datetime.datetime.now() - datetime.timedelta(days=5)).strftime("%Y-%m-%d")
+    # 每日補給只抓 3 天
+    start_date = (datetime.datetime.now() - datetime.timedelta(days=3)).strftime("%Y-%m-%d")
     
     try:
         print("1️⃣ 正在更新大盤指數與外資期貨空單數據...")
         fetcher.fetch_market_health_data(start_date, db)
         
-        print(f"🎯 鎖定 {len(SCAN_LIST)} 檔目標，準備開始日常補給！")
+        target_stocks = list(set([s.split('.')[0] for s in SCAN_LIST if s.split('.')[0].isdigit()]))
+        print(f"🎯 鎖定 {len(target_stocks)} 檔目標，準備開始日常補給！")
 
-        for full_sym in set(SCAN_LIST):
-            pure_sym = full_sym.split('.')[0]
-            if not pure_sym.isdigit():
-                continue
-                
-            print(f"🔄 正在抓取 {full_sym}...")
-            try:
-                # 抓取 K 線並強制掛上後綴 (.TW / .TWO) 確保資料庫能正確匹配
-                df_kline = fetcher.api.taiwan_stock_daily(stock_id=pure_sym, start_date=start_date)
-                if df_kline is not None and not df_kline.empty:
-                    df_kline['stock_id'] = full_sym 
-                    db.save_df_to_db(df_kline, 'daily_kline')
-                
-                # 抓取融資融券並強制掛上後綴
-                df_margin = fetcher.api.taiwan_stock_margin_purchase_short_sale(stock_id=pure_sym, start_date=start_date)
-                if df_margin is not None and not df_margin.empty:
-                    df_margin['stock_id'] = full_sym 
-                    db.save_df_to_db(df_margin, 'margin_trades')
-                    
-            except Exception as inner_e:
-                print(f"   ⚠️ {full_sym} 抓取失敗，跳過並繼續下一檔: {inner_e}")
-                
-            # 將延遲調高至 1.5 秒，避免被 FinMind 防爬蟲機制封鎖
-            time.sleep(1.5) 
+        for sym in target_stocks:
+            fetcher.fetch_and_store_stock_data(sym, start_date, db)
+            time.sleep(0.5) 
             
         print("\n✅ 戰情資料庫補給完畢！雷達彈藥充足！")
         
     except Exception as e:
-        print(f"\n💥 系統執行發生嚴重錯誤: {e}")
+        print(f"\n⚠️ 補給過程發生錯誤: {e}")
