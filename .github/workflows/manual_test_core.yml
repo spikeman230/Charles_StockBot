@@ -1,7 +1,5 @@
-- name: 📦 安裝軍火套件
-      run: |
-        # 🌟 修正區塊：在最後面補上 tqdm 這發進度條子彈
-        pip install pandas FinMind python-dotenv yfinance tqdm
+name: 🧪 戰情室底層引擎手動測試 (Test Core)
+
 # 觸發條件：手動點擊按鈕執行
 on: 
   workflow_dispatch:
@@ -23,7 +21,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         # 確保安裝 test_core.py 所需的套件，若您有 requirements.txt 可改為 pip install -r requirements.txt
-        pip install pandas FinMind python-dotenv yfinance
+        pip install pandas FinMind python-dotenv yfinance tqdm
 
     - name: 🚀 點火執行 test_core.py
       env:
