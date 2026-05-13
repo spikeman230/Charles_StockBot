@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 from typing import Optional, Dict, Tuple, Any
 from pathlib import Path
 # 🌟 新增引入 NOC 核心防禦模組
-from noc_core import NOCDatabase, NOCStrategy
+#from noc_core import NOCDatabase, NOCStrategy
 
 # =============================================================================
 # === 0. 初始化：載入環境變數 & 日誌系統 ===
