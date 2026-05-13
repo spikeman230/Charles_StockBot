@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from noc_core import NOCDatabase, NOCDataFetcher, NOCStrategy
+from noc_core import NOCDatabase,NOCDataFetcher,NOCStrategy
 
 # 載入環境變數 (確保 FINMIND_TOKEN 有抓到)
 load_dotenv()
