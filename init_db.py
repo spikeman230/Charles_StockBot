@@ -40,7 +40,7 @@ SCAN_LIST = [
 ]
 
 if __name__ == "__main__":
-    print("🚀 啟動 NOC 戰情室「建庫大補丸」歷史資料載入作業 (加上防護罩版)...")
+    print("🚀 啟動 NOC 戰情室「建庫大補丸」歷史資料載入作業 (鋼鐵直寫版)...")
     db = NOCDatabase()
     fetcher = NOCDataFetcher(token=FINMIND_TOKEN)
     
@@ -60,15 +60,9 @@ if __name__ == "__main__":
         # 3. 執行各股籌碼與 K 線歷史抓取
         for i, sym in enumerate(target_stocks, 1):
             print(f"[{i}/{len(target_stocks)}] 正在抓取 {sym} 的歷史戰情數據...")
+            fetcher.fetch_and_store_stock_data(sym, start_date, db)
+            time.sleep(1.0) # 確保 API 不塞車
             
-            # 🛡️ 加上單檔防護罩，避免一檔失敗全盤皆崩
-            try:
-                fetcher.fetch_and_store_stock_data(sym, start_date, db)
-            except Exception as inner_e:
-                print(f"  ⚠️ {sym} 抓取失敗跳過，原因: {inner_e}")
-                
-            time.sleep(2.0) # ⏳ 將休息時間從 1.0 改為 2.0 秒，確保不被 FinMind 鎖定
-
         print("\n✅ 歷史戰情資料庫 (SQLite) 初始建置與灌水完成！")
         
     except Exception as e:
