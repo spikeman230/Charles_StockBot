@@ -1,5 +1,8 @@
-name: 🧪 戰情室底層引擎手動測試 (Test Core)
-
+- name: 📦 安裝軍火套件
+      run: |
+        python -m pip install --upgrade pip
+        # 🌟 修正區塊：在最後面補上 tqdm 這發進度條子彈
+        pip install pandas FinMind python-dotenv yfinance tqdm
 # 觸發條件：手動點擊按鈕執行
 on: 
   workflow_dispatch:
