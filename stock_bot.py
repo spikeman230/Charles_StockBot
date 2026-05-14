@@ -797,11 +797,7 @@ if __name__ == "__main__":
                 if fund_msg:
                     s += f"   {fund_msg}\n"
                 # ==========================================
-
-        # 統一由 Tactical Engine 輸出指令
-        if trigger_label:
-            s += f"   🎯 條件觸發: {trigger_label}\n"
-                
+               
                 # 統一由 Tactical Engine 輸出指令
                 if trigger_label:
                     s += f"   🎯 條件觸發: {trigger_label}\n"
