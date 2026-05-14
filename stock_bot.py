@@ -832,7 +832,7 @@ if __name__ == "__main__":
                 # 🟢 防呆寫法：全部獨立成行，完全不需要跨行大括號
                 s += f"   🎯 條件觸發: {trigger_label}\n"
                 s += f"{action_plan_text}"
-                     need_chart = True
+                need_chart = True
 
             else:
                 s = f"🔸 {name} ({sym})\n   現價: {close:.2f} | 狀態: {trend_status}\n   👉 指令: {alert}\n"
