@@ -1,6 +1,6 @@
 # =============================================================================
-# NOC 終極戰情室 v12.4 - 戰略全時待命升級版 (無訊號強制啟動戰備計畫)
-# 優化項目：背景非同步 Trello、快取並發、25MA高階濾網、通用【作戰指令】全戰區覆蓋、Bug修復版
+# NOC 終極戰情室 v12.6 - 終極戰術融合版 (全域黑白名單 + 提早阻斷效能優化)
+# 優化項目：全域過濾器配置、提早攔截無效運算、保留完整註解與架構可讀性
 # =============================================================================
 
 import yfinance as yf
@@ -61,7 +61,7 @@ TRELLO_TOKEN    = os.getenv("TRELLO_TOKEN")
 TRELLO_BOARD_ID = os.getenv("TRELLO_BOARD_ID")
 
 # =============================================================================
-# === 1.1 量化風控常數 ===
+# === 1.1 量化風控常數 & 全域過濾器 ===
 # =============================================================================
 class Config:
     TOTAL_CAPITAL      : float = float(os.getenv("TOTAL_CAPITAL", "1000000"))
@@ -78,6 +78,10 @@ class Config:
     RADAR_FILE         : str   = "radar_targets.json"
     LIGHTNING_FILE     : str   = "lightning_targets.json"
     GUERRILLA_FILE     : str   = "guerrilla_targets.json"
+    
+    # 🌟 整合總司令的全域指令過濾器 (方便日後集中維護)
+    ACTION_WHITELIST   : list  = ["建倉", "試單", "追擊", "佈局", "加碼", "扣款", "金叉", "獲利了結", "拔線離場"]
+    ACTION_BLACKLIST   : list  = ["持股觀望", "暫停進場", "嚴格觀望", "不建議進場", "等待", "不動用資金", "不適用"]
 
 cfg = Config()
 
@@ -560,7 +564,7 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v12.4 啟動，時間：{curr_time}")
+    logger.info(f"NOC 終極戰情室 v12.6 啟動，時間：{curr_time}")
     db = NOCDatabase()
     strategy = NOCStrategy(db)
     
@@ -799,7 +803,7 @@ if __name__ == "__main__":
 
             elif is_normal_obs:
                 is_2560 = bool(td["Signal_2560"])
-                is_recovery = bool(td["Sniper_Signal"]) or is_kd_cross or ("止跌" in tips or "支撐" in tips) or predict_msg in {"🔥【底部換手】低檔爆量，醞釀反彈！", "🌟【仙人指路】低檔長上影線試盤！"} or is_2560
+                is_recovery = bool(td["Sniper_Signal"]) or is_kd_cross or ("止跌" in tips or "支撐" in tips) or predict_msg in {"🔥【底部換手】低檔爆量，醞 শক্তির, 醞釀反彈！", "🌟【仙人指路】低檔長上影線試盤！"} or is_2560
                 
                 if is_trap or is_recovery:
                     trigger_label = "🌟 高勝率回踩狙擊" if is_2560 else ("🚨 陷阱預警" if is_trap else "🔥 復甦/狙擊訊號")
@@ -816,12 +820,27 @@ if __name__ == "__main__":
                 s = f"🔸 {name} ({sym})\n   現價: {close:.2f} | 狀態: {trend_status}\n   👉 指令: {alert}\n"
                 need_chart = True
 
+            # ==========================================
+            # 🚀 v12.6 核心修正：套用總司令的阻斷條件 (Guard Clause)
+            # ==========================================
             if s:
-                if tips: s += f"   💡 戰略提示: {tips}\n"
-                cat_msg_list.append(s + "\n")
-                if need_chart:
-                    chart_file = draw_chart_if_needed(hist, sym)
-                    if chart_file not in generated_charts: generated_charts.append(chart_file)
+                # 擷取當下產出的文字進行比對
+                action_command = s 
+                
+                # 1. 如果觸發黑名單，直接放棄這檔股票的戰報組合與畫圖
+                if any(keyword in action_command for keyword in cfg.ACTION_BLACKLIST):
+                    logging.info(f"🛑 [訊號過濾] {sym} 指令觸發黑名單，已攔截不推播。")
+                    continue # 直接跳出本次迴圈，不浪費 CPU 畫 K 線圖
+                
+                # 2. 如果有白名單字眼，才放行
+                if any(keyword in action_command for keyword in cfg.ACTION_WHITELIST):
+                    if tips: s += f"   💡 戰略提示: {tips}\n"
+                    cat_msg_list.append(s + "\n")
+                    
+                    # 只有真正要推播的股票，才去繪製 K 線圖
+                    if need_chart:
+                        chart_file = draw_chart_if_needed(hist, sym)
+                        if chart_file not in generated_charts: generated_charts.append(chart_file)
 
         if cat_msg_list:
             msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
@@ -866,8 +885,8 @@ if __name__ == "__main__":
 
     if len(msg_list) == 1 and "大盤風向" in msg_list[0]:
         if cfg.SILENT_MODE: sys.exit(0)
-        else: msg_list.append("\n🔕 【靜默模式】無觸發條件。")
+        else: msg_list.append("\n🔕 【靜默模式】今日無觸發任何有效進場訊號。")
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v12.4】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v12.6】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
     for chart in generated_charts:
         if Path(chart).exists(): Path(chart).unlink()
