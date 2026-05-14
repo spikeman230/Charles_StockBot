@@ -790,14 +790,15 @@ if __name__ == "__main__":
                 else: s += f"   指標: {kd_str} | 狀態: {trend_status} | {vol_status}\n"
                 
                 s += f"   💰 籌碼: {chip_msg}\n"
+                
                 # ==========================================
-                # 🌟 新增：呼叫底層引擎，獲取基本面財報透視
+                # 🏢 財報透視：呼叫底層引擎獲取基本面
                 # ==========================================
                 fund_msg = strategy.get_fundamental_health(sym)
                 if fund_msg:
                     s += f"   {fund_msg}\n"
                 # ==========================================
-               
+                
                 # 統一由 Tactical Engine 輸出指令
                 if trigger_label:
                     s += f"   🎯 條件觸發: {trigger_label}\n"
@@ -819,9 +820,17 @@ if __name__ == "__main__":
                     s = (f"👀 {name} ({sym})\n"
                          f"   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
                          f"   💰 籌碼: {chip_msg}\n"
-                         f"   🎯 條件觸發: {trigger_label}\n"
-                         f"{action_plan_text}")
-                    need_chart = True
+                         # ==========================================
+                         # 🏢 財報透視：呼叫底層引擎獲取基本面
+                         # ==========================================
+                         fund_msg = strategy.get_fundamental_health(sym)
+                         if fund_msg:
+                             s += f"   {fund_msg}\n"
+                         # ==========================================
+
+                         s += (f"   🎯 條件觸發: {trigger_label}\n"
+                               f"{action_plan_text}")
+                     need_chart = True
 
             else:
                 s = f"🔸 {name} ({sym})\n   現價: {close:.2f} | 狀態: {trend_status}\n   👉 指令: {alert}\n"
