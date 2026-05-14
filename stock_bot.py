@@ -817,19 +817,21 @@ if __name__ == "__main__":
                     trigger_label = "🌟 高勝率回踩狙擊" if is_2560 else ("🚨 陷阱預警" if is_trap else "🔥 復甦/狙擊訊號")
                     action_plan_text = build_tactical_plan(trigger_label, close, atr, high_20, ma25, is_25MA_rising, chip_msg, is_trap)
                     
-                    s = (f"👀 {name} ({sym})\n"
-                         f"   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
-                         f"   💰 籌碼: {chip_msg}\n")
-                         # ==========================================
-                         # 🏢 財報透視：呼叫底層引擎獲取基本面
-                         # ==========================================
-                         fund_msg = strategy.get_fundamental_health(sym)
-                         if fund_msg:
-                             s += f"   {fund_msg}\n"
-                         # ==========================================
+                   s = f"👀 {name} ({sym})\n"
+                s += f"   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
+                s += f"   💰 籌碼: {chip_msg}\n"
+                
+                # ==========================================
+                # 🏢 財報透視：呼叫底層引擎獲取基本面
+                # ==========================================
+                fund_msg = strategy.get_fundamental_health(sym)
+                if fund_msg:
+                    s += f"   {fund_msg}\n"
+                # ==========================================
 
-                         s += (f"   🎯 條件觸發: {trigger_label}\n"
-                               f"{action_plan_text}")
+                # 🟢 防呆寫法：全部獨立成行，完全不需要跨行大括號
+                s += f"   🎯 條件觸發: {trigger_label}\n"
+                s += f"{action_plan_text}"
                      need_chart = True
 
             else:
