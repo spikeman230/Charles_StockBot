@@ -819,7 +819,7 @@ if __name__ == "__main__":
                     
                     s = (f"👀 {name} ({sym})\n"
                          f"   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
-                         f"   💰 籌碼: {chip_msg}\n"
+                         f"   💰 籌碼: {chip_msg}\n")
                          # ==========================================
                          # 🏢 財報透視：呼叫底層引擎獲取基本面
                          # ==========================================
@@ -830,7 +830,6 @@ if __name__ == "__main__":
 
                          s += (f"   🎯 條件觸發: {trigger_label}\n"
                                f"{action_plan_text}")
-                         )
                      need_chart = True
 
             else:
