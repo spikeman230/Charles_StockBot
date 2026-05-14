@@ -28,8 +28,9 @@ from email.mime.image import MIMEImage
 from dotenv import load_dotenv
 from typing import Optional, Dict, Tuple, Any
 from pathlib import Path
-# 🌟 新增引入 NOC 核心防禦模組
-from noc_core import NOCDatabase, NOCStrategy
+
+# 🌟 新增引入 NOC 核心防禦模組 (包含抓取引擎)
+from noc_core import NOCDatabase, NOCStrategy, NOCDataFetcher
 
 # =============================================================================
 # === 0. 初始化：載入環境變數 & 日誌系統 ===
@@ -79,7 +80,6 @@ class Config:
     LIGHTNING_FILE     : str   = "lightning_targets.json"
     GUERRILLA_FILE     : str   = "guerrilla_targets.json"
     
-    # 🌟 整合總司令的全域指令過濾器 (方便日後集中維護)
     ACTION_WHITELIST   : list  = ["建倉", "試單", "追擊", "佈局", "加碼", "扣款", "金叉", "獲利了結", "拔線離場"]
     ACTION_BLACKLIST   : list  = ["持股觀望", "暫停進場", "嚴格觀望", "不建議進場", "等待", "不動用資金", "不適用"]
 
@@ -146,17 +146,12 @@ def get_etf_strategy(symbol: str, name: str) -> Tuple[str, float, str]:
     elif any(k in name or k in symbol for k in _ETF_MKT_KEYS): return "🚀市值/主題型", 10.0, "成長動能區 (10%乖離預警)"
     return "🔸一般型", 8.0, "趨勢防禦區 (8%乖離預警)"
 
-# 🌟 戰術指令生成模組 (Tactical Engine v3 - 全時待命版)
 def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: float, ma25: float, ma25_rising: bool, chip_msg: str, is_trap: bool) -> str:
-    """根據觸發的條件動態生成標準化作戰指令"""
-    
-    # 新增 ATR 防呆機制，避免低波動個股算出 0 導致除以 0 的錯誤
     if pd.isna(atr) or atr < (close * 0.005):
         atr = close * 0.01
         
     chip_weak = "中性/偏空" in chip_msg or "無資料" in chip_msg
     
-    # 擴充了竭盡、陷阱、壓縮等風險詞彙
     if is_trap or "竭盡" in trigger_type or "陷阱" in trigger_type or "壓縮" in trigger_type:
         action = "嚴格觀望 (風險訊號觸發)"
         cap_suggest = "0% (空手不接刀)"
@@ -178,7 +173,6 @@ def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: fl
         stop_loss = ma25 * 0.97
         stop_reason = "25MA 下方 3%"
         target = high_20
-    # 擴充了「巡航」以支援重點觀測區的突破
     elif "突破" in trigger_type or "狙擊" in trigger_type or "巡航" in trigger_type:
         if chip_weak:
             action = "右側小注試單 (籌碼未明顯跟上)"
@@ -189,8 +183,7 @@ def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: fl
         entry_zone = f"{close * 0.99:.2f} - {close * 1.01:.2f} (突破確認價)"
         stop_loss = close - (atr * cfg.ATR_MULTIPLIER)
         stop_reason = f"跌破 {cfg.ATR_MULTIPLIER}ATR 動能失效"
-        target = close + (atr * 4) # 突破通常看更遠
-    # 擴充了「換手」、「仙人」以支援重點觀測區的底部試盤
+        target = close + (atr * 4) 
     elif "底部" in trigger_type or "復甦" in trigger_type or "金叉" in trigger_type or "換手" in trigger_type or "仙人" in trigger_type:
         action = "左側佈局 (試探底部支撐)"
         cap_suggest = "總部位 5% - 10% (切勿重倉)"
@@ -198,7 +191,6 @@ def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: fl
         stop_loss = close - (atr * 1.5)
         stop_reason = "跌破近期支撐或 1.5ATR"
         target = ma25 if ma25 > close else close + (atr * 3)
-    # 針對沒有訊號的觀測股，強制給予「戰備計畫」
     elif "戰備" in trigger_type or "等待" in trigger_type:
         action = "預先規劃/觀望 (尚未觸發正式進場訊號)"
         cap_suggest = "等待確認，暫不動用資金"
@@ -207,13 +199,11 @@ def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: fl
         stop_reason = f"現價下方 {cfg.ATR_MULTIPLIER}ATR"
         target = high_20 if high_20 > close else close + (atr * 3)
     else:
-        return "" # 若無明確戰術則不顯示作戰指令區塊
+        return "" 
 
-    # 計算風報比 (Risk/Reward Ratio)
     risk = close - stop_loss
     reward = target - close
     
-    # 🌟 新增防呆攔截：處理觀望狀態下的 0 目標價顯示問題
     if target == 0:
         target_str = "不適用 (觀望/防禦階段)"
         rr_str = "不適用 (無進場計畫)"
@@ -235,23 +225,18 @@ def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: fl
     return plan
 
 # =============================================================================
-# === 3. 交易日判斷 (修復雲端延遲問題) ===
+# === 3. 交易日判斷 ===
 # =============================================================================
 def is_trading_day(curr_date: datetime.date) -> bool:
-    # 最具防禦性的雲端解法：直接以台灣工作日作為基準，排除週末即可
-    if curr_date.weekday() >= 5: # 5: 星期六, 6: 星期日
-        return False
-    
+    if curr_date.weekday() >= 5: return False
     try:
         tsm = yf.Ticker("2330.TW").history(period="5d")
-        if tsm.empty: return True # API 掛掉時，預設放行讓系統繼續執行
-        
-        # 容忍伺服器資料延遲 1 天 (防範 YF 早上 9 點還沒吐出今日 K 線)
+        if tsm.empty: return True 
         last_trading_date = tsm.index[-1].date()
         diff_days = (curr_date - last_trading_date).days
         return diff_days <= 1 
     except Exception as e:
-        logger.warning(f"交易日 API 異常，降級為工作日判斷: {e}")
+        logger.warning(f"交易日 API 異常: {e}")
         return True
 
 # =============================================================================
@@ -361,7 +346,6 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, pred
 
 def get_market_regime() -> Tuple[bool, str]:
     try:
-        # 修改期間為 2mo 確保可以順利產出 20MA
         twii = yf.Ticker("^TWII").history(period="2mo")
         if twii.empty: raise ValueError("TWII 資料為空")
         twii["20MA"] = twii["Close"].rolling(20).mean()
@@ -445,6 +429,15 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
     if cached is not None: return cached
 
     try:
+        # 🌟 [修復 1] 確保底層引擎有去抓取這檔股票的財報資料 (多執行緒安全寫法)
+        match = re.search(r"\d+", symbol)
+        if match and FINMIND_TOKEN:
+            raw_id = match.group()
+            local_db = NOCDatabase() # 建立獨立連線防鎖定
+            local_fetcher = NOCDataFetcher(token=FINMIND_TOKEN)
+            local_fetcher.fetch_financial_statements(raw_id, local_db)
+            local_db.conn.close()
+
         stock = yf.Ticker(symbol)
         hist = stock.history(period="8mo").dropna(subset=["Close"])
         if len(hist) < 40: return None
@@ -510,7 +503,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         return None
 
 # =============================================================================
-# === 7. 並行資料預載入 (包含防爬蟲延遲) ===
+# === 7. 並行資料預載入 ===
 # =============================================================================
 def preload_all_stocks(all_symbols: Dict[str, str]) -> None:
     logger.info(f"開始並行預載 {len(all_symbols)} 支股票資料...")
@@ -565,6 +558,8 @@ if __name__ == "__main__":
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
     logger.info(f"NOC 終極戰情室 v12.6 啟動，時間：{curr_time}")
+    
+    # 🌟 [修復 2] 確保主連線在主執行緒中宣告
     db = NOCDatabase()
     strategy = NOCStrategy(db)
     
@@ -614,6 +609,9 @@ if __name__ == "__main__":
             hist = get_stock_data(sym, data["name"])
             if hist is None: continue
 
+            # 🌟 [修復 3] 建立過濾後的純數字代碼，確保能準確從 DB 撈出財報
+            raw_id = re.search(r"\d+", sym).group() if re.search(r"\d+", sym) else sym
+
             td, has_data = hist.iloc[-1], True
             curr_price, atr = td["Close"], td["ATR"] if not pd.isna(td.get("ATR", float("nan"))) else 0
             buy_price = data["buy_price"]
@@ -645,17 +643,17 @@ if __name__ == "__main__":
             # 🌟 庫藏股黃金排版：1.技術 ➡️ 2.籌碼 ➡️ 3.財報 ➡️ 4.指令
             # ==========================================
             inv_str = f"◆一般型 {data['name']} ({sym})\n" if "一般型" in etf_icon else f"{etf_icon} {data['name']} ({sym})\n"
-            inv_str += f"   成本: {buy_price:.2f} | 現價: {curr_price:.2f}\n"
+            inv_str += f"   現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
             
-            # 2. 籌碼動向
+            # 2. 籌碼動向 (使用 raw_id 去資料庫查)
             chip_msg = td["Chip_Status"]
-            local_chip_analysis = strategy.analyze_stock_opportunity(sym)
+            local_chip_analysis = strategy.analyze_stock_opportunity(raw_id)
             if local_chip_analysis != "資料不足":
                 chip_msg += f" | {local_chip_analysis}"
             inv_str += f"   💰 籌碼: {chip_msg}\n"
 
-            # 3. 財報透視
-            fund_msg = strategy.get_fundamental_health(sym)
+            # 3. 財報透視 (使用 raw_id 去資料庫查)
+            fund_msg = strategy.get_fundamental_health(raw_id)
             if fund_msg:
                 inv_str += f"   {fund_msg}\n"
 
@@ -674,6 +672,9 @@ if __name__ == "__main__":
         for sym, item in stocks.items():
             name = item.get("name", sym) if isinstance(item, dict) else item
             tips = item.get("trello_tip", "") if isinstance(item, dict) else ""
+            
+            # 🌟 [修復 3] 過濾純數字代碼，確保能準確從 DB 撈出財報與籌碼分析
+            raw_id = re.search(r"\d+", sym).group() if re.search(r"\d+", sym) else sym
 
             hist = get_stock_data(sym, name)
             if hist is None: continue
@@ -719,7 +720,8 @@ if __name__ == "__main__":
             if trust_streak > 0: chip_msg += f" (連買 {trust_streak} 天)"
             elif trust_streak < 0: chip_msg += f" (連賣 {abs(trust_streak)} 天)"
             
-            local_chip_analysis = strategy.analyze_stock_opportunity(sym)
+            # 使用 raw_id 抓籌碼
+            local_chip_analysis = strategy.analyze_stock_opportunity(raw_id)
             if local_chip_analysis != "資料不足":
                 chip_msg += f" | {local_chip_analysis}"
 
@@ -817,8 +819,8 @@ if __name__ == "__main__":
                 # 2. 籌碼動向
                 s += f"   💰 籌碼: {chip_msg}\n"
                 
-                # 3. 財報透視
-                fund_msg = strategy.get_fundamental_health(sym)
+                # 3. 財報透視 (使用 raw_id 去資料庫查)
+                fund_msg = strategy.get_fundamental_health(raw_id)
                 if fund_msg:
                     s += f"   {fund_msg}\n"
                 
@@ -851,12 +853,12 @@ if __name__ == "__main__":
                 # 2. 籌碼動向
                 s += f"   💰 籌碼: {chip_msg}\n"
                 
-                # 3. 財報透視
-                fund_msg = strategy.get_fundamental_health(sym)
+                # 3. 財報透視 (使用 raw_id 去資料庫查)
+                fund_msg = strategy.get_fundamental_health(raw_id)
                 if fund_msg:
                     s += f"   {fund_msg}\n"
 
-                # 4. 條件觸發與作戰指令 (防呆檢查)
+                # 4. 條件觸發與作戰指令
                 if trigger_label:
                     s += f"   🎯 條件觸發: {trigger_label}\n"
                 if action_plan_text:
