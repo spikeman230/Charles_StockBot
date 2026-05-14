@@ -1,6 +1,6 @@
 # =============================================================================
 # NOC 終極戰情室 v12.6 - 終極戰術融合版 (全域黑白名單 + 提早阻斷效能優化)
-# 優化項目：全域過濾器配置、提早攔截無效運算、保留完整註解與架構可讀性
+# 優化項目：全域過濾器配置、提早攔截無效運算、保留完整註解與架構可讀性、黃金排版對齊
 # =============================================================================
 
 import yfinance as yf
@@ -640,7 +640,28 @@ if __name__ == "__main__":
                     pnl_alert = f"🔥 獲利巡航 | 📍 防線墊高至: {final_stop:.1f}" if roi_pct > 0 else f"🟡 浮虧防禦 | 📍 死守底線: {final_stop:.1f}"
 
             generated_charts.append(draw_chart_if_needed(hist, sym))
-            msg_list.append(f"{etf_icon} {data['name']} ({sym})\n   成本: {buy_price:.2f} | 現價: {curr_price:.2f}\n   損益: {roi_pct:+.2f}% | 👉 指令: {pnl_alert}\n\n")
+            
+            # ==========================================
+            # 🌟 庫藏股黃金排版：1.技術 ➡️ 2.籌碼 ➡️ 3.財報 ➡️ 4.指令
+            # ==========================================
+            inv_str = f"◆一般型 {data['name']} ({sym})\n" if "一般型" in etf_icon else f"{etf_icon} {data['name']} ({sym})\n"
+            inv_str += f"   成本: {buy_price:.2f} | 現價: {curr_price:.2f}\n"
+            
+            # 2. 籌碼動向
+            chip_msg = td["Chip_Status"]
+            local_chip_analysis = strategy.analyze_stock_opportunity(sym)
+            if local_chip_analysis != "資料不足":
+                chip_msg += f" | {local_chip_analysis}"
+            inv_str += f"   💰 籌碼: {chip_msg}\n"
+
+            # 3. 財報透視
+            fund_msg = strategy.get_fundamental_health(sym)
+            if fund_msg:
+                inv_str += f"   {fund_msg}\n"
+
+            # 4. 作戰指令與損益
+            inv_str += f"   損益: {roi_pct:+.2f}% | 👉 指令: {pnl_alert}\n\n"
+            msg_list.append(inv_str)
 
     # === 戰區 2-5 ===
     for cat, stocks in STOCK_DICT.items():
@@ -752,7 +773,7 @@ if __name__ == "__main__":
 
             write_noc_log(curr_date, sym, name, close, rsi, vol_status, trend_status, predict_msg, chip_msg, alert)
 
-            # --- 報表輸出邏輯 (套用 Tactical Engine v3 - 全時待命) ---
+            # --- 報表輸出邏輯 ---
             s = ""
             need_chart = False
 
@@ -762,7 +783,9 @@ if __name__ == "__main__":
                 elif is_kd_cross: etf_cmd = "🔥 KD低檔金叉，建議佈局"
                 elif close > ma5: etf_cmd = "✅ 趨勢向上，續抱"
                 else: etf_cmd = "⏳ 趨勢偏弱，觀望"
-                s = f"{etf_type} {name} ({sym})\n   現價: {close:.2f} | 乖離: {bias:+.1f}% ({'🚨過熱' if bias > bias_limit else '✅穩定'})\n   👉 指令: {etf_cmd}\n"
+                s = f"{etf_type} {name} ({sym})\n"
+                s += f"   現價: {close:.2f} | 乖離: {bias:+.1f}% ({'🚨過熱' if bias > bias_limit else '✅穩定'})\n"
+                s += f"   👉 指令: {etf_cmd}\n"
                 need_chart = True
 
             elif is_radar_zone or is_key_obs:
@@ -771,39 +794,41 @@ if __name__ == "__main__":
                 if trigger_label == "" and is_2560: trigger_label = "🌟 高勝率回踩狙擊"
                 elif trigger_label == "" and is_kd_cross: trigger_label = "🔥 底部復甦金叉"
                 elif trigger_label == "" and is_trap: trigger_label = "🚨 風險陷阱預警"
-                # 將重點觀測區的專屬預判（爆量換手、無壓巡航等）直接轉為戰術觸發條件！
                 elif trigger_label == "" and is_key_obs and predict_msg != "無特殊徵兆":
                     trigger_label = predict_msg 
-                # 🌟 如果什麼訊號都沒觸發，只要它在雷達/觀測區，強制進入戰備狀態
                 elif trigger_label == "":
                     trigger_label = "⏳ 戰備狀態 (等待訊號確認)"
 
-                if trigger_label: 
-                    # 若觸發了條件且尚未有 Action Plan，則呼叫引擎生成
-                    if not action_plan_text:
-                        action_plan_text = build_tactical_plan(trigger_label, close, atr, high_20, ma25, is_25MA_rising, chip_msg, is_trap)
+                if trigger_label and not action_plan_text:
+                    action_plan_text = build_tactical_plan(trigger_label, close, atr, high_20, ma25, is_25MA_rising, chip_msg, is_trap)
                 
                 header_icon = "🎯" if is_radar_zone else get_etf_strategy(sym, name)[0]
                 
-                s = f"{header_icon} {name} ({sym})\n   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
-                if is_key_obs: s += f"   狀態: {trend_status} | PE: {pe_str} | YoY: {yoy_label}\n"
-                else: s += f"   指標: {kd_str} | 狀態: {trend_status} | {vol_status}\n"
+                # ==========================================
+                # 🌟 重點觀測/雷達區黃金排版：1.技術 ➡️ 2.籌碼 ➡️ 3.財報 ➡️ 4.指令
+                # ==========================================
+                s = f"{header_icon} {name} ({sym})\n"
+                s += f"   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
+                if is_key_obs: 
+                    s += f"   狀態: {trend_status} | PE: {pe_str} | YoY: {yoy_label}\n"
+                else: 
+                    s += f"   指標: {kd_str} | 狀態: {trend_status} | {vol_status}\n"
                 
+                # 2. 籌碼動向
                 s += f"   💰 籌碼: {chip_msg}\n"
                 
-                # ==========================================
-                # 🏢 財報透視：呼叫底層引擎獲取基本面
-                # ==========================================
+                # 3. 財報透視
                 fund_msg = strategy.get_fundamental_health(sym)
                 if fund_msg:
                     s += f"   {fund_msg}\n"
-                # ==========================================
                 
-                # 統一由 Tactical Engine 輸出指令
+                # 4. 作戰指令與條件觸發
                 if trigger_label:
                     s += f"   🎯 條件觸發: {trigger_label}\n"
-                    if action_plan_text: s += f"{action_plan_text}"
-                    else: s += f"   👉 指令: {alert}\n"
+                    if action_plan_text: 
+                        s += f"{action_plan_text}"
+                    else: 
+                        s += f"   👉 指令: {alert}\n"
                 else:
                     s += f"   👉 指令: {alert}\n"
                     
@@ -811,27 +836,32 @@ if __name__ == "__main__":
 
             elif is_normal_obs:
                 is_2560 = bool(td["Signal_2560"])
-                is_recovery = bool(td["Sniper_Signal"]) or is_kd_cross or ("止跌" in tips or "支撐" in tips) or predict_msg in {"🔥【底部換手】低檔爆量，醞 শক্তির, 醞釀反彈！", "🌟【仙人指路】低檔長上影線試盤！"} or is_2560
+                is_recovery = bool(td["Sniper_Signal"]) or is_kd_cross or ("止跌" in tips or "支撐" in tips) or predict_msg in {"🔥【底部換手】低檔爆量，醞釀反彈！", "🌟【仙人指路】低檔長上影線試盤！"} or is_2560
                 
                 if is_trap or is_recovery:
                     trigger_label = "🌟 高勝率回踩狙擊" if is_2560 else ("🚨 陷阱預警" if is_trap else "🔥 復甦/狙擊訊號")
                     action_plan_text = build_tactical_plan(trigger_label, close, atr, high_20, ma25, is_25MA_rising, chip_msg, is_trap)
                     
+                # ==========================================
+                # 🌟 一般觀察區黃金排版：1.技術 ➡️ 2.籌碼 ➡️ 3.財報 ➡️ 4.指令
+                # ==========================================
                 s = f"👀 {name} ({sym})\n"
                 s += f"   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
+                
+                # 2. 籌碼動向
                 s += f"   💰 籌碼: {chip_msg}\n"
                 
-                # ==========================================
-                # 🏢 財報透視：呼叫底層引擎獲取基本面
-                # ==========================================
+                # 3. 財報透視
                 fund_msg = strategy.get_fundamental_health(sym)
                 if fund_msg:
                     s += f"   {fund_msg}\n"
-                # ==========================================
 
-                # 🟢 防呆寫法：全部獨立成行，完全不需要跨行大括號
-                s += f"   🎯 條件觸發: {trigger_label}\n"
-                s += f"{action_plan_text}"
+                # 4. 條件觸發與作戰指令 (防呆檢查)
+                if trigger_label:
+                    s += f"   🎯 條件觸發: {trigger_label}\n"
+                if action_plan_text:
+                    s += f"{action_plan_text}"
+                    
                 need_chart = True
 
             else:
@@ -842,20 +872,16 @@ if __name__ == "__main__":
             # 🚀 v12.6 核心修正：套用總司令的阻斷條件 (Guard Clause)
             # ==========================================
             if s:
-                # 擷取當下產出的文字進行比對
                 action_command = s 
                 
-                # 1. 如果觸發黑名單，直接放棄這檔股票的戰報組合與畫圖
                 if any(keyword in action_command for keyword in cfg.ACTION_BLACKLIST):
                     logging.info(f"🛑 [訊號過濾] {sym} 指令觸發黑名單，已攔截不推播。")
-                    continue # 直接跳出本次迴圈，不浪費 CPU 畫 K 線圖
+                    continue 
                 
-                # 2. 如果有白名單字眼，才放行
                 if any(keyword in action_command for keyword in cfg.ACTION_WHITELIST):
                     if tips: s += f"   💡 戰略提示: {tips}\n"
                     cat_msg_list.append(s + "\n")
                     
-                    # 只有真正要推播的股票，才去繪製 K 線圖
                     if need_chart:
                         chart_file = draw_chart_if_needed(hist, sym)
                         if chart_file not in generated_charts: generated_charts.append(chart_file)
