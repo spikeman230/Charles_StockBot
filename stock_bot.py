@@ -790,6 +790,17 @@ if __name__ == "__main__":
                 else: s += f"   指標: {kd_str} | 狀態: {trend_status} | {vol_status}\n"
                 
                 s += f"   💰 籌碼: {chip_msg}\n"
+                # ==========================================
+                # 🌟 新增：呼叫底層引擎，獲取基本面財報透視
+                # ==========================================
+                fund_msg = strategy.get_fundamental_health(sym)
+                if fund_msg:
+                    s += f"   {fund_msg}\n"
+                # ==========================================
+
+        # 統一由 Tactical Engine 輸出指令
+        if trigger_label:
+            s += f"   🎯 條件觸發: {trigger_label}\n"
                 
                 # 統一由 Tactical Engine 輸出指令
                 if trigger_label:
