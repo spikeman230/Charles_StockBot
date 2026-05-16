@@ -146,7 +146,7 @@ def get_etf_strategy(symbol: str, name: str) -> Tuple[str, float, str]:
     elif any(k in name or k in symbol for k in _ETF_MKT_KEYS): return "🚀市值/主題型", 10.0, "成長動能區 (10%乖離預警)"
     return "🔸一般型", 8.0, "趨勢防禦區 (8%乖離預警)"
 
-def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: float, ma25: float, ma25_rising: bool, chip_msg: str, is_trap: bool) -> str:
+def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: float, ma25: float, ma25_rising: bool, chip_msg: str, is_trap: bool, manual_stop: float = 0.0) -> str:
     if pd.isna(atr) or atr < (close * 0.005):
         atr = close * 0.01
         
@@ -200,7 +200,12 @@ def build_tactical_plan(trigger_type: str, close: float, atr: float, high_20: fl
         target = high_20 if high_20 > close else close + (atr * 3)
     else:
         return "" 
-
+    # 🌟 新增：總司令絕對覆寫機制 (放在 elif 判斷式的最下方、計算風報比之前)
+    if manual_stop > 0:
+        stop_loss = manual_stop
+        stop_reason = "總司令絕對防線 (Trello 覆寫)"
+    
+    # 計算風報比 (Risk/Reward Ratio)
     risk = close - stop_loss
     reward = target - close
     
@@ -672,6 +677,14 @@ if __name__ == "__main__":
         for sym, item in stocks.items():
             name = item.get("name", sym) if isinstance(item, dict) else item
             tips = item.get("trello_tip", "") if isinstance(item, dict) else ""
+            # 🌟 新增：解析 Trello 備註中的手動防線
+            manual_stop_price = 0.0
+            stop_match = re.search(r"(?:死線|防線|停損)[:：]\s*([0-9.]+)", tips)
+            if stop_match:
+                manual_stop_price = float(stop_match.group(1))
+
+            hist = get_stock_data(sym, name)
+            if hist is None: continue
             
             # 🌟 [修復 3] 過濾純數字代碼，確保能準確從 DB 撈出財報與籌碼分析
             raw_id = re.search(r"\d+", sym).group() if re.search(r"\d+", sym) else sym
@@ -761,7 +774,7 @@ if __name__ == "__main__":
                         stop_price = close - (atr * cfg.ATR_MULTIPLIER)
                         noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
                         alert = f"{'⚔️【雙劍合璧】' if isinstance(yoy, float) and yoy >= cfg.YOY_EXPLOSION_PCT else '🚀【啟動狙擊】'}"
-                        action_plan_text = build_tactical_plan("突破", close, atr, high_20, ma25, is_25MA_rising, chip_msg, is_trap)
+                        action_plan_text = build_tactical_plan("突破", close, atr, high_20, ma25, is_25MA_rising, chip_msg, is_trap, manual_stop_price)
                 elif td["Sniper_Memory_5D"] == 1:
                     alert = "🔥【狙擊延續】站穩5日線！" if close > ma5 else "⚠️【狙擊失效】跌破5日線！"
             elif sym_state.status == "HOLD":
@@ -802,7 +815,7 @@ if __name__ == "__main__":
                     trigger_label = "⏳ 戰備狀態 (等待訊號確認)"
 
                 if trigger_label and not action_plan_text:
-                    action_plan_text = build_tactical_plan(trigger_label, close, atr, high_20, ma25, is_25MA_rising, chip_msg, is_trap)
+                    action_plan_text = build_tactical_plan(trigger_label, close, atr, high_20, ma25, is_25MA_rising, chip_msg, is_trap, manual_stop_price)
                 
                 header_icon = "🎯" if is_radar_zone else get_etf_strategy(sym, name)[0]
                 
