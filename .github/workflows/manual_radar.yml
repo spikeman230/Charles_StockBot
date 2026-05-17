@@ -29,10 +29,16 @@ jobs:
       
     # 🚀 關鍵步驟：把 radar_targets.json 存回 GitHub 倉庫！
     - name: Commit & Push changes
-      run: |
+     run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add radar_targets.json
-        # 檢查如果有變動才 commit，避免報錯閃退
-        git diff-index --quiet HEAD || git commit -m "🤖 自動同步雷達火種名單"
-        git push
+        git add .
+          
+        # 🛡️ 防呆 1：如果這次雷達掃描名單沒有變動，就不強制 commit，避免報錯
+        git diff --staged --quiet || git commit -m "🤖 自動同步雷達火種名單"
+        
+        # 🛡️ 防呆 2 (核心修復)：推上雲端前，強制先拉取總司令最新修改的程式碼並疊加
+        git pull --rebase origin main
+         
+        # 🚀 點火發射
+        git push origin main
