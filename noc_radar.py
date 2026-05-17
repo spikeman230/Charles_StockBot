@@ -1,6 +1,6 @@
 # =============================================================================
-# NOC 游擊隊雷達 v12.4 - 黃金 170 檔淬鍊版 (API 防爆盾搭載)
-# 優化項目：精銳 170 檔全覆蓋、多執行緒掃描、防爬蟲微延遲、API JSON 解析防呆
+# NOC 游擊隊雷達 v12.0 - 極速並行掃描版
+# 優化項目：多執行緒掃描、防爬蟲微延遲、.env 環境變數、專業日誌系統
 # 戰略邏輯：站上 20MA + KD(9,3,3) 低檔金叉 + 營收 YoY 正成長
 # =============================================================================
 
@@ -32,8 +32,7 @@ logger = logging.getLogger(__name__)
 
 # === 機密與參數設定 ===
 FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN", "")
-# 設定為 5 是免費版 API 的最佳並發甜密點，既不觸發限制又能保持極速
-MAX_WORKERS   = int(os.environ.get("MAX_WORKERS", "5"))
+MAX_WORKERS   = int(os.environ.get("MAX_WORKERS", "8"))
 TARGET_FILE   = "radar_targets.json"
 
 # === 1. 設定掃描池 (黃金淬鍊 170 檔：權值 50 + 科技 60 + 傳產金融生技 60) ===
@@ -69,7 +68,7 @@ SCAN_LIST = [
 ]
 
 # =============================================================================
-# === 2. 營收動能解析模組 (搭載 API 防爆盾) ===
+# === 2. 營收動能解析模組 ===
 # =============================================================================
 def get_revenue_yoy(symbol):
     if not FINMIND_TOKEN: 
@@ -84,20 +83,9 @@ def get_revenue_yoy(symbol):
             "start_date": (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d"), 
             "token": FINMIND_TOKEN
         }
-        
-        # 發送請求
         response = requests.get(url, params=params, timeout=10)
-        
-        # 🛡️ 防禦裝甲 1：如果伺服器直接回傳 HTTP 錯誤 (如 429 Too Many Requests)，攔截！
-        if response.status_code != 200:
-            return None
-            
-        # 🛡️ 防禦裝甲 2：嘗試解析 JSON。若遭到 WAF 阻擋回傳 HTML，攔截並捨棄，避免系統崩潰！
-        try:
-            data = response.json()
-        except ValueError:
-            # 觸發 Expecting value 錯誤時，直接略過該檔營收驗證
-            return None
+        response.raise_for_status()
+        data = response.json()
         
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
             df = pd.DataFrame(data["data"])
@@ -106,10 +94,8 @@ def get_revenue_yoy(symbol):
             
             if not last_year.empty and last_year.iloc[-1]['revenue'] > 0:
                 return ((latest['revenue'] - last_year.iloc[-1]['revenue']) / last_year.iloc[-1]['revenue']) * 100
-                
     except Exception as e:
-        logger.debug(f"[{symbol}] FinMind API 錯誤或連線逾時: {e}")
-        
+        logger.debug(f"[{symbol}] FinMind API 錯誤或無資料: {e}")
     return None
 
 # =============================================================================
@@ -117,8 +103,8 @@ def get_revenue_yoy(symbol):
 # =============================================================================
 def scan_stock(symbol):
     try:
-        # 🛡️ 搭配 170 檔的最佳防爬蟲微延遲 (0.3 ~ 1.0 秒)，保護免費用戶額度
-        time.sleep(random.uniform(0.3, 1.0))
+        # 🛡️ 加入防爬蟲隨機微延遲 (0.2 ~ 1.2 秒)
+        time.sleep(random.uniform(0.2, 1.2))
         
         hist = yf.Ticker(symbol).history(period="3mo").dropna(subset=['Close'])
         if len(hist) < 30: 
@@ -165,7 +151,7 @@ def scan_stock(symbol):
 # =============================================================================
 if __name__ == "__main__":
     start_time = time.time()
-    logger.info(f"🚀 NOC 游擊隊雷達 (黃金170檔淬鍊版) 啟動，掃描目標 {len(SCAN_LIST)} 檔...")
+    logger.info(f"🚀 NOC 游擊隊雷達 (極速並行版) 啟動，掃描目標 {len(SCAN_LIST)} 檔...")
     logger.info("=" * 60)
     
     found_targets = []
