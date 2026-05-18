@@ -1,7 +1,7 @@
 # =============================================================================
-# NOC 閃電突擊雷達 v12.0 - 極速並行掃描版
-# 優化項目：多執行緒掃描、防爬蟲微延遲、.env 環境變數、專業日誌系統
-# 戰略邏輯：站上 5MA + 漲幅 > 3% + 爆量 2 倍以上
+# NOC 閃電突擊雷達 v13.0 - 極速並行掃描 (60分K即時裝甲版)
+# 優化項目：導入 60m 戰鬥K線、API防爆盾、強制斷頭台、yfinance 靜音
+# 戰略邏輯：站上 60分K的5MA + 單小時漲幅 > 3% + 單小時爆量 2 倍以上
 # =============================================================================
 
 import yfinance as yf
@@ -13,7 +13,7 @@ import json
 import time
 import random
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 from dotenv import load_dotenv
 
 # =============================================================================
@@ -30,14 +30,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 🛡️ 啟動靜音防護罩：強制拔除 yfinance 內建的錯誤廣播喇叭
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+
 # === 機密與參數設定 ===
 FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN", "")
-MAX_WORKERS   = int(os.environ.get("MAX_WORKERS", "8"))
+MAX_WORKERS   = int(os.environ.get("MAX_WORKERS", "5")) # 調降並發數保護免費 API
 TARGET_FILE   = "lightning_targets.json"
 
-# === 1. 設定掃描池 (已校正之 160 檔台股中大型/熱門指標股) ===
+# === 1. 設定掃描池 (已校正之 170 檔台股中大型/熱門指標股) ===
 SCAN_LIST = [
-   # [權值前 50 大] (大盤定海神針、外資控盤主力)
+   # [權值前 50 大] 
     "2330.TW", "2317.TW", "2454.TW", "2382.TW", "2308.TW", "3231.TW", "3037.TW", "2303.TW",
     "3008.TW", "3034.TW", "3711.TW", "2357.TW", "2395.TW", "2408.TW", "2353.TW", "2379.TW",
     "4938.TW", "2301.TW", "2345.TW", "2324.TW", "3661.TW", "6669.TW", "3714.TW", "2881.TW",
@@ -46,7 +49,7 @@ SCAN_LIST = [
     "1326.TW", "2912.TW", "9904.TW", "2603.TW", "2609.TW", "2615.TW", "2207.TW", "1101.TW",
     "1102.TW", "2412.TW",
     
-    # [高動能科技 60 檔] (AI伺服器、散熱、網通、IC設計、光學與設備)
+    # [高動能科技 60 檔] 
     "2356.TW", "3163.TWO", "5388.TW", "8299.TWO", "3260.TWO", "2377.TW", "2383.TW", "3017.TW",
     "2352.TW", "3443.TW", "3529.TWO", "3293.TWO", "6488.TWO", "8069.TWO", "6274.TWO", "6239.TW",
     "3044.TW", "2449.TW", "2344.TW", "2409.TW", "3481.TW", "6116.TW", "4958.TW", "6176.TW",
@@ -56,7 +59,7 @@ SCAN_LIST = [
     "8016.TW", "8081.TW", "8150.TW", "3376.TW", "3035.TW", "3227.TWO", "3131.TWO", "2451.TW", 
     "5469.TW", "3413.TW", "3450.TW", "4919.TW",
     
-    # [熱門傳產/重電/生技 60 檔] (綠能基建、航運、特用化學、奧運消費與強勢生技)
+    # [熱門傳產/重電/生技 60 檔] 
     "1513.TW", "1514.TW", "1519.TW", "1605.TW", "1477.TW", "2049.TW", "2610.TW", "2618.TW", 
     "1536.TW", "1795.TW", "2231.TW", "8464.TW", "9910.TW", "9914.TW", "9921.TW", "9941.TW", 
     "1319.TW", "1707.TW", "1722.TW", "1504.TW", "1590.TW", "1609.TW", "1717.TW", "1802.TW", 
@@ -68,7 +71,7 @@ SCAN_LIST = [
 ]
 
 # =============================================================================
-# === 2. 營收動能解析模組 ===
+# === 2. 營收動能解析模組 (搭載 API 防爆盾) ===
 # =============================================================================
 def get_revenue_yoy(symbol):
     if not FINMIND_TOKEN: 
@@ -84,8 +87,13 @@ def get_revenue_yoy(symbol):
             "token": FINMIND_TOKEN
         }
         response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        if response.status_code != 200: return None
+        
+        # 🛡️ 防禦裝甲：防止 JSON 解析錯誤
+        try:
+            data = response.json()
+        except ValueError:
+            return None
         
         if data.get("msg") == "success" and len(data.get("data", [])) > 0:
             df = pd.DataFrame(data["data"])
@@ -94,22 +102,24 @@ def get_revenue_yoy(symbol):
             
             if not last_year.empty and last_year.iloc[-1]['revenue'] > 0:
                 return ((latest['revenue'] - last_year.iloc[-1]['revenue']) / last_year.iloc[-1]['revenue']) * 100
-    except Exception as e:
-        logger.debug(f"[{symbol}] FinMind API 錯誤或無資料: {e}")
+    except Exception:
+        pass
     return None
 
 # =============================================================================
-# === 3. 單一標的掃描引擎 (閃電飆股邏輯) ===
+# === 3. 單一標的掃描引擎 (60分鐘K閃電邏輯) ===
 # =============================================================================
 def scan_stock(symbol):
     try:
-        # 🛡️ 加入防爬蟲隨機微延遲 (0.2 ~ 1.2 秒)
-        time.sleep(random.uniform(0.2, 1.2))
+        # 🛡️ 輕量級防爬蟲微延遲
+        time.sleep(random.uniform(0.3, 1.0))
         
-        hist = yf.Ticker(symbol).history(period="2mo").dropna(subset=['Close', 'Volume'])
+        # 🚀 升級為 60 分鐘 K 線，抓取過去 1 個月的資料
+        hist = yf.Ticker(symbol).history(period="1mo", interval="60m").dropna(subset=['Close', 'Volume'])
         if len(hist) < 25: 
             return None
         
+        # 這裡的 5MA 變成「5小時均線」，5VMA 變成「5小時均量」
         hist['5MA'] = hist['Close'].rolling(5).mean()
         hist['20MA'] = hist['Close'].rolling(20).mean()
         hist['5VMA'] = hist['Volume'].rolling(5).mean()
@@ -117,16 +127,19 @@ def scan_stock(symbol):
         td = hist.iloc[-1]
         y_td = hist.iloc[-2]
         
-        # === 閃電突擊核心戰法 ===
+        # === 閃電突擊核心戰法 (盤中短兵相接) ===
         price_change = ((td['Close'] - y_td['Close']) / y_td['Close']) * 100
         
-        cond_1 = td['Close'] > td['5MA']           # 站上 5 日線
-        cond_2 = td['Close'] > td['20MA']          # 確保趨勢偏多
-        cond_3 = td['Volume'] > (td['5VMA'] * 2.0) # 爆量：今日量大於 5 日均量的 2 倍
-        cond_4 = td['Close'] > td['Open'] and price_change > 3.0 # 實體紅K 且 漲幅大於 3%
+        cond_1 = td['Close'] > td['5MA']           # 站上 5小時線 (短線極強)
+        cond_2 = td['Close'] > td['20MA']          # 站上 20小時線 (趨勢保護)
+        cond_3 = td['Volume'] > (td['5VMA'] * 2.0) # 爆量：單小時成交量大於前5小時均量的2倍
+        cond_4 = td['Close'] > td['Open'] and price_change > 3.0 # 實體紅K 且 該小時急拉逾 3%
         
         if cond_1 and cond_2 and cond_3 and cond_4:
             yoy = get_revenue_yoy(symbol)
+            if yoy is not None and yoy < 0: 
+                return None # 營收衰退的假突破不追
+                
             yoy_str = f"{yoy:.1f}%" if yoy is not None else "無API資料"
             return {
                 "symbol": symbol, 
@@ -136,36 +149,42 @@ def scan_stock(symbol):
                 "yoy": yoy_str
             }
             
-    except Exception as e:
-        logger.debug(f"[{symbol}] 分析過程發生錯誤: {e}")
+    except Exception:
+        # 🛡️ 靜音跳過有問題的股票
         return None
     return None
 
 # =============================================================================
-# === 4. 主程式 (多執行緒並行調度) ===
+# === 4. 主程式 (搭載強制斷頭台) ===
 # =============================================================================
 if __name__ == "__main__":
     start_time = time.time()
-    logger.info(f"⚡ NOC 閃電突擊雷達 (極速並行版) 啟動，掃描目標 {len(SCAN_LIST)} 檔...")
+    logger.info(f"⚡ NOC 閃電突擊雷達 (v13.0 60m裝甲版) 啟動，掃描目標 {len(SCAN_LIST)} 檔...")
     logger.info("=" * 65)
     
     found_targets = []
     
     # ⚡ 使用 ThreadPoolExecutor 進行多執行緒掃描
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        # 將任務交給工作池
-        future_to_symbol = {executor.submit(scan_stock, sym): sym for sym in SCAN_LIST}
-        
-        # 收集完成的結果
-        for future in as_completed(future_to_symbol):
+    executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
+    future_to_symbol = {executor.submit(scan_stock, sym): sym for sym in SCAN_LIST}
+    
+    try:
+        # 🛡️ 裝甲升級：設定 300 秒絕對死線
+        for future in as_completed(future_to_symbol, timeout=300):
             sym = future_to_symbol[future]
             try:
                 result = future.result()
                 if result:
                     found_targets.append(result)
                     logger.info(f"⚡ 捕捉到飆股目標: {sym} (現價:{result['close']:.1f}, 漲幅:+{result['change']:.1f}%, 爆量:{result['vol_ratio']:.1f}倍)")
-            except Exception as e:
-                logger.error(f"❌ 處理 {sym} 時發生不可預期的錯誤: {e}")
+            except Exception:
+                pass
+                
+    except TimeoutError:
+        logger.error("🚨 [致命警報] 網路嚴重卡死！已達到 5 分鐘強制斷頭死線，立即中止！")
+    finally:
+        # 🛡️ 斬斷殭屍執行緒
+        executor.shutdown(wait=False, cancel_futures=True)
                 
     elapsed = time.time() - start_time
     logger.info("=" * 65)
@@ -173,19 +192,17 @@ if __name__ == "__main__":
     
     # === 寫入戰報 ===
     if not found_targets:
-        logger.info("🎯 報告總操盤手，今日無符合【爆量2倍 + 漲幅>3% + 站上5MA】之突擊標的。")
-        # 即使沒掃到，也要寫入一個「空字典」，將前一次的雷達名單洗掉
+        logger.info("🎯 報告總操盤手，今日盤中無符合【單小時爆量2倍 + 急拉3%】之突擊標的。")
         with open(TARGET_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f, ensure_ascii=False, indent=4)
         logger.info(f"🧹 閃電突擊畫面已淨空。")
     else:
         logger.info(f"🎯 發現 {len(found_targets)} 檔符合閃電突擊條件的高動能飆股：")
         
-        # 建立全新的字典並覆蓋存檔
         lightning_dict = {}
         for t in found_targets:
             logger.info(f"  ⚡ {t['symbol']:>9} | 現價:{t['close']:>6.1f} | 漲幅:+{t['change']:>4.1f}% | 爆量:{t['vol_ratio']:>3.1f}倍 | YoY:{t['yoy']}")
-            lightning_dict[t['symbol']] = f"閃電突擊 (參考價 {t['close']:.1f}，跌破5MA停損)"
+            lightning_dict[t['symbol']] = f"閃電突擊 (參考價 {t['close']:.1f}，跌破60分5MA停損)"
                 
         with open(TARGET_FILE, "w", encoding="utf-8") as f:
             json.dump(lightning_dict, f, ensure_ascii=False, indent=4)
