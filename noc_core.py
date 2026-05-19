@@ -1,147 +1,147 @@
-# =============================================================================
-# NOC 戰情室核心引擎 (noc_core.py) v13.5 長線波段版
-# 功能：大盤風向儀 (紅黃綠燈)、移動防禦精算 (ATR)、雙軌兵力配置、本地資料庫
-# =============================================================================
-
-import yfinance as yf
+import sqlite3
 import pandas as pd
-import numpy as np
-import threading
-import json
-import logging
-import math
-from typing import Dict, Any
+from FinMind.data import DataLoader
+import datetime
+import os
 
-logger = logging.getLogger(__name__)
-# 靜音 yfinance 錯誤
-logging.getLogger('yfinance').setLevel(logging.CRITICAL)
-
-# =============================================================================
-# 🌡️ 模組 1: 大盤風向儀 (Macro Status)
-# =============================================================================
-class NOCStrategy:
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
-
-    def get_macro_status(self) -> dict:
-        """
-        大盤風向儀：判定目前台股大盤的紅綠燈狀態，決定總體戰略。
-        """
-        try:
-            twii = yf.Ticker("^TWII").history(period="6mo")
-            if twii.empty:
-                return {"status": "🟡 黃燈", "desc": "無法取得大盤資料，預設為震盪洗盤，請嚴控資金。"}
-
-            twii['10MA'] = twii['Close'].rolling(10).mean()
-            twii['20MA'] = twii['Close'].rolling(20).mean()
-            twii['60MA'] = twii['Close'].rolling(60).mean()
-
-            td = twii.iloc[-1]
-            y_td = twii.iloc[-2]
-
-            # 🟢 綠燈區 (大盤站上月線，且月線上揚)
-            if td['Close'] > td['20MA'] and td['20MA'] >= y_td['20MA']:
-                return {
-                    "status": "🟢 綠燈", 
-                    "desc": "大盤順風 (多頭攻擊)。抱緊庫存，防守線上移，可將總兵力推升至上限。"
-                }
-            # 🔴 紅燈區 (大盤跌破季線 60MA)
-            elif td['Close'] < td['60MA']:
-                return {
-                    "status": "🔴 紅燈", 
-                    "desc": "空頭來襲 (跌破季線)。所有跌破 20MA 的庫存強制清倉，保留現金，停止建倉。"
-                }
-            # 🟡 黃燈區 (其餘震盪洗盤期)
-            else:
-                return {
-                    "status": "🟡 黃燈", 
-                    "desc": "震盪洗盤 (跌破短均線)。若庫存跌破成本價強制減碼一半；嚴禁動用新資金全倉買進。"
-                }
-                
-        except Exception as e:
-            self.logger.error(f"大盤風向儀異常: {e}")
-            return {"status": "🟡 黃燈", "desc": "系統判定異常，強制啟動震盪保護機制。"}
-
-# =============================================================================
-# 🛡️ 模組 2: 移動防禦與兵力精算師 (Risk Manager)
-# =============================================================================
-class NOCRiskManager:
-    def __init__(self, total_capital: float = 130000.0):
-        self.total_capital = total_capital
-
-    def calculate_atr(self, hist_df: pd.DataFrame, period: int = 14) -> float:
-        """計算 ATR (真實波動幅度)，用來抓取股票的『股性』"""
-        if len(hist_df) < period + 1:
-            return hist_df['Close'].iloc[-1] * 0.02 # 防呆：預設 2% 波動
-            
-        high_low = hist_df['High'] - hist_df['Low']
-        high_close = np.abs(hist_df['High'] - hist_df['Close'].shift())
-        low_close = np.abs(hist_df['Low'] - hist_df['Close'].shift())
-        
-        ranges = pd.concat([high_low, high_close, low_close], axis=1)
-        true_range = np.max(ranges, axis=1)
-        return true_range.rolling(period).mean().iloc[-1]
-
-    def get_position_and_defense(self, symbol: str, current_price: float, hist_df: pd.DataFrame = None) -> dict:
-        """
-        軍規級部位精算：廢除固定停利，計算絕對防守價位與雙軌兵力配置
-        """
-        if hist_df is None or hist_df.empty:
-            hist_df = yf.Ticker(symbol).history(period="3mo")
-
-        atr = self.calculate_atr(hist_df)
-        
-        # 1. 雙軌兵力切割 (15% 總兵力拆成兩半)
-        max_allocation = self.total_capital * 0.15
-        core_capital = max_allocation * 0.5      # 7.5% 長線底倉
-        tactical_capital = max_allocation * 0.5  # 7.5% 短線游擊
-        
-        core_shares = math.floor(core_capital / current_price)
-        tactical_shares = math.floor(tactical_capital / current_price)
-
-        # 2. 移動防禦線 (Trailing Stop)
-        # 預設以現價減去 1.5 倍 ATR 作為市場正常波動的容錯空間
-        trailing_stop = current_price - (atr * 1.5)
-        
-        # 結合技術面：抓取月線(20MA)，防線取兩者較低者，避免主力惡意洗盤被洗出場
-        if not hist_df.empty:
-            hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
-            ma20 = hist_df['20MA'].iloc[-1]
-            defense_line = min(trailing_stop, ma20) if not pd.isna(ma20) else trailing_stop
-        else:
-            defense_line = trailing_stop
-
-        return {
-            "current_price": round(current_price, 2),
-            "defense_line": round(defense_line, 2), 
-            "core_shares": core_shares,           # 長線底倉建議股數
-            "tactical_shares": tactical_shares,   # 短線游擊建議股數
-            "total_shares": core_shares + tactical_shares,
-            "risk_per_share": round(current_price - defense_line, 2)
-        }
-
-# =============================================================================
-# 💾 模組 3: 執行緒安全資料庫 (Thread-Safe Database)
-# =============================================================================
+# ==========================================
+# ⚙️ 模組 1：SQLite 戰情資料庫建置 (v2.1 裝甲防禦版)
+# ==========================================
 class NOCDatabase:
-    def __init__(self, db_path: str = "noc_state.json"):
-        self.db_path = db_path
-        self._lock = threading.Lock()
+    def __init__(self, db_name="noc_warroom.db"):
+        self.conn = sqlite3.connect(db_name)
+        self.cursor = self.conn.cursor()
+        self._create_tables()
 
-    def load_state(self) -> dict:
-        with self._lock:
-            try:
-                with open(self.db_path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except (FileNotFoundError, json.JSONDecodeError):
-                return {}
+    def _create_tables(self):
+        """建立本地數據倉儲的資料表 (Schema)"""
+        # 1. K線報價表
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS daily_kline (
+            date TEXT, stock_id TEXT, open REAL, max REAL, min REAL, close REAL, Trading_Volume INTEGER,
+            PRIMARY KEY (date, stock_id)
+        )''')
+        # 2. 融資融券表 (修正對應 FinMind 的 MarginPurchaseTodayBalance 欄位)
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS margin_trades (
+            date TEXT, stock_id TEXT, MarginPurchaseBuy INTEGER, MarginPurchaseSell INTEGER, MarginPurchaseTodayBalance INTEGER,
+            PRIMARY KEY (date, stock_id)
+        )''')
+        # 3. 大戶持股比例表
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS large_holders (
+            date TEXT, stock_id TEXT, HoldingSharesLevel TEXT, percent REAL,
+            PRIMARY KEY (date, stock_id, HoldingSharesLevel)
+        )''')
+        # 4. 外資期貨未平倉表
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS futures_institutional (
+            date TEXT, name TEXT, item TEXT, OpenInterestNetLot INTEGER,
+            PRIMARY KEY (date, name, item)
+        )''')
+        self.conn.commit()
 
-    def save_state(self, data: dict) -> bool:
-        with self._lock:
-            try:
-                with open(self.db_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=4)
-                return True
-            except Exception as e:
-                logger.error(f"資料庫寫入失敗: {e}")
-                return False
+    def save_df_to_db(self, df, table_name):
+        """將 Pandas DataFrame 高速寫入 SQLite (具備自動過濾與防重複寫入機制)"""
+        if df is None or df.empty:
+            return
+
+        # 1. 取得資料庫中該資料表的真實欄位名稱
+        self.cursor.execute(f"PRAGMA table_info({table_name})")
+        db_columns = [col[1] for col in self.cursor.fetchall()]
+
+        # 2. 自動過濾 DataFrame，只保留資料庫有定義的欄位，丟棄 FinMind 塞進來的額外欄位
+        valid_cols = [c for c in df.columns if c in db_columns]
+        df_filtered = df[valid_cols]
+
+        # 3. 寫入資料庫 (防衝突處理)
+        try:
+            # 先嘗試整批高速寫入
+            df_filtered.to_sql(table_name, self.conn, if_exists='append', index=False, method='multi')
+        except sqlite3.IntegrityError:
+            # 若發生重複 (Primary Key 衝突)，改為逐筆寫入並忽略重複項
+            for _, row in df_filtered.iterrows():
+                try:
+                    row.to_frame().T.to_sql(table_name, self.conn, if_exists='append', index=False)
+                except sqlite3.IntegrityError:
+                    pass # 忽略已經存在的歷史數據
+
+# ==========================================
+# 📡 模組 2：FinMind 數據抓取與更新
+# ==========================================
+class NOCDataFetcher:
+    def __init__(self, token=None):
+        self.api = DataLoader()
+        if token:
+            self.api.login_by_token(api_token=token)
+            
+    def fetch_and_store_stock_data(self, stock_id, start_date, db_instance):
+        """抓取個股三大金礦並存入本地庫"""
+        print(f"📡 正在抓取 {stock_id} 的最新戰情數據...")
+        
+        # 1. 基本 K 線
+        df_kline = self.api.taiwan_stock_daily(stock_id=stock_id, start_date=start_date)
+        db_instance.save_df_to_db(df_kline, 'daily_kline')
+        
+        # 2. 金礦一：融資融券餘額
+        df_margin = self.api.taiwan_stock_margin_purchase_short_sale(stock_id=stock_id, start_date=start_date)
+        db_instance.save_df_to_db(df_margin, 'margin_trades')
+        
+        # 3. 金礦二：股權分散表 (大戶持股比例)
+        # df_holders = self.api.taiwan_stock_holding_shares_per(stock_id=stock_id, start_date=start_date)
+        # db_instance.save_df_to_db(df_holders, 'large_holders')
+
+    def fetch_market_health_data(self, start_date, db_instance):
+        """金礦三：抓取大盤與外資期貨空單 (用於拔插頭協議)"""
+        print("🚨 正在更新大盤防禦數據...")
+        
+        # 抓取加權指數 (TAIEX)
+        df_taiex = self.api.taiwan_stock_daily(stock_id='TAIEX', start_date=start_date)
+        db_instance.save_df_to_db(df_taiex, 'daily_kline')
+        
+        # 抓取外資台指期未平倉口數 (改用底層 get_data，避開版本參數衝突)
+        df_futures = self.api.get_data(
+            dataset='TaiwanFuturesInstitutionalInvestors',
+            data_id='TX',
+            start_date=start_date
+        )
+        db_instance.save_df_to_db(df_futures, 'futures_institutional')
+
+# ==========================================
+# 🛡️ 模組 3：DEFCON 1 緊急拔插頭協議 & 策略
+# ==========================================
+class NOCStrategy:
+    def __init__(self, db_instance):
+        self.db = db_instance
+
+    def check_defcon_1_status(self):
+        """檢查是否觸發大盤崩盤警報"""
+        # 1. 取得加權指數最新 60 日均線 (季線) 狀態
+        df_taiex = pd.read_sql("SELECT * FROM daily_kline WHERE stock_id='TAIEX' ORDER BY date DESC LIMIT 60", self.db.conn)
+        if len(df_taiex) < 60:
+            return False # 數據不足跳過
+            
+        current_close = df_taiex.iloc[0]['close']
+        ma60 = df_taiex['close'].mean()
+        is_broken_ma60 = current_close < ma60
+        
+        # 2. 取得外資最新期貨淨未平倉口數
+        df_fii = pd.read_sql("SELECT * FROM futures_institutional WHERE name='外資及陸資' ORDER BY date DESC LIMIT 1", self.db.conn)
+        fii_net_oi = df_fii.iloc[0]['OpenInterestNetLot'] if not df_fii.empty else 0
+        is_heavy_short = fii_net_oi < -30000  # 外資淨空單超過三萬口
+        
+        # ⚔️ 判斷邏輯：跌破季線 且 外資重兵做空
+        if is_broken_ma60 and is_heavy_short:
+            return True
+        return False
+
+    def analyze_stock_opportunity(self, stock_id):
+        """整合 K線與籌碼金礦的進階過濾器"""
+        df_margin = pd.read_sql(f"SELECT * FROM margin_trades WHERE stock_id='{stock_id}' ORDER BY date DESC LIMIT 5", self.db.conn)
+        
+        if len(df_margin) >= 2:
+            current_margin = df_margin.iloc[0]['MarginPurchaseTodayBalance']
+            prev_margin = df_margin.iloc[-1]['MarginPurchaseTodayBalance']
+            
+            # 判斷標準：近五日融資必須是「減少」的 (散戶退場)
+            if current_margin < prev_margin:
+                return "✅ 融資退潮，籌碼乾淨，允許狙擊！"
+            else:
+                return "⚠️ 融資暴增，散戶上車，建議觀望。"
+        return "資料不足"
