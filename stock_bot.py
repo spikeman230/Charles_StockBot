@@ -1,6 +1,6 @@
 # =============================================================================
-# NOC 終極戰情室 v14.5 - 長線波段鎖籌重構完整版 (龍蝦養殖專用)
-# 優化項目：全面對接 noc_core v14.5、強制 3.0 ATR 寬幅風控、基本面/趨勢雙重高規攔截
+# NOC 終極戰情室 v15.5 - 長線波段鎖籌重構完全體 (龍蝦養殖專用)
+# 優化項目：四象限絕對戰術狀態機、15% 物理防爆門、大盤黃燈防禦電路、籌碼換手率與量比擴充
 # 鐵律聲明：全程式保留完整註解與完整電路，嚴禁精簡壓縮，確保戰情穿透力。
 # =============================================================================
 
@@ -68,7 +68,7 @@ TRELLO_BOARD_ID = os.getenv("TRELLO_BOARD_ID")
 class Config:
     TOTAL_CAPITAL      : float = float(os.getenv("TOTAL_CAPITAL", "130000")) # 總兵力天花板 13 萬
     RISK_PER_TRADE     : float = float(os.getenv("RISK_PER_TRADE", "0.02"))
-    ATR_MULTIPLIER     : float = float(os.getenv("ATR_MULTIPLIER", "3.0"))  # 升級至 3.0，賦予長線佈局完整容容錯空間
+    ATR_MULTIPLIER     : float = float(os.getenv("ATR_MULTIPLIER", "3.0"))  # 升級至 3.0，賦予長線佈局完整容錯空間
     YOY_EXPLOSION_PCT  : float = float(os.getenv("YOY_EXPLOSION_PCT", "10.0"))
     PE_LIMIT           : float = float(os.getenv("PE_LIMIT", "40.0"))
     SILENT_MODE        : bool  = os.getenv("SILENT_MODE", "false").lower() == "true"
@@ -82,7 +82,7 @@ class Config:
     GUERRILLA_FILE     : str   = "guerrilla_targets.json"
     
     # 戰略白名單與黑名單過濾機制
-    ACTION_WHITELIST   : list  = ["建倉", "試單", "波段", "佈局", "長線鎖籌", "加碼", "扣款", "獲利巡航", "浮虧防禦"]
+    ACTION_WHITELIST   : list  = ["建倉", "試單", "波段", "佈局", "長線鎖籌", "加碼", "扣款", "獲利巡航", "浮虧防禦", "洗盤耐受", "戰術撤離", "基本面瓦解", "物理防爆門"]
     ACTION_BLACKLIST   : list  = ["持股觀望", "暫停進場", "嚴格觀望", "不建議進場", "等待", "不動用資金", "不適用", "營收衰退"]
 
 cfg = Config()
@@ -448,9 +448,16 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
             local_fetcher.fetch_financial_statements(raw_id, local_db)
 
         stock = yf.Ticker(symbol)
+        
+        # 🌟 獲取發行總股數 (籌碼情報擴充)
+        info = stock.info
+        shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
+        
         hist = stock.history(period="8mo").dropna(subset=["Close"])
         if len(hist) < 60: 
             return None
+
+        hist["Shares_Out"] = shares_out if shares_out else np.nan
 
         hist["Date_Key"] = hist.index.date
         if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
@@ -466,6 +473,9 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         if len(hist) > 0: 
             hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = int(hist["Volume"].iloc[-1] * vol_mult)
 
+        # 🌟 計算換手率與量比
+        hist["Turnover_Rate"] = (hist["Est_Volume"] / hist["Shares_Out"]) * 100
+        
         # 基礎技術分析防線計算
         hist["5MA"]   = hist["Close"].rolling(5).mean()
         hist["20MA"]  = hist["Close"].rolling(20).mean()
@@ -473,6 +483,9 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         hist["60MA"]  = hist["Close"].rolling(60).mean()
         hist["5VMA"]  = hist["Est_Volume"].rolling(5).mean()
         hist["60VMA"] = hist["Volume"].rolling(60).mean()
+        
+        # 🌟 量比計算 (今日預估量 / 過去5日均量)
+        hist["Volume_Ratio"] = hist["Est_Volume"] / hist["5VMA"].shift(1).replace(0, np.nan)
 
         hist["25MA_Rising"] = hist["25MA"] > hist["25MA"].shift(1)
         hist["Is_Red_Candle"] = hist["Close"] > hist["Open"]
@@ -577,14 +590,16 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v14.5 (波段鎖籌重構完整版) 啟動。時間：{curr_time}")
+    logger.info(f"NOC 終極戰情室 v15.5 (龍蝦養殖完全體) 啟動。時間：{curr_time}")
     
     # 宣告連線對象
     db = NOCDatabase()
     strategy = NOCStrategy(db)
     
-    # 🌟 1. 大盤風向紅綠燈核心感知 (拔插頭/熔斷機制)
+    # 🌟 1. 大盤風向紅綠燈核心感知 (拔插頭/熔斷機制/黃燈防禦)
     macro_info = strategy.get_macro_status()
+    is_yellow_light = False
+
     if macro_info["status"] == "🔴 紅燈":
         logger.warning("🚨🚨🚨 觸發戰略級拔插頭熔斷協議！大盤環境進入極度危險空頭階段。")
         update_trello_system_status_bg("⚠️ 觸發空頭防禦協議 (全面停止建倉)", "🔴")
@@ -598,6 +613,12 @@ if __name__ == "__main__":
             []
         )
         sys.exit(0)
+    elif "黃燈" in macro_info["status"] or macro_info["status"] == "🟡 黃燈":
+        logger.warning("🟡 觸發大盤黃燈防禦電路！資金上限鎖定50%，防守乘數收緊至2.0 ATR。")
+        cfg.TOTAL_CAPITAL = float(os.getenv("TOTAL_CAPITAL", "130000")) * 0.5
+        cfg.ATR_MULTIPLIER = 2.0
+        is_yellow_light = True
+        update_trello_system_status_bg("🟡 黃燈防禦協議 (半倉/收緊防護)", "🟡")
         
     # 2. 檢查假日靜默協議
     if not is_trading_day(curr_date):
@@ -607,8 +628,9 @@ if __name__ == "__main__":
             send_reports(f"NOC 戰情報告 {curr_date} (休市)", f"📡 【NOC 戰情室靜默休眠】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n🔴 今日市場休市，全系統處於資產監守維護狀態，不推播繁雜雜訊。", [])
         sys.exit(0)
 
-    logger.info("通過環境感知檢查，開始同步雲端 Trello 看板部署...")
-    update_trello_system_status_bg("交易日波段追蹤中", "🟢")
+    if not is_yellow_light:
+        logger.info("通過環境感知檢查，開始同步雲端 Trello 看板部署...")
+        update_trello_system_status_bg("交易日波段追蹤中", "🟢")
 
     TRELLO_DICT, TRELLO_PORTFOLIO = fetch_trello_deployment()
     STOCK_DICT   = TRELLO_DICT if TRELLO_DICT else {}
@@ -637,7 +659,7 @@ if __name__ == "__main__":
     msg_list, generated_charts, has_data = [f"🌐 【大盤風向儀】：{macro_info['status']} | {market_msg}\n"], [], False
 
     # =============================================================================
-    # === 戰區 1：庫藏股 (實體長線底倉持股維護動態防禦) ===
+    # === 戰區 1：庫藏股 (實體長線底倉持股維護動態防禦 - 四象限戰術狀態機) ===
     # =============================================================================
     if MY_PORTFOLIO:
         msg_list.append("━━━━━━━━━━━━━━\n💼 【庫藏股 (長線鎖籌動態防禦動態)】\n━━━━━━━━━━━━━━\n")
@@ -655,6 +677,12 @@ if __name__ == "__main__":
             etf_icon, _, _ = get_etf_strategy(sym, data["name"])
             sym_state = noc_state.get(sym, StockState())
 
+            ma20 = td["20MA"]
+            ma60 = td["60MA"]
+            turnover = td["Turnover_Rate"] if not pd.isna(td.get("Turnover_Rate", float("nan"))) else 0.0
+            vol_ratio = td["Volume_Ratio"] if not pd.isna(td.get("Volume_Ratio", float("nan"))) else 0.0
+            yoy = td["YoY"]
+
             if "一般型" not in etf_icon:
                 if sym_state.status != "REAL_HOLD_ETF": 
                     noc_state[sym] = StockState(status="REAL_HOLD_ETF", entry=buy_price)
@@ -665,10 +693,14 @@ if __name__ == "__main__":
                 else: 
                     pnl_alert = "🧘‍♂️【長線鎖籌】趨勢結構穩定，靜待資產長線複利翻倍。"
             else:
-                # 升級至 3.0 ATR 風控體系精算
+                # 風控體系精算 (大盤黃燈時已連動收緊 cfg.TOTAL_CAPITAL 與 cfg.ATR_MULTIPLIER)
                 risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
                 defense_info = risk_calculator.get_position_and_defense(sym, curr_price, hist)
                 calculated_stop = defense_info["defense_line"]
+                
+                # 黃燈防禦電路：庫存部位防守若大盤為黃燈，則防線至少以月線 (20MA) 托底
+                if is_yellow_light:
+                    calculated_stop = max(calculated_stop, ma20)
 
                 if sym_state.status != "REAL_HOLD":
                     noc_state[sym] = StockState(status="REAL_HOLD", entry=buy_price, trailing_stop=calculated_stop)
@@ -677,12 +709,25 @@ if __name__ == "__main__":
                 # 防守線只上移、不下移的波段鎖利紀律
                 final_stop = max(sym_state.trailing_stop, calculated_stop)
 
-                if curr_price < final_stop: 
-                    pnl_alert = f"🩸【波段拔線警報】實體持股收盤跌破防守底線 {final_stop:.1f}，強制停損變現清倉！"
+                # 🌟 四象限絕對戰術狀態機 & 15% 物理防爆門
+                if roi_pct <= -15.0:
+                    pnl_alert = "🚨【物理防爆門】單筆帳面虧損觸及 -15.0%，強制觸發物理熔斷停損！"
                     noc_state[sym] = StockState(status="NONE")
-                else:
+                elif isinstance(yoy, (int, float)) and yoy < 0:
+                    pnl_alert = "💀【基本面瓦解】營收 YoY 衰退，明日開盤即刻無條件清倉！"
+                    noc_state[sym] = StockState(status="NONE")
+                elif curr_price < ma60 or curr_price < final_stop:
+                    pnl_alert = "🩸【戰術撤離】跌破季線(60MA)或防禦底線，無條件立即清倉，變現離場！"
+                    noc_state[sym] = StockState(status="NONE")
+                elif roi_pct > 0 and curr_price > ma20:
+                    pnl_alert = "🔥【獲利巡航】獲利奔跑中，防禦線自動墊高！"
                     noc_state[sym].trailing_stop = final_stop
-                    pnl_alert = f"🔥 獲利巡航 | 📍 波段防守線上移至: {final_stop:.1f}" if roi_pct > 0 else f"🟡 浮虧防禦 | 📍 死守多重底線: {final_stop:.1f}"
+                elif roi_pct <= 0 and curr_price >= ma60 and curr_price >= final_stop:
+                    pnl_alert = "🛡️【洗盤耐受】嚴禁攤平，死守底線！"
+                    noc_state[sym].trailing_stop = final_stop
+                else:
+                    pnl_alert = "🔍【中立觀察】價格震盪，嚴密監控防禦底線。"
+                    noc_state[sym].trailing_stop = final_stop
 
             generated_charts.append(draw_chart_if_needed(hist, sym))
             
@@ -691,6 +736,7 @@ if __name__ == "__main__":
             inv_str += f"   現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
             
             chip_msg = td["Chip_Status"]
+            inv_str += f"   🔄 換手率: {turnover:.2f}% | 📊 量比: {vol_ratio:.2f}\n"
             inv_str += f"   💰 籌碼: {chip_msg}\n"
 
             fund_msg = strategy.get_fundamental_health(raw_id)
@@ -731,6 +777,9 @@ if __name__ == "__main__":
             bias         = ((close - ma20) / ma20) * 100 if ma20 else 0
             pe           = td["PE"]
             yoy          = td["YoY"]
+            
+            turnover     = td["Turnover_Rate"] if not pd.isna(td.get("Turnover_Rate", float("nan"))) else 0.0
+            vol_ratio    = td["Volume_Ratio"] if not pd.isna(td.get("Volume_Ratio", float("nan"))) else 0.0
 
             # 呼叫 noc_core 長線濾網模組
             trend_score = strategy.get_trend_score(hist)
@@ -780,11 +829,18 @@ if __name__ == "__main__":
             s = f"🎯 {name} ({sym})\n"
             s += f"   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
             s += f"   趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
+            s += f"   🔄 換手率: {turnover:.2f}% | 📊 量比: {vol_ratio:.2f}\n"
             s += f"   💰 籌碼動向: {chip_msg}\n"
             s += f"   📊 財報透視: {fund_health}\n"
             
             if trigger_label:
                 s += f"   🎯 條件觸發: {trigger_label}\n"
+                
+                # 🌟 黃燈防禦電路：雷達新火種掃描若未通過長線濾網，禁止產出推播，隔絕盤中雜訊。
+                if is_yellow_light and (trend_score < 0 or "衰退" in fund_health or "警報" in fund_health):
+                    logger.info(f"🛑 [黃燈防禦攔截] {sym} 大盤黃燈期間未通過嚴格長線雙濾網，強制屏蔽推播。")
+                    continue
+                    
                 if action_plan_text: 
                     s += f"{action_plan_text}"
                 else: 
@@ -861,7 +917,7 @@ if __name__ == "__main__":
         else: 
             msg_list.append("\n🔕 【靜默通知】今日收盤無任何標的觸發有效長線鎖籌進場訊號。")
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v14.5 波段鎖籌版】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v15.5 波段鎖籌版】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
     
     # 資源回收：清除生成的暫存圖表檔案
     for chart in generated_charts:
