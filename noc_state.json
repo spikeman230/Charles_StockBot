@@ -293,5 +293,40 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
+    },
+    "3017": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2308": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "006208": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "00713": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "0056": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "00919": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2603": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
     }
 }
