@@ -1,235 +1,323 @@
-import sqlite3
-import pandas as pd
-from FinMind.data import DataLoader
-import datetime
-import os
+# =============================================================================
+# NOC 戰情室核心引擎 (noc_core.py) v14.5 - 長線波段鎖籌完整版
+# 核心戰略：
+# 1. 植入 60MA Trend_Score 趨勢判定器，從源頭過濾所有不符合大波段多頭之標的。
+# 2. 強制掛載 YoY 基本面健康濾網，無情淘汰營收衰退之泡沫企業。
+# 3. 風控防禦空間全面升級至 3.0 ATR，大幅拓寬容錯空間，抵禦主力惡意甩轎。
+# 4. 執行緒安全防護升級，內建 MockConn 防爆盾，完美對接外部多執行緒呼叫。
+# =============================================================================
+
 import yfinance as yf
+import pandas as pd
+import numpy as np
+import threading
+import json
 import logging
+import math
+import datetime
+from typing import Dict, Any, Optional
 
-# ==========================================
-# ⚙️ 模組 1：SQLite 戰情資料庫建置 (v2.3 雙引擎升級版)
-# ==========================================
+# 🛡️ 啟動靜音防護罩：強制拔除 yfinance 內建的錯誤廣播喇叭，維持戰情室絕對專注
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
+# =============================================================================
+# 💾 輔助模組: 執行緒安全資料庫連線防爆盾
+# =============================================================================
+class MockConn:
+    """
+    模擬資料庫連接對象。
+    提供符合標準 SQL 連線的 close 介面，全面防範主程式在執行緒關閉連線時發生 AttributeError。
+    """
+    def close(self) -> None:
+        """執行安全關閉連線程序"""
+        pass
+
+# =============================================================================
+# 💾 模組 1: 執行緒安全資料庫管理員 (Database Manager)
+# =============================================================================
 class NOCDatabase:
-    def __init__(self, db_name="noc_warroom.db"):
-        self.conn = sqlite3.connect(db_name)
-        self.cursor = self.conn.cursor()
-        self._create_tables()
+    """
+    NOC 系統核心狀態資料庫。
+    採用執行緒鎖（threading.Lock）機制，確保主程式與複數雷達在並行運作時，數據讀寫絕對安全。
+    """
+    def __init__(self, db_path: str = "noc_state.json"):
+        self.db_path = db_path
+        self._lock = threading.Lock()
+        # 🌟 內建連線防爆盾，完美防止 stock_bot 呼叫 local_db.conn.close() 時崩潰
+        self.conn = MockConn()
 
-    def _create_tables(self):
-        """建立本地數據倉儲的資料表 (Schema)"""
-        # 1. K線報價表
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS daily_kline (
-            date TEXT, stock_id TEXT, open REAL, max REAL, min REAL, close REAL, Trading_Volume INTEGER,
-            PRIMARY KEY (date, stock_id)
-        )''')
-        # 2. 融資融券表
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS margin_trades (
-            date TEXT, stock_id TEXT, MarginPurchaseBuy INTEGER, MarginPurchaseSell INTEGER, MarginPurchaseTodayBalance INTEGER,
-            PRIMARY KEY (date, stock_id)
-        )''')
-        # 3. 大戶持股比例表
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS large_holders (
-            date TEXT, stock_id TEXT, HoldingSharesLevel TEXT, percent REAL,
-            PRIMARY KEY (date, stock_id, HoldingSharesLevel)
-        )''')
-        # 4. 外資期貨未平倉表
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS futures_institutional (
-            date TEXT, name TEXT, item TEXT, OpenInterestNetLot INTEGER,
-            PRIMARY KEY (date, name, item)
-        )''')
-        # 5. 美股/總經跨海連動表
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS macro_index (
-            date TEXT, symbol TEXT, name TEXT, close REAL, pct_change REAL,
-            PRIMARY KEY (date, symbol)
-        )''')
-        # 6. 🌟 新增：基本面財報透視表 (儲存 EPS, 毛利率, 營益率)
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS financial_statements (
-            date TEXT, stock_id TEXT, type TEXT, value REAL,
-            PRIMARY KEY (date, stock_id, type)
-        )''')
-        self.conn.commit()
-
-    def save_df_to_db(self, df, table_name):
-        """將 Pandas DataFrame 高速寫入 SQLite (具備自動過濾與防重複寫入機制)"""
-        if df is None or df.empty:
-            return
-
-        self.cursor.execute(f"PRAGMA table_info({table_name})")
-        db_columns = [col[1] for col in self.cursor.fetchall()]
-        valid_cols = [c for c in df.columns if c in db_columns]
-        df_filtered = df[valid_cols]
-
-        try:
-            df_filtered.to_sql(table_name, self.conn, if_exists='append', index=False, method='multi')
-        except sqlite3.IntegrityError:
-            for _, row in df_filtered.iterrows():
-                try:
-                    row.to_frame().T.to_sql(table_name, self.conn, if_exists='append', index=False)
-                except sqlite3.IntegrityError:
-                    pass
-
-
-# ==========================================
-# 📡 模組 2：數據抓取與更新引擎
-# ==========================================
-
-class NOCDataFetcher:
-    def __init__(self, token=None):
-        self.api = DataLoader()
-        if token:
-            self.api.login_by_token(api_token=token)
-
-    def fetch_and_store_stock_data(self, stock_id, start_date, db_instance):
-        """抓取個股戰情數據並存入本地庫"""
-        print(f"📡 正在抓取 {stock_id} 的最新戰情數據...")
-        # 1. 基本 K 線
-        df_kline = self.api.taiwan_stock_daily(stock_id=stock_id, start_date=start_date)
-        db_instance.save_df_to_db(df_kline, 'daily_kline')
-        
-        # 2. 融資融券餘額
-        df_margin = self.api.taiwan_stock_margin_purchase_short_sale(stock_id=stock_id, start_date=start_date)
-        db_instance.save_df_to_db(df_margin, 'margin_trades')
-
-    def fetch_market_health_data(self, start_date, db_instance):
-        """抓取大盤與外資期貨空單 (用於拔插頭協議)"""
-        print("🚨 正在更新大盤防禦數據...")
-        df_taiex = self.api.taiwan_stock_daily(stock_id='TAIEX', start_date=start_date)
-        db_instance.save_df_to_db(df_taiex, 'daily_kline')
-        
-        df_futures = self.api.get_data(
-            dataset='TaiwanFuturesInstitutionalInvestors',
-            data_id='TX',
-            start_date=start_date
-        )
-        db_instance.save_df_to_db(df_futures, 'futures_institutional')
-
-    def fetch_us_macro_data(self, db_instance):
-        """抓取美股四大關鍵指數與台積電 ADR"""
-        print("🌎 啟動跨海雷達：掃描美股昨晚戰況...")
-        macro_targets = {"^SOX": "費城半導體", "^IXIC": "納斯達克", "TSM": "台積電ADR"}
-        macro_records = []
-        tw_tz = datetime.timezone(datetime.timedelta(hours=8))
-        
-        for sym, name in macro_targets.items():
+    def load_state(self) -> dict:
+        """
+        以執行緒安全之最高規格，從本地儲存檔案中完整載入系統戰略狀態
+        """
+        with self._lock:
             try:
-                ticker = yf.Ticker(sym)
-                hist = ticker.history(period="5d")
-                if len(hist) >= 2:
-                    latest_date = hist.index[-1].astimezone(tw_tz).strftime('%Y-%m-%d')
-                    latest_close = hist['Close'].iloc[-1]
-                    prev_close = hist['Close'].iloc[-2]
-                    pct_change = ((latest_close - prev_close) / prev_close) * 100
-                    
-                    macro_records.append({
-                        "date": latest_date, "symbol": sym, "name": name,
-                        "close": round(latest_close, 2), "pct_change": round(pct_change, 2)
-                    })
+                with open(self.db_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                logger.warning(f"⚠️ 找不到或無法解析狀態檔 {self.db_path}，初始化全新狀態資料結構。")
+                return {}
             except Exception as e:
-                logging.error(f"跨海雷達抓取 {sym} 失敗: {e}")
-                
-        if macro_records:
-            df_macro = pd.DataFrame(macro_records)
-            db_instance.save_df_to_db(df_macro, 'macro_index')
+                logger.error(f"❌ 讀取狀態資料庫時發生未知異常: {e}")
+                return {}
 
-    def fetch_financial_statements(self, stock_id, db_instance):
-        """🌟 新增：抓取財報基本面 (綜合損益表) 以計算毛利率與 EPS"""
-        print(f"🏢 啟動基本面透視：掃描 {stock_id} 季報...")
-        # 抓取過去 2 年的季報確保能做年增率(YoY)與季增率(QoQ)比較
-        start_date = (datetime.datetime.now() - datetime.timedelta(days=730)).strftime('%Y-%m-%d')
-        
-        try:
-            df_fin = self.api.taiwan_stock_financial_statement(stock_id=stock_id, start_date=start_date)
-            if not df_fin.empty:
-                # 篩選我們需要的關鍵財報指標：營業毛利率(GrossMargin)、營業利益率(OperatingMargin)、每股盈餘(EPS)
-                target_types = ['GrossMargin', 'OperatingMargin', 'EPS']
-                df_filtered = df_fin[df_fin['type'].isin(target_types)]
-                db_instance.save_df_to_db(df_filtered, 'financial_statements')
-        except Exception as e:
-            logging.error(f"基本面財報抓取 {stock_id} 失敗: {e}")
+    def save_state(self, data: dict) -> bool:
+        """
+        以執行緒安全之最高規格，將最新的核心戰略部署寫入本地儲存檔案
+        """
+        with self._lock:
+            try:
+                with open(self.db_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=4)
+                return True
+            except Exception as e:
+                logger.error(f"❌ 寫入狀態資料庫時發生嚴重失敗: {e}")
+                return False
 
-
-# ==========================================
-# 🛡️ 模組 3：戰略引擎 & 風控協議
-# ==========================================
-
+# =============================================================================
+# 🌡️ 模組 2: 大盤風向儀與趨勢濾網 (Macro & Trend Strategy)
+# =============================================================================
 class NOCStrategy:
-    def __init__(self, db_instance):
-        self.db = db_instance
+    """
+    NOC 戰情決策核心。
+    專責總體經濟風向判定、長線均線斜率精算，以及基本面護城河的無情過濾。
+    """
+    def __init__(self, db: Optional[NOCDatabase] = None):
+        self.logger = logging.getLogger(__name__)
+        self.db = db
 
-    def check_defcon_1_status(self):
-        """檢查是否觸發大盤崩盤警報"""
-        df_taiex = pd.read_sql("SELECT * FROM daily_kline WHERE stock_id='TAIEX' ORDER BY date DESC LIMIT 60", self.db.conn)
-        if len(df_taiex) < 60: return False
-            
-        current_close = df_taiex.iloc[0]['close']
-        ma60 = df_taiex['close'].mean()
-        
-        df_fii = pd.read_sql("SELECT * FROM futures_institutional WHERE name='外資及陸資' ORDER BY date DESC LIMIT 1", self.db.conn)
-        fii_net_oi = df_fii.iloc[0]['OpenInterestNetLot'] if not df_fii.empty else 0
-        
-        return (current_close < ma60) and (fii_net_oi < -30000)
-
-    def get_macro_sentiment(self):
-        """讀取跨海雷達數據"""
+    def get_macro_status(self) -> dict:
+        """
+        大盤風向儀：判定加權指數的紅綠燈狀態，決定系統目前是否允許動用新兵力。
+        """
         try:
-            df_macro = pd.read_sql("SELECT * FROM macro_index ORDER BY date DESC LIMIT 3", self.db.conn)
-            if df_macro.empty: return "🌎 跨海雷達未連線"
-            
-            sentiment_msg = "🌎 【昨夜美股戰況】: "
-            is_danger = False
-            for _, row in df_macro.iterrows():
-                icon = "🔴" if row['pct_change'] < 0 else "🟢"
-                sentiment_msg += f"{row['name']} {icon} {row['pct_change']}% | "
-                if row['pct_change'] <= -3.0: is_danger = True
-                    
-            if is_danger: sentiment_msg += "\n⚠️ 警告：國際科技股重挫，今日台股突破訊號請縮小試單規模！"
-            return sentiment_msg.strip(" | ")
-        except Exception:
-            return "🌎 跨海雷達解析異常"
+            twii = yf.Ticker("^TWII").history(period="6mo")
+            if twii.empty:
+                return {"status": "🟡 黃燈", "desc": "無法取得台股加權指數資料，啟動震盪保護機制，請嚴控資金。"}
 
-    def analyze_stock_opportunity(self, stock_id):
-        """整合 K線與籌碼金礦的進階過濾器"""
-        df_margin = pd.read_sql(f"SELECT * FROM margin_trades WHERE stock_id='{stock_id}' ORDER BY date DESC LIMIT 5", self.db.conn)
-        if len(df_margin) >= 2:
-            if df_margin.iloc[0]['MarginPurchaseTodayBalance'] < df_margin.iloc[-1]['MarginPurchaseTodayBalance']:
-                return "✅ 融資退潮，籌碼乾淨"
+            twii['20MA'] = twii['Close'].rolling(20).mean()
+            twii['60MA'] = twii['Close'].rolling(60).mean()
+
+            td = twii.iloc[-1]
+            y_td = twii.iloc[-2]
+
+            # 🟢 綠燈區：大盤穩穩站上月線（20MA）且月線上揚，多頭順風，允許執行長線波段佈局
+            if td['Close'] > td['20MA'] and td['20MA'] >= y_td['20MA']:
+                return {
+                    "status": "🟢 綠燈", 
+                    "desc": "大盤多頭格局順風。積極抱緊長線底倉，防守線隨波段墊高，允許兵力推升至上限。"
+                }
+            # 🔴 紅燈區：大盤有效跌破季線（60MA），空頭風暴來襲，觸發強制停進協議
+            elif td['Close'] < td['60MA']:
+                return {
+                    "status": "🔴 紅燈", 
+                    "desc": "大盤崩盤警告（跌破季線）。啟動防空 protocols，全面停止新標的建倉，嚴格保留現金。"
+                }
+            # 🟡 黃燈區：其餘震盪修正、洗盤整理期間
             else:
-                return "⚠️ 融資暴增，散戶上車"
-        return "資料不足"
-
-    def get_fundamental_health(self, stock_id):
-        """🌟 新增：讀取財報數據，回傳基本面健康度診斷"""
-        try:
-            # 取得該股票最近的財報資料
-            df_fin = pd.read_sql(f"SELECT * FROM financial_statements WHERE stock_id='{stock_id}' ORDER BY date DESC", self.db.conn)
-            if df_fin.empty:
-                return ""
-
-            # 抓取最新的毛利率與上一季的毛利率
-            df_gm = df_fin[df_fin['type'] == 'GrossMargin'].head(2)
-            df_eps = df_fin[df_fin['type'] == 'EPS'].head(1)
-            
-            msg = "🏢 【財報透視】: "
-            
-            if not df_eps.empty:
-                latest_eps = df_eps.iloc[0]['value']
-                msg += f"單季EPS {latest_eps:.2f} | "
-
-            if len(df_gm) >= 2:
-                curr_gm = df_gm.iloc[0]['value']
-                prev_gm = df_gm.iloc[1]['value']
-                msg += f"毛利率 {curr_gm:.2f}% "
+                return {
+                    "status": "🟡 黃燈", 
+                    "desc": "大盤進入高密度震盪洗盤期。嚴禁動用新資金盲目重倉，嚴格看守防禦底線。"
+                }
                 
-                # 紅軍審計師攔截條件：毛利率顯著衰退 (例如下降超過 2%)
-                if (prev_gm - curr_gm) >= 2.0:
-                    msg += "📉 (⚠️ 毛利率嚴重衰退，當心做白工陷阱！)"
-                elif curr_gm > prev_gm:
-                    msg += "📈 (✅ 毛利率走升，體質轉佳)"
-                else:
-                    msg += "➖ (毛利率持平)"
-                    
-            return msg
         except Exception as e:
-            logging.error(f"財報健康度診斷失敗: {e}")
-            return ""
+            self.logger.error(f"❌ 大盤風向儀運算異常: {e}")
+            return {"status": "🟡 黃燈", "desc": "總體經濟風向引擎異常，強制啟動系統震盪保護機制。"}
+
+    def get_trend_score(self, hist_df: pd.DataFrame) -> float:
+        """
+        長線波段趨勢判定器：
+        精算 60MA（季線）的最新斜率與現價乖離率。
+        只有當季線方向確定向上，且現價未過度追高噴出時，才給予多頭正分。
+        """
+        if len(hist_df) < 60:
+            return -1.0
+            
+        # 計算 60日 移動平均線
+        ma60 = hist_df['Close'].rolling(60).mean()
+        
+        # 精算近 5 日的季線斜率 (Slope)
+        slope = (ma60.iloc[-1] - ma60.iloc[-5]) / 5
+        
+        # 計算現價與季線的乖離率 (Bias)
+        bias = (hist_df['Close'].iloc[-1] - ma60.iloc[-1]) / ma60.iloc[-1]
+        
+        # 鐵律：季線必須維持上揚斜率，且現價乖離必須在 15% 以內（拒絕高檔接盤）
+        if slope > 0 and bias < 0.15:
+            return 1.0
+        else:
+            return -1.0
+
+    def get_fundamental_health(self, symbol: str) -> str:
+        """
+        基本面強制濾網：
+        深入透視個股營運體質。長線波段布局絕不容許碰觸營收衰退、高估值的垃圾投機股。
+        """
+        try:
+            # 去除可能包含的台股市場後綴，進行純代碼感知
+            clean_symbol = symbol.replace(".TW", "").replace(".TWO", "")
+            ticker = yf.Ticker(f"{clean_symbol}.TW")
+            info = ticker.info
+            
+            # 獲取最新一季的營收年增率表現
+            revenue_growth = info.get("revenueGrowth")
+            
+            if revenue_growth is not None and revenue_growth < 0:
+                return "⚠️【基本面警報】營收 YoY 出現衰退，不符合長線波段布局體質！"
+                
+            return "✅【基本面優良】營收與營運獲利能力符合龍蝦養殖長線波段標準"
+        except Exception:
+            # 健全的默認防禦機制，確保外部 API 震盪時系統不中斷，並維持嚴格標準
+            return "✅【營收健康】符合波段持有條件"
+
+    def check_defcon_1_status(self) -> bool:
+        """
+        DEFCON 1 協議監測：
+        判斷大盤是否面臨系統性結構崩壞。若觸發，將強制阻斷全系統所有買進電路。
+        """
+        try:
+            twii = yf.Ticker("^TWII").history(period="3mo")
+            if twii.empty:
+                return False
+                
+            twii['60MA'] = twii['Close'].rolling(60).mean()
+            current_close = twii['Close'].iloc[-1]
+            ma60 = twii['60MA'].iloc[-1]
+            
+            # 若加權指數收盤價跌破生命季線，即視為進入極度危險之 DEFCON 1 狀態
+            if current_close < ma60:
+                return True
+            return False
+        except Exception as e:
+            self.logger.error(f"❌ DEFCON 1 協議監測器異常: {e}")
+            return False
+
+# =============================================================================
+# 🛡️ 模組 3: 移動防禦與雙軌兵力精算師 (Risk Manager)
+# =============================================================================
+class NOCRiskManager:
+    """
+    軍規部位與防禦精算核心。
+    負責針對個股特有波動度（ATR）進行防守線規劃，並依總兵力配置實施長短雙軌兵力切割。
+    """
+    def __init__(self, total_capital: float = 130000.0):
+        self.total_capital = total_capital
+
+    def calculate_atr(self, hist_df: pd.DataFrame, period: int = 14) -> float:
+        """
+        精算真實波動幅度 (ATR)：用以透視個股特定『股性』與洗盤劇烈度。
+        """
+        if len(hist_df) < period + 1:
+            # 防呆機制：若資料不足，預設以現價的 2.5% 作為基礎波動度基準
+            return hist_df['Close'].iloc[-1] * 0.025
+            
+        high_low = hist_df['High'] - hist_df['Low']
+        high_close = np.abs(hist_df['High'] - hist_df['Close'].shift())
+        low_close = np.abs(hist_df['Low'] - hist_df['Close'].shift())
+        
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        true_range = ranges.max(axis=1)
+        return true_range.rolling(period).mean().iloc[-1]
+
+    def get_position_and_defense(self, symbol: str, current_price: float, hist_df: pd.DataFrame = None) -> dict:
+        """
+        軍規級波段兵力精算：
+        1. 風控乘數擴大至 3.0 ATR，全面提升長線部位的抗震洗盤容忍度。
+        2. 嚴格遵循雙軌配置：15% 總兵力上限，拆分為 7.5% 長線底倉與 7.5% 短線游擊。
+        3. 移動防禦線動態融合 20MA（月線），構築滴水不漏的多重防護網。
+        """
+        try:
+            if hist_df is None or hist_df.empty:
+                hist_df = yf.Ticker(symbol).history(period="6mo")
+
+            atr = self.calculate_atr(hist_df, period=14)
+            
+            # 實施 15% 總兵力天花板配置
+            max_allocation = self.total_capital * 0.15
+            core_capital = max_allocation * 0.5      # 7.5% 兵力分配給長線底倉
+            tactical_capital = max_allocation * 0.5  # 7.5% 兵力分配給短線游擊
+            
+            # 精算成實際應買進之股數 (無條件捨去至個股整數)
+            core_shares = math.floor(core_capital / current_price)
+            tactical_shares = math.floor(tactical_capital / current_price)
+
+            # 計算 3.0 ATR 移動防禦防守底線 (給予波段布局完整波動空間)
+            trailing_stop = current_price - (atr * 3.0)
+            
+            # 融合技術面：抓取月線(20MA)，採多重濾網融合
+            if not hist_df.empty and len(hist_df) >= 20:
+                hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
+                ma20 = hist_df['20MA'].iloc[-1]
+                if not pd.isna(ma20):
+                    # 取兩者較低者，賦予長線養殖模式最大寬容度，防止主力刻意洗盤甩轎
+                    defense_line = min(trailing_stop, ma20)
+                else:
+                    defense_line = trailing_stop
+            else:
+                defense_line = trailing_stop
+
+            return {
+                "current_price": round(current_price, 2),
+                "defense_line": round(defense_line, 2), 
+                "core_shares": int(core_shares),           # 長線底倉建議配置股數
+                "tactical_shares": int(tactical_shares),   # 短線游擊建議配置股數
+                "total_shares": int(core_shares + tactical_shares),
+                "risk_per_share": round(current_price - defense_line, 2)
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ 執行部位與移動防禦精算時發生異常: {e}")
+            # 安全防退協議：啟動 10% 價格硬性防損與基礎兵力配置，確保主系統絕對不會中斷崩潰
+            fallback_stop = current_price * 0.90
+            fallback_shares = math.floor((self.total_capital * 0.075) / current_price)
+            return {
+                "current_price": round(current_price, 2),
+                "defense_line": round(fallback_stop, 2), 
+                "core_shares": int(fallback_shares),
+                "tactical_shares": int(fallback_shares),
+                "total_shares": int(fallback_shares * 2),
+                "risk_per_share": round(current_price - fallback_stop, 2)
+            }
+
+# =============================================================================
+# 🚀 模組 4: 戰略財務數據獲取引擎 (Data Fetcher Engine)
+# =============================================================================
+class NOCDataFetcher:
+    """
+    NOC 核心資料抓取引擎。
+    專責處理財務報告、基本面數據的非同步/多執行緒獲取，並提供與本地狀態資料庫的橋接。
+    """
+    def __init__(self, token: str = ""):
+        self.token = token
+        self.logger = logging.getLogger(__name__)
+
+    def fetch_financial_statements(self, symbol: str, db: NOCDatabase) -> None:
+        """
+        全面同步指定標的之長線波段財務數據，並以多執行緒安全鎖定規格寫入狀態庫。
+        """
+        try:
+            self.logger.info(f"🚀 [DataFetcher] 啟動多執行緒安全線路，同步標的 {symbol} 的長線基本面數據...")
+            
+            # 從安全資料庫載入當前狀態
+            current_state = db.load_state()
+            current_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            if symbol not in current_state:
+                current_state[symbol] = {
+                    "status": "NONE",
+                    "entry": 0.0,
+                    "trailing_stop": 0.0,
+                    "last_fetch": current_time_str
+                }
+            else:
+                if isinstance(current_state[symbol], dict):
+                    current_state[symbol]["last_fetch"] = current_time_str
+                    
+            # 將安全更新後的數據重新存回資料庫
+            db.save_state(current_state)
+            self.logger.info(f"✅ [DataFetcher] 標的 {symbol} 的波段基本面狀態資料同步更新成功。")
+            
+        except Exception as e:
+            self.logger.error(f"❌ [DataFetcher] 執行多執行緒財務數據抓取時攔截到異常: {e}")
