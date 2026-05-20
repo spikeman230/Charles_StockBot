@@ -31,7 +31,7 @@ from typing import Optional, Dict, Tuple, Any
 from pathlib import Path
 
 # 🌟 深度引入 NOC 核心防禦模組 (長線波段基石)
-from noc_core import NOCDatabase, NOCStrategy, NOCDataFetcher, NOCRiskManager
+from noc_core import NOCDatabase, NOCStrategy, NOCDataFetcher, NOCRiskManager, analyze_chip_tactics
 
 # =============================================================================
 # === 0. 初始化：載入環境變數 & 日誌系統 ===
@@ -82,8 +82,8 @@ class Config:
     GUERRILLA_FILE     : str   = "guerrilla_targets.json"
     
     # 戰略白名單與黑名單過濾機制
-    ACTION_WHITELIST   : list  = ["建倉", "試單", "波段", "佈局", "長線鎖籌", "加碼", "扣款", "獲利巡航", "浮虧防禦", "洗盤耐受", "戰術撤離", "基本面瓦解", "物理防爆門"]
-    ACTION_BLACKLIST   : list  = ["持股觀望", "暫停進場", "嚴格觀望", "不建議進場", "等待", "不動用資金", "不適用", "營收衰退"]
+    ACTION_WHITELIST   : list  = ["建倉", "試單", "波段", "佈局", "長線鎖籌", "加碼", "扣款", "獲利巡航", "浮虧防禦", "洗盤耐受", "戰術撤離", "基本面瓦解", "物理防爆門", "護城河瓦解", "洗盤耐受區"]
+    ACTION_BLACKLIST   : list  = ["持股觀望", "暫停進場", "嚴格觀望", "不建議進場", "等待", "不動用資金", "不適用", "營收衰退", "大盤進入震盪洗盤期"]
 
 cfg = Config()
 
@@ -473,9 +473,6 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         if len(hist) > 0: 
             hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = int(hist["Volume"].iloc[-1] * vol_mult)
 
-        # 🌟 計算換手率與量比
-        hist["Turnover_Rate"] = (hist["Est_Volume"] / hist["Shares_Out"]) * 100
-        
         # 基礎技術分析防線計算
         hist["5MA"]   = hist["Close"].rolling(5).mean()
         hist["20MA"]  = hist["Close"].rolling(20).mean()
@@ -484,8 +481,9 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         hist["5VMA"]  = hist["Est_Volume"].rolling(5).mean()
         hist["60VMA"] = hist["Volume"].rolling(60).mean()
         
-        # 🌟 量比計算 (今日預估量 / 過去5日均量)
-        hist["Volume_Ratio"] = hist["Est_Volume"] / hist["5VMA"].shift(1).replace(0, np.nan)
+        # 🌟 計算換手率與量比 (確保 100% 執行與防空值處理)
+        hist["Turnover_Rate"] = ((hist["Est_Volume"] / hist["Shares_Out"]) * 100).fillna(1.5)
+        hist["Volume_Ratio"] = (hist["Est_Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
 
         hist["25MA_Rising"] = hist["25MA"] > hist["25MA"].shift(1)
         hist["Is_Red_Candle"] = hist["Close"] > hist["Open"]
@@ -596,6 +594,8 @@ if __name__ == "__main__":
     db = NOCDatabase()
     strategy = NOCStrategy(db)
     
+    msg_list = []
+    
     # 🌟 1. 大盤風向紅綠燈核心感知 (拔插頭/熔斷機制/黃燈防禦)
     macro_info = strategy.get_macro_status()
     is_yellow_light = False
@@ -614,7 +614,7 @@ if __name__ == "__main__":
         )
         sys.exit(0)
     elif "黃燈" in macro_info["status"] or macro_info["status"] == "🟡 黃燈":
-        logger.warning("🟡 觸發大盤黃燈防禦電路！資金上限鎖定50%，防守乘數收緊至2.0 ATR。")
+        logger.warning("🟡 觸發大盤黃燈防禦電路！總兵力天花板強制鎖定 50% 水位 (6.5萬) / 雷達新火種禁止開新倉 / 防守線緊縮至 2.0 ATR 或月線。")
         cfg.TOTAL_CAPITAL = float(os.getenv("TOTAL_CAPITAL", "130000")) * 0.5
         cfg.ATR_MULTIPLIER = 2.0
         is_yellow_light = True
@@ -656,7 +656,14 @@ if __name__ == "__main__":
 
     is_bull_market, market_msg = get_market_regime()
     noc_state = load_state()
-    msg_list, generated_charts, has_data = [f"🌐 【大盤風向儀】：{macro_info['status']} | {market_msg}\n"], [], False
+    
+    macro_msg = f"🌐 【大盤風向儀】：{macro_info['status']} | {market_msg}\n"
+    if is_yellow_light:
+        macro_msg += "⚠️ 【黃燈防禦】總兵力天花板強制鎖定 50% 水位 (6.5萬) / 雷達新火種禁止開新倉 / 防守線緊縮至 2.0 ATR 或月線\n"
+    
+    msg_list = [macro_msg]
+    generated_charts = []
+    has_data = False
 
     # =============================================================================
     # === 戰區 1：庫藏股 (實體長線底倉持股維護動態防禦 - 四象限戰術狀態機) ===
@@ -679,8 +686,8 @@ if __name__ == "__main__":
 
             ma20 = td["20MA"]
             ma60 = td["60MA"]
-            turnover = td["Turnover_Rate"] if not pd.isna(td.get("Turnover_Rate", float("nan"))) else 0.0
-            vol_ratio = td["Volume_Ratio"] if not pd.isna(td.get("Volume_Ratio", float("nan"))) else 0.0
+            turnover = td["Turnover_Rate"]
+            vol_ratio = td["Volume_Ratio"]
             yoy = td["YoY"]
 
             if "一般型" not in etf_icon:
@@ -693,14 +700,12 @@ if __name__ == "__main__":
                 else: 
                     pnl_alert = "🧘‍♂️【長線鎖籌】趨勢結構穩定，靜待資產長線複利翻倍。"
             else:
-                # 風控體系精算 (大盤黃燈時已連動收緊 cfg.TOTAL_CAPITAL 與 cfg.ATR_MULTIPLIER)
-                risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
-                defense_info = risk_calculator.get_position_and_defense(sym, curr_price, hist)
-                calculated_stop = defense_info["defense_line"]
+                # 🌟 四象限絕對戰術狀態機 & 15% 物理防爆門
+                current_atr_multiplier = 2.0 if is_yellow_light else 3.0
+                calculated_stop = curr_price - (atr * current_atr_multiplier)
                 
-                # 黃燈防禦電路：庫存部位防守若大盤為黃燈，則防線至少以月線 (20MA) 托底
-                if is_yellow_light:
-                    calculated_stop = max(calculated_stop, ma20)
+                # 與 20MA 取低值融合，賦予長線防護網最大寬容度
+                calculated_stop = min(calculated_stop, ma20) if not pd.isna(ma20) else calculated_stop
 
                 if sym_state.status != "REAL_HOLD":
                     noc_state[sym] = StockState(status="REAL_HOLD", entry=buy_price, trailing_stop=calculated_stop)
@@ -709,21 +714,17 @@ if __name__ == "__main__":
                 # 防守線只上移、不下移的波段鎖利紀律
                 final_stop = max(sym_state.trailing_stop, calculated_stop)
 
-                # 🌟 四象限絕對戰術狀態機 & 15% 物理防爆門
-                if roi_pct <= -15.0:
-                    pnl_alert = "🚨【物理防爆門】單筆帳面虧損觸及 -15.0%，強制觸發物理熔斷停損！"
+                if isinstance(yoy, (int, float)) and yoy < 0:
+                    pnl_alert = "💀【護城河瓦解】營收 YoY 衰退，明日開盤即刻清倉！"
                     noc_state[sym] = StockState(status="NONE")
-                elif isinstance(yoy, (int, float)) and yoy < 0:
-                    pnl_alert = "💀【基本面瓦解】營收 YoY 衰退，明日開盤即刻無條件清倉！"
-                    noc_state[sym] = StockState(status="NONE")
-                elif curr_price < ma60 or curr_price < final_stop:
-                    pnl_alert = "🩸【戰術撤離】跌破季線(60MA)或防禦底線，無條件立即清倉，變現離場！"
+                elif roi_pct <= -15.0 or curr_price < ma60 or curr_price < final_stop:
+                    pnl_alert = "🩸【戰術撤離】觸及絕對虧損或跌破季線/防線，無條件立即停損變現！"
                     noc_state[sym] = StockState(status="NONE")
                 elif roi_pct > 0 and curr_price > ma20:
-                    pnl_alert = "🔥【獲利巡航】獲利奔跑中，防禦線自動墊高！"
+                    pnl_alert = "🔥【獲利巡航】獲利奔跑中，防禦線上移！"
                     noc_state[sym].trailing_stop = final_stop
                 elif roi_pct <= 0 and curr_price >= ma60 and curr_price >= final_stop:
-                    pnl_alert = "🛡️【洗盤耐受】嚴禁攤平，死守底線！"
+                    pnl_alert = "🛡️【洗盤耐受區】嚴禁攤平加碼，死守底線！"
                     noc_state[sym].trailing_stop = final_stop
                 else:
                     pnl_alert = "🔍【中立觀察】價格震盪，嚴密監控防禦底線。"
@@ -736,8 +737,9 @@ if __name__ == "__main__":
             inv_str += f"   現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
             
             chip_msg = td["Chip_Status"]
-            inv_str += f"   🔄 換手率: {turnover:.2f}% | 📊 量比: {vol_ratio:.2f}\n"
-            inv_str += f"   💰 籌碼: {chip_msg}\n"
+            chip_tactics_msg = analyze_chip_tactics(turnover, vol_ratio)
+            inv_str += f"   換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
+            inv_str += f"   💰 法人籌碼: {chip_msg}\n"
 
             fund_msg = strategy.get_fundamental_health(raw_id)
             inv_str += f"   📊 財報: {fund_msg}\n"
@@ -778,8 +780,8 @@ if __name__ == "__main__":
             pe           = td["PE"]
             yoy          = td["YoY"]
             
-            turnover     = td["Turnover_Rate"] if not pd.isna(td.get("Turnover_Rate", float("nan"))) else 0.0
-            vol_ratio    = td["Volume_Ratio"] if not pd.isna(td.get("Volume_Ratio", float("nan"))) else 0.0
+            turnover     = td["Turnover_Rate"]
+            vol_ratio    = td["Volume_Ratio"]
 
             # 呼叫 noc_core 長線濾網模組
             trend_score = strategy.get_trend_score(hist)
@@ -813,6 +815,9 @@ if __name__ == "__main__":
                         alert = "🛡️【基本面攔截】營收 YoY 衰退，無情淘汰。"
                     elif trend_score < 0:
                         alert = "🛡️【趨勢攔截】60MA 角度未上揚，拒絕追高。"
+                    elif is_yellow_light:
+                        alert = "🟡【黃燈強制攔截】大盤進入震盪洗盤期，戰情室強制攔截，禁止盲目開新倉建倉。"
+                        action_plan_text = ""
                     else:
                         risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
                         defense_info = risk_calculator.get_position_and_defense(sym, close, hist)
@@ -829,8 +834,10 @@ if __name__ == "__main__":
             s = f"🎯 {name} ({sym})\n"
             s += f"   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
             s += f"   趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
-            s += f"   🔄 換手率: {turnover:.2f}% | 📊 量比: {vol_ratio:.2f}\n"
-            s += f"   💰 籌碼動向: {chip_msg}\n"
+            
+            chip_tactics_msg = analyze_chip_tactics(turnover, vol_ratio)
+            s += f"   換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
+            s += f"   💰 法人動向: {chip_msg}\n"
             s += f"   📊 財報透視: {fund_health}\n"
             
             if trigger_label:
