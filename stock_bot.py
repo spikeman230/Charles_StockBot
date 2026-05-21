@@ -714,23 +714,32 @@ if __name__ == "__main__":
                     noc_state[sym] = StockState(status="REAL_HOLD", entry=buy_price, trailing_stop=calculated_stop)
                     sym_state = noc_state[sym]
                 
-                # 防守線只上移、不下移的波段鎖利紀律
-                final_stop = max(sym_state.trailing_stop, calculated_stop)
+               # 🛡️ 擷取 Trello 手動防線設定
+                trello_stop = info.get("manual_stop", 0.0)
+                
+                # 防守線判斷：若有 Trello 手動防線則優先採用，否則執行 NOC 系統 3.0 ATR 只上移紀律
+                if trello_stop > 0:
+                    final_stop = trello_stop
+                else:
+                    final_stop = max(sym_state.trailing_stop, calculated_stop)
 
                 if isinstance(yoy, (int, float)) and yoy < 0:
                     pnl_alert = "💀【護城河瓦解】營收 YoY 衰退，明日開盤即刻清倉！"
                     noc_state[sym] = StockState(status="NONE")
                 elif roi_pct <= -15.0 or curr_price < ma60 or curr_price < final_stop:
-                    pnl_alert = "🩸【戰術撤離】觸及絕對虧損或跌破季線/防線，無條件立即停損變現！"
+                    pnl_alert = f"🩸【戰術撤離】跌破防守底線 ({final_stop:.2f})，無條件停損變現！" # 👈 印出砍倉數字
                     noc_state[sym] = StockState(status="NONE")
+                elif trello_stop > 0 and sym_state.trailing_stop != trello_stop:
+                    pnl_alert = f"🛡️【手動指揮】已依據 Trello 覆寫防守線至 {final_stop:.2f}" # 👈 回報 Trello 指令接收
+                    noc_state[sym].trailing_stop = final_stop
                 elif roi_pct > 0 and curr_price > ma20:
-                    pnl_alert = "🔥【獲利巡航】獲利奔跑中，防禦線上移！"
+                    pnl_alert = f"🔥【獲利巡航】獲利奔跑中，防禦線上移至 {final_stop:.2f}！" # 👈 印出上移數字
                     noc_state[sym].trailing_stop = final_stop
                 elif roi_pct <= 0 and curr_price >= ma60 and curr_price >= final_stop:
-                    pnl_alert = "🛡️【洗盤耐受區】嚴禁攤平加碼，死守底線！"
+                    pnl_alert = f"🛡️【洗盤耐受區】嚴禁攤平加碼，死守底線 ({final_stop:.2f})！" # 👈 印出底線數字
                     noc_state[sym].trailing_stop = final_stop
                 else:
-                    pnl_alert = "🔍【中立觀察】價格震盪，嚴密監控防禦底線。"
+                    pnl_alert = f"🔍【中立觀察】價格震盪，監控防禦底線 ({final_stop:.2f})。"
                     noc_state[sym].trailing_stop = final_stop
 
             generated_charts.append(draw_chart_if_needed(hist, sym))
