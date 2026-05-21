@@ -7,6 +7,21 @@ from dotenv import load_dotenv
 
 from noc_core import NOCDatabase, NOCDataFetcher
 
+# ==========================================
+# 🛠️ NOC 雲端資料庫自動升級模組 (Hotfix)
+# ==========================================
+try:
+    _conn = sqlite3.connect("noc_database.db")
+    # 嘗試幫倉庫擴建 pe_ratio 貨架
+    _conn.execute("ALTER TABLE stocks ADD COLUMN pe_ratio REAL;")
+    _conn.commit()
+    _conn.close()
+    print("✅ [雲端機房廣播] 成功為資料庫擴建 'pe_ratio' 欄位！")
+except Exception as _e:
+    # 如果貨架已經建好了，或是找不到資料庫，就安靜地繼續執行，不干擾主程式
+    pass 
+# ==========================================
+
 load_dotenv()
 FINMIND_TOKEN = os.getenv("FINMIND_TOKEN")
 
