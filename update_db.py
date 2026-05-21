@@ -5,18 +5,6 @@ import time
 from dotenv import load_dotenv
 
 from noc_core import NOCDatabase, NOCDataFetcher
-# ==========================================
-# 🛠️ NOC 雲端資料庫自動升級模組 (Hotfix)
-# ==========================================
-try:
-    _conn = sqlite3.connect("noc_database.db")
-    _conn.execute("ALTER TABLE stocks ADD COLUMN pe_ratio REAL;")
-    _conn.commit()
-    _conn.close()
-    print("✅ [雲端升級] 成功為資料庫新增 'pe_ratio' 欄位！")
-except Exception as _e:
-    pass # 如果欄位已經存在或找不到檔案，直接靜默跳過，不干擾主程式
-# ==========================================
 
 load_dotenv()
 FINMIND_TOKEN = os.getenv("FINMIND_TOKEN")
