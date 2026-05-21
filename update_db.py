@@ -2,6 +2,7 @@
 import datetime
 import os
 import time
+import sqlite3  # 👈 新增這行：導入資料庫升級工具
 from dotenv import load_dotenv
 
 from noc_core import NOCDatabase, NOCDataFetcher
