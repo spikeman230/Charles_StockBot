@@ -715,7 +715,7 @@ if __name__ == "__main__":
                     sym_state = noc_state[sym]
                 
                # 🛡️ 擷取 Trello 手動防線設定
-                trello_stop = info.get("manual_stop", 0.0)
+                trello_stop = data.get("manual_stop", 0.0)
                 
                 # 防守線判斷：若有 Trello 手動防線則優先採用，否則執行 NOC 系統 3.0 ATR 只上移紀律
                 if trello_stop > 0:
