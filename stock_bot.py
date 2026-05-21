@@ -268,13 +268,16 @@ def _parse_card_to_portfolio(card: dict) -> Tuple[str, dict]:
     name_part = raw_name[len(symbol):].strip() if ticker_match else raw_name
     name = re.sub(r"\(.*?\)", "", name_part).strip() or symbol
     desc = card.get("desc", "")
-    buy_price, shares = 0.0, 1000
+    buy_price, shares, manual_stop = 0.0, 1000, 0.0 # 👈 新增防線預設值
     price_match = re.search(r"成本[：:]\s*([0-9.]+)", desc)
     shares_match = re.search(r"股數[：:]\s*([0-9]+)", desc)
+    stop_match = re.search(r"(防線|停損|防守)[：:]\s*([0-9.]+)", desc) # 👈 新增正則表達式抓取
     if price_match: 
         buy_price = float(price_match.group(1))
     if shares_match: 
         shares = int(shares_match.group(1))
+    if stop_match:
+        manual_stop = float(stop_match.group(2)) # 👈 寫入變數
     return symbol, {"name": name, "buy_price": buy_price, "shares": shares, "trello_tip": desc}
 
 def fetch_trello_deployment() -> Tuple[Optional[dict], Optional[dict]]:
