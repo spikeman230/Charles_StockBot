@@ -320,12 +320,7 @@ class NOCDataFetcher:
         """
         try:
             self.logger.info(f"🚀 [DataFetcher] 啟動多執行緒安全線路，同步標的 {symbol} 的長線基本面數據...")
-        """
-        獲取大盤總體健康度數據，提供給 stock_bot 進行總體曝險評估。
-        (解決 update_db.py 屬性缺失之核心防爆盾)
-        """
-        try:
-            self.logger.info("🚀 [DataFetcher] 啟動總體經濟雷達，正在同步大盤健康度數據...")    
+            
             # 從安全資料庫載入當前狀態
             current_state = db.load_state()
             current_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
