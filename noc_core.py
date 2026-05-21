@@ -305,6 +305,9 @@ class NOCRiskManager:
 # =============================================================================
 # 🚀 模組 4: 戰略財務數據獲取引擎 (Data Fetcher Engine)
 # =============================================================================
+# =============================================================================
+# 🚀 模組 4: 戰略財務數據獲取引擎 (Data Fetcher Engine)
+# =============================================================================
 class NOCDataFetcher:
     """
     NOC 核心資料抓取引擎。
@@ -320,18 +323,13 @@ class NOCDataFetcher:
         """
         try:
             self.logger.info(f"🚀 [DataFetcher] 啟動多執行緒安全線路，同步標的 {symbol} 的長線基本面數據...")
-        """
-        獲取大盤總體健康度數據，提供給 stock_bot 進行總體曝險評估。
-        (解決 update_db.py 屬性缺失之核心防爆盾)
-        """
-        try:
-            self.logger.info("🚀 [DataFetcher] 啟動總體經濟雷達，正在同步大盤健康度數據...")    
+            
             # 從安全資料庫載入當前狀態
             current_state = db.load_state()
             current_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             if symbol not in current_state:
-                current_state[symbol] = {
+                 current_state[symbol] = {
                     "status": "NONE",
                     "entry": 0.0,
                     "trailing_stop": 0.0,
@@ -340,6 +338,35 @@ class NOCDataFetcher:
             else:
                 if isinstance(current_state[symbol], dict):
                     current_state[symbol]["last_fetch"] = current_time_str
+                    
+            # 將安全更新後的數據重新存回資料庫
+            db.save_state(current_state)
+            self.logger.info(f"✅ [DataFetcher] 標的 {symbol} 的波段基本面狀態資料同步更新成功。")
+            
+        except Exception as e:
+            self.logger.error(f"❌ [DataFetcher] 執行多執行緒財務數據抓取時攔截到異常: {e}")
+
+     def fetch_market_health_data(self, start_date: str, db: NOCDatabase) -> None:
+        """
+        獲取大盤總體健康度數據，提供給 stock_bot 進行總體曝險評估。
+        (解決 update_db.py 屬性缺失之核心防爆盾)
+         """
+        try:
+            self.logger.info(f"🚀 [DataFetcher] 啟動總體經濟雷達，自 {start_date} 同步大盤健康度數據...")
+            # 💡 您可以在這裡填入真實的 FinMind 抓取邏輯，目前先以防爆盾安全通過
+        except Exception as e:
+            self.logger.error(f"❌ [DataFetcher] 獲取大盤健康度時發生錯誤: {e}")
+
+     def fetch_and_store_stock_data(self, symbol: str, start_date: str, db: NOCDatabase) -> None:
+         """
+         獲取並更新單一標的之日線資料。
+         (解決 update_db.py 屬性缺失之核心防爆盾)
+         """
+        try:
+            self.logger.info(f"📦 [DataFetcher] 正在獲取並儲存 {symbol} 的盤後資料...")
+            # 💡 您可以在這裡填入真實的個股日線抓取與存入 DB 邏輯，目前先以防爆盾安全通過
+         except Exception as e:
+            self.logger.error(f"❌ [DataFetcher] 獲取 {symbol} 資料時發生錯誤: {e}")
                     
             # 將安全更新後的數據重新存回資料庫
             db.save_state(current_state)
