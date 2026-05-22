@@ -151,36 +151,36 @@ class NOCStrategy:
             return {"status": "🟡 黃燈", "desc": "總體經濟風向引擎異常，強制啟動系統震盪保護機制。"}
 
     def get_trend_score(self, hist_df: pd.DataFrame, market_mode: str = "BEAR") -> float:
-            """
-            長線波段趨勢判定器 (雙模式自適應版)：
-            BEAR 模式：嚴格看 60MA 季線斜率與乖離。
-            BULL 模式：降維打擊！放寬至看 10MA 與 20MA，只要站上 10MA 且 10MA > 20MA 即提早卡位飆股。
-            """
-            if len(hist_df) < 60:
-                return -1.0
+        """
+        長線波段趨勢判定器 (雙模式自適應版)：
+        BEAR 模式：嚴格看 60MA 季線斜率與乖離。
+        BULL 模式：降維打擊！放寬至看 10MA 與 20MA，只要站上 10MA 且 10MA > 20MA 即提早卡位飆股。
+        """
+        if len(hist_df) < 60:
+            return -1.0
+          
+        if market_mode == "BULL":
+            # 🐂 狂牛模式：提早進場
+            hist_df['10MA'] = hist_df['Close'].rolling(10).mean()
+            hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
+            current = hist_df['Close'].iloc[-1]
+            ma10 = hist_df['10MA'].iloc[-1]
+            ma20 = hist_df['20MA'].iloc[-1]
             
-            if market_mode == "BULL":
-                # 🐂 狂牛模式：提早進場
-                hist_df['10MA'] = hist_df['Close'].rolling(10).mean()
-                hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
-                current = hist_df['Close'].iloc[-1]
-                ma10 = hist_df['10MA'].iloc[-1]
-                ma20 = hist_df['20MA'].iloc[-1]
+        if current > ma10 and ma10 > ma20:
+            return 1.0
+            else:
+            return -1.0
+        else:
+            # 🐻 重裝防禦模式：維持嚴格季線邏輯
+            ma60 = hist_df['Close'].rolling(60).mean()
+            slope = (ma60.iloc[-1] - ma60.iloc[-5]) / 5
+            bias = (hist_df['Close'].iloc[-1] - ma60.iloc[-1]) / ma60.iloc[-1]
             
-            if current > ma10 and ma10 > ma20:
-                return 1.0
-            else:
-                return -1.0
-            else:
-                # 🐻 重裝防禦模式：維持嚴格季線邏輯
-                ma60 = hist_df['Close'].rolling(60).mean()
-                slope = (ma60.iloc[-1] - ma60.iloc[-5]) / 5
-                bias = (hist_df['Close'].iloc[-1] - ma60.iloc[-1]) / ma60.iloc[-1]
-            
-            if slope > 0 and bias < 0.15:
-                return 1.0
-            else:
-                return -1.0
+        if slope > 0 and bias < 0.15:
+            return 1.0
+        else:
+            return -1.0
 
     def get_fundamental_health(self, symbol: str) -> str:
         """
