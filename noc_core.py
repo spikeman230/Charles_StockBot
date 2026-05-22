@@ -167,9 +167,9 @@ class NOCStrategy:
             ma10 = hist_df['10MA'].iloc[-1]
             ma20 = hist_df['20MA'].iloc[-1]
             
-        if current > ma10 and ma10 > ma20:
-            return 1.0
-        else:
+            if current > ma10 and ma10 > ma20:
+                return 1.0
+            else:
             return -1.0
         else:
             # 🐻 重裝防禦模式：維持嚴格季線邏輯
@@ -177,10 +177,10 @@ class NOCStrategy:
             slope = (ma60.iloc[-1] - ma60.iloc[-5]) / 5
             bias = (hist_df['Close'].iloc[-1] - ma60.iloc[-1]) / ma60.iloc[-1]
             
-        if slope > 0 and bias < 0.15:
-            return 1.0
-        else:
-            return -1.0
+            if slope > 0 and bias < 0.15:
+                return 1.0
+            else:
+                return -1.0
 
     def get_fundamental_health(self, symbol: str) -> str:
         """
