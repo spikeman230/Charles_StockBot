@@ -170,7 +170,7 @@ class NOCStrategy:
             if current > ma10 and ma10 > ma20:
                 return 1.0
             else:
-            return -1.0
+                return -1.0
         else:
             # 🐻 重裝防禦模式：維持嚴格季線邏輯
             ma60 = hist_df['Close'].rolling(60).mean()
