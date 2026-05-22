@@ -170,7 +170,7 @@ def build_tactical_plan(symbol: str, close: float, hist: pd.DataFrame, trend_sco
 
     # 初始化核心風控精算師
     risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
-    defense_data = risk_calculator.get_position_and_defense(symbol, close, hist)
+    defense_data = risk_calculator.get_position_and_defense(symbol, close, hist, market_mode=market_mode)
     
     stop_loss = defense_data["defense_line"]
     stop_reason = f"融合風控防禦底線"
@@ -658,6 +658,7 @@ if __name__ == "__main__":
     preload_all_stocks(all_symbols)
 
     is_bull_market, market_msg = get_market_regime()
+    market_mode = "BULL" if is_bull_market else "BEAR" # 👈 新增這行：擷取大盤開關
     noc_state = load_state()
     
     macro_msg = f"🌐 【大盤風向儀】：{macro_info['status']} | {market_msg}\n"
@@ -749,7 +750,7 @@ if __name__ == "__main__":
             inv_str += f"   現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
             
             chip_msg = td["Chip_Status"]
-            chip_tactics_msg = analyze_chip_tactics(turnover, vol_ratio)
+            chip_tactics_msg = analyze_chip_tactics(turnover, vol_ratio, market_mode=market_mode)
             inv_str += f"   換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
             inv_str += f"   💰 法人籌碼: {chip_msg}\n"
 
@@ -796,7 +797,7 @@ if __name__ == "__main__":
             vol_ratio    = td["Volume_Ratio"]
 
             # 呼叫 noc_core 長線濾網模組
-            trend_score = strategy.get_trend_score(hist)
+            trend_score = strategy.get_trend_score(hist, market_mode=market_mode)
             fund_health = strategy.get_fundamental_health(raw_id)
 
             vol_status = "📈 出量" if est_vol > vma5 * 1.2 else ("📉 量縮" if est_vol < vma5 * 0.8 else "➖ 量平")
@@ -832,7 +833,7 @@ if __name__ == "__main__":
                         action_plan_text = ""
                     else:
                         risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
-                        defense_info = risk_calculator.get_position_and_defense(sym, close, hist)
+                        defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=market_mode)
                         stop_price = defense_info["defense_line"]
                         
                         noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
@@ -847,7 +848,7 @@ if __name__ == "__main__":
             s += f"   現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
             s += f"   趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
             
-            chip_tactics_msg = analyze_chip_tactics(turnover, vol_ratio)
+            chip_tactics_msg = analyze_chip_tactics(turnover, vol_ratio, market_mode=market_mode)
             s += f"   換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
             s += f"   💰 法人動向: {chip_msg}\n"
             s += f"   📊 財報透視: {fund_health}\n"
