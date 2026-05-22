@@ -150,8 +150,7 @@ class NOCStrategy:
             self.logger.error(f"❌ 大盤風向儀運算異常: {e}")
             return {"status": "🟡 黃燈", "desc": "總體經濟風向引擎異常，強制啟動系統震盪保護機制。"}
 
-    def get_trend_score(self, hist_df: pd.DataFrame) -> float:
-        def get_trend_score(self, hist_df: pd.DataFrame, market_mode: str = "BEAR") -> float:
+    def get_trend_score(self, hist_df: pd.DataFrame, market_mode: str = "BEAR") -> float:
             """
             長線波段趨勢判定器 (雙模式自適應版)：
             BEAR 模式：嚴格看 60MA 季線斜率與乖離。
