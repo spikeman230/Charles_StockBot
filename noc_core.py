@@ -26,20 +26,23 @@ logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 # =============================================================================
 # 🚀 模組 0: 籌碼矩陣判定引擎 (Chip Tactics Engine)
 # =============================================================================
-def analyze_chip_tactics(turnover: float, volume_ratio: float) -> str:
+def analyze_chip_tactics(turnover: float, volume_ratio: float, market_mode: str = "BEAR") -> str:
     """
-    籌碼矩陣判定引擎：
-    透過換手率 (Turnover) 與 量比 (Volume Ratio) 雙重參數交叉比對，
-    精準解譯主力真實意圖，區分真假突破與洗盤。
+    籌碼矩陣判定引擎 (雙模式自適應版)：
+    BULL 模式：對籌碼數據進行 1.3 倍敏感度放大，更容易發出點火與啟動訊號。
     """
-    if turnover > 10.0 and volume_ratio > 5.0:
+    # 🌟 動態敏感度放大器
+    t_val = turnover * 1.3 if market_mode == "BULL" else turnover
+    v_val = volume_ratio * 1.3 if market_mode == "BULL" else volume_ratio
+
+    if t_val > 10.0 and v_val > 5.0:
         return "🚀【極速發動】換手與量能極致爆發！主力籌碼全軍突擊，低檔可佈局，高檔提防動能竭盡！"
-    elif 5.0 <= turnover <= 10.0 and 3.0 <= volume_ratio <= 5.0:
+    elif 5.0 <= t_val <= 10.0 and 3.0 <= v_val <= 5.0:
         return "🔥【加速起漲】法人大單瘋狂鎖籌！多頭動能確認 (Momentum Confirmed)，波段安全加碼點。"
-    elif turnover > 5.0 and 2.0 <= volume_ratio < 3.0:
+    elif t_val > 5.0 and 2.0 <= v_val < 3.0:
         return "✅【啟動訊號】主力實彈溫和點火換手！籌碼結構洗淨，波段最佳右側核心底倉建倉點。"
-    elif turnover > 5.0 and volume_ratio < 2.0:
-        return "⚠️【陷阱警報】換手率極高但量比完全衰退！量價嚴重背離，主力假突破真倒貨，指令：盡快撤離退場！"
+    elif t_val > 5.0 and v_val < 2.0:
+        return "⚠️【陷阱警報】換手率極高但量比完全衰退！量價嚴重背離，假突破真倒貨，指令：撤離！"
     else:
         return "➖ 籌碼動態平穩"
 
@@ -148,28 +151,37 @@ class NOCStrategy:
             return {"status": "🟡 黃燈", "desc": "總體經濟風向引擎異常，強制啟動系統震盪保護機制。"}
 
     def get_trend_score(self, hist_df: pd.DataFrame) -> float:
+        def get_trend_score(self, hist_df: pd.DataFrame, market_mode: str = "BEAR") -> float:
         """
-        長線波段趨勢判定器：
-        精算 60MA（季線）的最新斜率與現價乖離率。
-        只有當季線方向確定向上，且現價未過度追高噴出時，才給予多頭正分。
+        長線波段趨勢判定器 (雙模式自適應版)：
+        BEAR 模式：嚴格看 60MA 季線斜率與乖離。
+        BULL 模式：降維打擊！放寬至看 10MA 與 20MA，只要站上 10MA 且 10MA > 20MA 即提早卡位飆股。
         """
         if len(hist_df) < 60:
             return -1.0
             
-        # 計算 60日 移動平均線
-        ma60 = hist_df['Close'].rolling(60).mean()
-        
-        # 精算近 5 日的季線斜率 (Slope)
-        slope = (ma60.iloc[-1] - ma60.iloc[-5]) / 5
-        
-        # 計算現價與季線的乖離率 (Bias)
-        bias = (hist_df['Close'].iloc[-1] - ma60.iloc[-1]) / ma60.iloc[-1]
-        
-        # 鐵律：季線必須維持上揚斜率，且現價乖離必須在 15% 以內（拒絕高檔接盤）
-        if slope > 0 and bias < 0.15:
-            return 1.0
+        if market_mode == "BULL":
+            # 🐂 狂牛模式：提早進場
+            hist_df['10MA'] = hist_df['Close'].rolling(10).mean()
+            hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
+            current = hist_df['Close'].iloc[-1]
+            ma10 = hist_df['10MA'].iloc[-1]
+            ma20 = hist_df['20MA'].iloc[-1]
+            
+            if current > ma10 and ma10 > ma20:
+                return 1.0
+            else:
+                return -1.0
         else:
-            return -1.0
+            # 🐻 重裝防禦模式：維持嚴格季線邏輯
+            ma60 = hist_df['Close'].rolling(60).mean()
+            slope = (ma60.iloc[-1] - ma60.iloc[-5]) / 5
+            bias = (hist_df['Close'].iloc[-1] - ma60.iloc[-1]) / ma60.iloc[-1]
+            
+            if slope > 0 and bias < 0.15:
+                return 1.0
+            else:
+                return -1.0
 
     def get_fundamental_health(self, symbol: str) -> str:
         """
@@ -242,30 +254,28 @@ class NOCRiskManager:
         true_range = ranges.max(axis=1)
         return true_range.rolling(period).mean().iloc[-1]
 
-    def get_position_and_defense(self, symbol: str, current_price: float, hist_df: pd.DataFrame = None) -> dict:
+    def get_position_and_defense(self, symbol: str, current_price: float, hist_df: pd.DataFrame = None, market_mode: str = "BEAR") -> dict:
         """
-        軍規級波段兵力精算：
-        1. 風控乘數擴大至 3.0 ATR，全面提升長線部位的抗震洗盤容忍度。
-        2. 嚴格遵循雙軌配置：15% 總兵力上限，拆分為 7.5% 長線底倉與 7.5% 短線游擊。
-        3. 移動防禦線動態融合 20MA（月線），構築滴水不漏的多重防護網。
+        軍規級波段兵力精算 (雙模式自適應版)：
+        BULL 模式：快進快出，防禦縮緊至 1.8 ATR，提早獲利入袋。
+        BEAR 模式：長線死抱，防禦擴大至 3.0 ATR，抵禦惡意甩轎。
         """
         try:
             if hist_df is None or hist_df.empty:
                 hist_df = yf.Ticker(symbol).history(period="6mo")
-
             atr = self.calculate_atr(hist_df, period=14)
             
             # 實施 15% 總兵力天花板配置
             max_allocation = self.total_capital * 0.15
-            core_capital = max_allocation * 0.5      # 7.5% 兵力分配給長線底倉
-            tactical_capital = max_allocation * 0.5  # 7.5% 兵力分配給短線游擊
+            core_capital = max_allocation * 0.5
+            tactical_capital = max_allocation * 0.5
             
-            # 精算成實際應買進之股數 (無條件捨去至個股整數)
             core_shares = math.floor(core_capital / current_price)
             tactical_shares = math.floor(tactical_capital / current_price)
-
-            # 計算 3.0 ATR 移動防禦防守底線 (給予波段布局完整波動空間)
-            trailing_stop = current_price - (atr * 3.0)
+            
+            # 🌟 動態防護切換核心：
+            atr_multiplier = 1.8 if market_mode == "BULL" else 3.0
+            trailing_stop = current_price - (atr * atr_multiplier)
             
             # 融合技術面：抓取月線(20MA)，採多重濾網融合
             if not hist_df.empty and len(hist_df) >= 20:
