@@ -161,12 +161,12 @@ class NOCStrategy:
                 return -1.0
             
             if market_mode == "BULL":
-            # 🐂 狂牛模式：提早進場
-            hist_df['10MA'] = hist_df['Close'].rolling(10).mean()
-            hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
-            current = hist_df['Close'].iloc[-1]
-            ma10 = hist_df['10MA'].iloc[-1]
-            ma20 = hist_df['20MA'].iloc[-1]
+                # 🐂 狂牛模式：提早進場
+                hist_df['10MA'] = hist_df['Close'].rolling(10).mean()
+                hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
+                current = hist_df['Close'].iloc[-1]
+                ma10 = hist_df['10MA'].iloc[-1]
+                ma20 = hist_df['20MA'].iloc[-1]
             
             if current > ma10 and ma10 > ma20:
                 return 1.0
