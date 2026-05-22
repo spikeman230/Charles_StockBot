@@ -172,11 +172,11 @@ class NOCStrategy:
                 return 1.0
             else:
                 return -1.0
-        else:
-            # 🐻 重裝防禦模式：維持嚴格季線邏輯
-            ma60 = hist_df['Close'].rolling(60).mean()
-            slope = (ma60.iloc[-1] - ma60.iloc[-5]) / 5
-            bias = (hist_df['Close'].iloc[-1] - ma60.iloc[-1]) / ma60.iloc[-1]
+            else:
+                # 🐻 重裝防禦模式：維持嚴格季線邏輯
+                ma60 = hist_df['Close'].rolling(60).mean()
+                slope = (ma60.iloc[-1] - ma60.iloc[-5]) / 5
+                bias = (hist_df['Close'].iloc[-1] - ma60.iloc[-1]) / ma60.iloc[-1]
             
             if slope > 0 and bias < 0.15:
                 return 1.0
