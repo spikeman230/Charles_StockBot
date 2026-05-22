@@ -152,15 +152,15 @@ class NOCStrategy:
 
     def get_trend_score(self, hist_df: pd.DataFrame) -> float:
         def get_trend_score(self, hist_df: pd.DataFrame, market_mode: str = "BEAR") -> float:
-        """
-        長線波段趨勢判定器 (雙模式自適應版)：
-        BEAR 模式：嚴格看 60MA 季線斜率與乖離。
-        BULL 模式：降維打擊！放寬至看 10MA 與 20MA，只要站上 10MA 且 10MA > 20MA 即提早卡位飆股。
-        """
-        if len(hist_df) < 60:
-            return -1.0
+            """
+            長線波段趨勢判定器 (雙模式自適應版)：
+            BEAR 模式：嚴格看 60MA 季線斜率與乖離。
+            BULL 模式：降維打擊！放寬至看 10MA 與 20MA，只要站上 10MA 且 10MA > 20MA 即提早卡位飆股。
+            """
+            if len(hist_df) < 60:
+                return -1.0
             
-        if market_mode == "BULL":
+            if market_mode == "BULL":
             # 🐂 狂牛模式：提早進場
             hist_df['10MA'] = hist_df['Close'].rolling(10).mean()
             hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
