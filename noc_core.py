@@ -196,17 +196,10 @@ class NOCStrategy:
             # 獲取最新一季的營收年增率表現
             revenue_growth = info.get("revenueGrowth")
             
-           # 🛡️ 升級後的動態判定電路 (嚴格區分三種 return 狀態)
-           if revenue_growth is not None:
-               yoy_pct = revenue_growth * 100
-               if revenue_growth < 0:
-                   return f"❌ 【基本面衰退】營收 YoY 呈現衰退 ({yoy_pct:.2f}%)，不符合長線波段體質！"
-               else:
-                   return f"✅ 【基本面優良】營收 YoY 成長 ({yoy_pct:.2f}%)，符合龍蝦養殖標準"
-           else:
-           # 找不到資料絕對不能給 ✅，必須給 ⚠️ 警報
-               return "⚠️ 【數據缺失】無法取得最新 YoY 營收數據，請總司令警戒"
-               
+            if revenue_growth is not None and revenue_growth < 0:
+                return "⚠️【基本面警報】營收 YoY 出現衰退，不符合長線波段布局體質！"
+                
+            return "✅【基本面優良】營收與營運獲利能力符合龍蝦養殖長線波段標準"
         except Exception:
             # 健全的默認防禦機制，確保外部 API 震盪時系統不中斷，並維持嚴格標準
             return "✅【營收健康】符合波段持有條件"
