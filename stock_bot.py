@@ -31,7 +31,7 @@ from typing import Optional, Dict, Tuple, Any
 from pathlib import Path
 
 # 🌟 深度引入 NOC 核心防禦模組 (長線波段基石)
-from noc_core import NOCDatabase, NOCStrategy, NOCDataFetcher, NOCRiskManager, analyze_chip_tactics
+from noc_core import NOCDatabase, NOCStrategy, NOCDataFetcher, NOCRiskManager, analyze_chip_tactics, NOCChipMatrix
 
 # =============================================================================
 # === 0. 初始化：載入環境變數 & 日誌系統 ===
@@ -761,9 +761,10 @@ if __name__ == "__main__":
                 inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
                 
                 chip_msg = td["Chip_Status"]
-                chip_tactics_msg = analyze_chip_tactics(turnover, vol_ratio, market_mode=market_mode)
-                inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
-                inv_str += f" 💰 法人籌碼: {chip_msg}\n"
+                chip_matrix = NOCChipMatrix()
+                chip_tactics_msg = chip_matrix.analyze(hist, market_mode=market_mode)
+                s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
+
 
                 fund_msg = strategy.get_fundamental_health(raw_id)
                 inv_str += f" 📊 財報: {fund_msg}\n"
