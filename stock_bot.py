@@ -870,18 +870,34 @@ if __name__ == "__main__":
             else:
                 s += f" 👉 作戰指令: {alert}\n"
 
-            # 🚀 應用防禦過濾器黑白名單規則
-            action_command = s
-            if any(keyword in action_command for keyword in cfg.ACTION_BLACKLIST):
-                logger.info(f"🛑 [過濾器攔截] {sym} 存在黑名單關鍵字(如營收衰退/均線不合)，不進行推播。")
-                continue 
-            
-            # 放寬條件：若符合白名單或包含「長線」或包含「籌碼動能」則通過
-            if any(keyword in action_command for keyword in cfg.ACTION_WHITELIST) or "長線" in action_command or "籌碼動能" in action_command:
-                if tips: 
-                    s += f" 💡 Trello 決策提示: {tips}\n"
+            # =========================================================
+            # 🚀 修正版過濾邏輯：強制分類優先，跳過黑名單檢查
+            # =========================================================
+
+            # 定義強制輸出的分類名稱（請依您的 Trello 列表名稱或 JSON 標籤調整）
+            force_include_categories = ["⚡ 籌碼動態追蹤區", "🎯 雷達鎖定 (長線優質火種區)", "重點觀測區", "觀察區"]
+
+            # 檢查當前分類是否屬於強制輸出分類
+            if any(force_cat in cat for force_cat in force_include_categories):
+                # 強制輸出：不檢查黑名單與白名單，直接加入
+                if tips:
+                    s += f"   💡 Trello 決策提示: {tips}\n"
                 cat_msg_list.append(s + "\n")
                 generated_charts.append(draw_chart_if_needed(hist, sym))
+                has_data = True
+            else:
+                # 其他分類：先檢查黑名單，再檢查白名單
+                action_command = s
+                if any(keyword in action_command for keyword in cfg.ACTION_BLACKLIST):
+                    logger.info(f"🛑 [過濾器攔截] {sym} 存在黑名單關鍵字(如營收衰退/均線不合)，不進行推播。")
+                    continue
+
+                if any(keyword in action_command for keyword in cfg.ACTION_WHITELIST) or "長線" in action_command or "籌碼動能" in action_command:
+                    if tips:
+                        s += f"   💡 Trello 決策提示: {tips}\n"
+                    cat_msg_list.append(s + "\n")
+                    generated_charts.append(draw_chart_if_needed(hist, sym))
+                    has_data = True
 
         if cat_msg_list:
             msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
