@@ -670,6 +670,8 @@ if __name__ == "__main__":
     msg_list = [macro_msg]
     generated_charts = []
     has_data = False
+    # 修改 1：新增全域動作旗標
+    has_actionable_alerts = False
 
     # =============================================================================
     # === 戰區 1：庫藏股 (實體長線底倉持股維護動態防禦 - 四象限戰術狀態機) ===
@@ -745,21 +747,31 @@ if __name__ == "__main__":
                     pnl_alert = f"🔍【中立觀察】價格震盪，監控防禦底線 ({final_stop:.2f})。"
                     noc_state[sym].trailing_stop = final_stop
 
-            generated_charts.append(draw_chart_if_needed(hist, sym))
+            # 修改 2：庫藏股靜默過濾
+            silent_keywords = ["中立觀察", "長線鎖籌", "洗盤耐受區"]
+            is_silent = any(kw in pnl_alert for kw in silent_keywords)
             
-            # 🌟 庫藏股黃金對齊排版：1.技術 ➡️ 2.籌碼 ➡️ 3.財報 ➡️ 4.指令
-            inv_str = f"◆ {data['name']} ({sym})\n" if "一般型" in etf_icon else f"{etf_icon} {data['name']} ({sym})\n"
-            inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
-            
-            chip_msg = td["Chip_Status"]
-            chip_tactics_msg = analyze_chip_tactics(turnover, vol_ratio, market_mode=market_mode)
-            inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
-            inv_str += f" 💰 法人籌碼: {chip_msg}\n"
+            if is_silent and cfg.SILENT_MODE:
+                logger.info(f"🔇 [靜默模式] 庫藏股 {sym} 指令為 '{pnl_alert}'，符合靜默關鍵字，不進行推播與繪圖。")
+            else:
+                generated_charts.append(draw_chart_if_needed(hist, sym))
+                
+                # 🌟 庫藏股黃金對齊排版：1.技術 ➡️ 2.籌碼 ➡️ 3.財報 ➡️ 4.指令
+                inv_str = f"◆ {data['name']} ({sym})\n" if "一般型" in etf_icon else f"{etf_icon} {data['name']} ({sym})\n"
+                inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
+                
+                chip_msg = td["Chip_Status"]
+                chip_tactics_msg = analyze_chip_tactics(turnover, vol_ratio, market_mode=market_mode)
+                inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
+                inv_str += f" 💰 法人籌碼: {chip_msg}\n"
 
-            fund_msg = strategy.get_fundamental_health(raw_id)
-            inv_str += f" 📊 財報: {fund_msg}\n"
-            inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\n\n"
-            msg_list.append(inv_str)
+                fund_msg = strategy.get_fundamental_health(raw_id)
+                inv_str += f" 📊 財報: {fund_msg}\n"
+                inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\n\n"
+                msg_list.append(inv_str)
+                
+                # 庫藏股中只要不是靜默的，就算可行動警報
+                has_actionable_alerts = True
 
     # =============================================================================
     # === 戰區 2：觀察、雷達與重點觀測區偵測 ===
@@ -870,34 +882,22 @@ if __name__ == "__main__":
             else:
                 s += f" 👉 作戰指令: {alert}\n"
 
-            # =========================================================
-            # 🚀 修正版過濾邏輯：強制分類優先，跳過黑名單檢查
-            # =========================================================
-
-            # 定義強制輸出的分類名稱（請依您的 Trello 列表名稱或 JSON 標籤調整）
-            force_include_categories = ["⚡ 籌碼動態追蹤區", "🎯 雷達鎖定 (長線優質火種區)", "重點觀測區", "觀察區"]
-
-            # 檢查當前分類是否屬於強制輸出分類
-            if any(force_cat in cat for force_cat in force_include_categories):
-                # 強制輸出：不檢查黑名單與白名單，直接加入
-                if tips:
-                    s += f"   💡 Trello 決策提示: {tips}\n"
-                cat_msg_list.append(s + "\n")
-                generated_charts.append(draw_chart_if_needed(hist, sym))
-                has_data = True
-            else:
-                # 其他分類：先檢查黑名單，再檢查白名單
+            # 修改 3：戰區 2 過濾漏洞修補 – 只有在 trigger_label 有值時才考慮推播
+            if trigger_label:
                 action_command = s
                 if any(keyword in action_command for keyword in cfg.ACTION_BLACKLIST):
                     logger.info(f"🛑 [過濾器攔截] {sym} 存在黑名單關鍵字(如營收衰退/均線不合)，不進行推播。")
-                    continue
-
-                if any(keyword in action_command for keyword in cfg.ACTION_WHITELIST) or "長線" in action_command or "籌碼動能" in action_command:
-                    if tips:
-                        s += f"   💡 Trello 決策提示: {tips}\n"
-                    cat_msg_list.append(s + "\n")
-                    generated_charts.append(draw_chart_if_needed(hist, sym))
-                    has_data = True
+                    continue 
+                
+                # 通過黑名單檢查後，加入推播清單
+                if tips: 
+                    s += f" 💡 Trello 決策提示: {tips}\n"
+                cat_msg_list.append(s + "\n")
+                generated_charts.append(draw_chart_if_needed(hist, sym))
+                has_actionable_alerts = True
+            else:
+                # 無觸發訊號，靜默跳過（不推播也不攔截）
+                logger.debug(f"🔇 [靜默跳過] {sym} 無觸發訊號，不推播。")
 
         if cat_msg_list:
             msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
@@ -950,11 +950,10 @@ if __name__ == "__main__":
         
     save_state(noc_state)
 
-    if len(msg_list) == 1 and "大盤風向" in msg_list[0]:
-        if cfg.SILENT_MODE: 
-            sys.exit(0)
-        else: 
-            msg_list.append("\n🔕 【靜默通知】今日收盤無任何標的觸發有效長線鎖籌進場訊號。")
+    # 修改 4：最終靜默判斷
+    if not has_actionable_alerts and cfg.SILENT_MODE:
+        logger.info("🔇 [靜默模式] 今日無任何可行動警報（無建倉/停損/獲利巡航等重要事件），系統靜默退出。")
+        sys.exit(0)
 
     send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v15.5 波段鎖籌版】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
     
