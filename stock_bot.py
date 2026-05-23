@@ -629,7 +629,7 @@ if __name__ == "__main__":
         update_trello_system_status_bg("非交易日/休市靜默", "🔴")
         if curr_dt.hour <= 10:
             send_reports(f"NOC 戰情報告 {curr_date} (休市)", f"📡 【NOC 戰情室靜默休眠】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n🔴 今日市場休市，全系統處於資產監守維護狀態，不推播繁雜雜訊。", [])
-        #sys.exit(0)
+        sys.exit(0)
 
     if not is_yellow_light:
         logger.info("通過環境感知檢查，開始同步雲端 Trello 看板部署...")
