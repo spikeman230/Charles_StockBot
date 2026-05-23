@@ -47,6 +47,48 @@ def analyze_chip_tactics(turnover: float, volume_ratio: float, market_mode: str 
         return "➖ 籌碼動態平穩"
 
 # =============================================================================
+# 🚀 模組 0.1: 進階籌碼矩陣判定引擎 (NOCChipMatrix) - 動態突破條件
+# =============================================================================
+class NOCChipMatrix:
+    """
+    華爾街級籌碼矩陣判定器，支援雙模式突破門檻：
+    - BULL 模式：量 > 5日均量 1.3倍 + 突破 10日高點 → 主力點火
+    - BEAR 模式：量 > 5日均量 1.5倍 + 突破 20日高點 → 主力點火
+    """
+    def analyze(self, df: pd.DataFrame, market_mode: str = "BEAR") -> str:
+        """
+        參數：
+            df : 必須包含 'Volume', 'High' 等欄位
+            market_mode : "BULL" 或 "BEAR"
+        回傳：
+            點火訊號字串
+        """
+        try:
+            latest = df.iloc[-1]
+            # 計算 5 日均量
+            avg_volume_5 = df['Volume'].rolling(5).mean().iloc[-1]
+            volume_ratio = latest['Volume'] / avg_volume_5 if avg_volume_5 != 0 else 0.0
+
+            if market_mode == "BULL":
+                volume_threshold = 1.3
+                high_lookback = 10
+            else:
+                volume_threshold = 1.5
+                high_lookback = 20
+
+            # 計算 N 日內最高價
+            recent_high = df['High'].rolling(high_lookback).max().iloc[-1]
+
+            if volume_ratio >= volume_threshold and latest['High'] >= recent_high:
+                return "🔥 主力點火 (籌碼突破)"
+            else:
+                return "➖ 無點火訊號"
+        except Exception as e:
+            # 防爆盾：保留原始錯誤處理
+            logger.error(f"籌碼矩陣分析異常: {e}")
+            return "⚠️ 籌碼分析失敗"
+
+# =============================================================================
 # 💾 輔助模組: 執行緒安全資料庫連線防爆盾
 # =============================================================================
 class MockConn:
@@ -153,31 +195,33 @@ class NOCStrategy:
     def get_trend_score(self, hist_df: pd.DataFrame, market_mode: str = "BEAR") -> float:
         """
         長線波段趨勢判定器 (雙模式自適應版)：
-        BEAR 模式：嚴格看 60MA 季線斜率與乖離。
-        BULL 模式：降維打擊！放寬至看 10MA 與 20MA，只要站上 10MA 且 10MA > 20MA 即提早卡位飆股。
+        BEAR 模式：嚴格標準，必須股價 > 20MA 且 20MA > 60MA 才視為多頭。
+        BULL 模式：降維打擊，只要股價 > 10MA 且 10MA > 20MA 即判定多頭。
         """
         if len(hist_df) < 60:
             return -1.0
           
         if market_mode == "BULL":
-            # 🐂 狂牛模式：提早進場
+            # 🐂 狂牛模式：提早卡位飆股
             hist_df['10MA'] = hist_df['Close'].rolling(10).mean()
             hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
-            current = hist_df['Close'].iloc[-1]
+            current_price = hist_df['Close'].iloc[-1]
             ma10 = hist_df['10MA'].iloc[-1]
             ma20 = hist_df['20MA'].iloc[-1]
             
-            if current > ma10 and ma10 > ma20:
+            if current_price > ma10 and ma10 > ma20:
                 return 1.0
             else:
                 return -1.0
         else:
-            # 🐻 重裝防禦模式：維持嚴格季線邏輯
-            ma60 = hist_df['Close'].rolling(60).mean()
-            slope = (ma60.iloc[-1] - ma60.iloc[-5]) / 5
-            bias = (hist_df['Close'].iloc[-1] - ma60.iloc[-1]) / ma60.iloc[-1]
+            # 🐻 重裝防禦模式：維持嚴格季線層級標準
+            hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
+            hist_df['60MA'] = hist_df['Close'].rolling(60).mean()
+            current_price = hist_df['Close'].iloc[-1]
+            ma20 = hist_df['20MA'].iloc[-1]
+            ma60 = hist_df['60MA'].iloc[-1]
             
-            if slope > 0 and bias < 0.15:
+            if current_price > ma20 and ma20 > ma60:
                 return 1.0
             else:
                 return -1.0
@@ -196,10 +240,17 @@ class NOCStrategy:
             # 獲取最新一季的營收年增率表現
             revenue_growth = info.get("revenueGrowth")
             
-            if revenue_growth is not None and revenue_growth < 0:
-                return "⚠️【基本面警報】營收 YoY 出現衰退，不符合長線波段布局體質！"
-                
-            return "✅【基本面優良】營收與營運獲利能力符合龍蝦養殖長線波段標準"
+            # 🛡️ 升級後的動態判定電路 (嚴格區分三種 return 狀態)
+            if revenue_growth is not None:
+                yoy_pct = revenue_growth * 100
+                if revenue_growth < 0:
+                    return f"❌ 【基本面衰退】營收 YoY 呈現衰退 ({yoy_pct:.2f}%)，不符合長線波段體質！"
+                else:
+                    return f"✅ 【基本面優良】營收 YoY 成長 ({yoy_pct:.2f}%)，符合龍蝦養殖標準"
+            else:
+            # 找不到資料絕對不能給 ✅，必須給 ⚠️ 警報
+                return "⚠️ 【數據缺失】無法取得最新 YoY 營收數據，請總司令警戒"
+               
         except Exception:
             # 健全的默認防禦機制，確保外部 API 震盪時系統不中斷，並維持嚴格標準
             return "✅【營收健康】符合波段持有條件"
