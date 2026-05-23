@@ -827,7 +827,7 @@ if __name__ == "__main__":
                 chip_msg += f" (連賣 {abs(trust_streak)} 天)"
 
             sym_state = noc_state.get(sym, StockState())
-            alert = "✅ 長線多頭排列，持股觀望"
+            alert = "✅ 趨勢追蹤中，尚未觸發佈局點"  # 👈 避開「持股觀望」這個黑名單字眼
             trigger_label = ""
             action_plan_text = ""
 
@@ -884,20 +884,32 @@ if __name__ == "__main__":
 
             # 修改 3：戰區 2 過濾漏洞修補 – 只有在 trigger_label 有值時才考慮推播
             if trigger_label:
+                # 修改 3：戰區 2 過濾漏洞修補 & 絕對防禦力場
                 action_command = s
-                if any(keyword in action_command for keyword in cfg.ACTION_BLACKLIST):
-                    logger.info(f"🛑 [過濾器攔截] {sym} 存在黑名單關鍵字(如營收衰退/均線不合)，不進行推播。")
-                    continue 
+
+                # 🚀 智慧過濾器：判定是否具備「實質推播價值」
+                # 放行條件：1.有技術觸發 OR 2.符合白名單(如建倉) OR 3.有籌碼動能
+                has_valid_signal = bool(trigger_label) or any(keyword in action_command for keyword in cfg.ACTION_WHITELIST) or "籌碼動能" in action_command
+
+                # 🛡️ 絕對防禦力場 (彌補原本黑名單的漏洞)
+                # 只要內文出現以下任一字眼，管他技術面多好，直接封殺！
+                fatal_flaws = cfg.ACTION_BLACKLIST + ["攔截", "衰退", "警報", "無情淘汰", "拒絕追高"]
+
+                if has_valid_signal:
+                    # 檢查是否觸發致命缺陷或系統硬核攔截
+                    if any(keyword in action_command for keyword in fatal_flaws):
+                        logger.info(f"🛑 [過濾器攔截] {sym} 觸發基本面衰退或系統攔截，強制封鎖推播。")
+                        continue 
                 
-                # 通過黑名單檢查後，加入推播清單
-                if tips: 
-                    s += f" 💡 Trello 決策提示: {tips}\n"
-                cat_msg_list.append(s + "\n")
-                generated_charts.append(draw_chart_if_needed(hist, sym))
-                has_actionable_alerts = True
-            else:
-                # 無觸發訊號，靜默跳過（不推播也不攔截）
-                logger.debug(f"🔇 [靜默跳過] {sym} 無觸發訊號，不推播。")
+                    # 放行推播！
+                    if tips: 
+                        s += f" 💡 Trello 決策提示: {tips}\n"
+                    cat_msg_list.append(s + "\n")
+                    generated_charts.append(draw_chart_if_needed(hist, sym))
+                    has_actionable_alerts = True  # 標記有重要動作
+                else:
+                    # 無觸發訊號，靜默跳過（不推播也不攔截）
+                    logger.debug(f"🔇 [靜默跳過] {sym} 無觸發訊號，不推播。")
 
         if cat_msg_list:
             msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
