@@ -872,16 +872,27 @@ if __name__ == "__main__":
 
             # 🚀 應用防禦過濾器黑白名單規則
             action_command = s
+            # 1. 黑名單檢查 (任何股票只要含有黑名單關鍵字就直接阻斷)
             if any(keyword in action_command for keyword in cfg.ACTION_BLACKLIST):
                 logger.info(f"🛑 [過濾器攔截] {sym} 存在黑名單關鍵字(如營收衰退/均線不合)，不進行推播。")
                 continue
-           
-            # 放寬條件：若符合白名單或包含「長線」或包含「籌碼動能」則通過
-            if any(keyword in action_command for keyword in cfg.ACTION_WHITELIST) or "長線" in action_command or "籌碼動能" in action_command:
+
+            # 2. 分類白名單：某些類別即使沒有觸發「建倉/長線」等關鍵字，也強制輸出
+            #    (請根據您的 Trello 看板列表名稱或檔案標籤調整)
+            force_include_categories = ["⚡ 籌碼動態追蹤區", "🎯 雷達鎖定 (長線優質火種區)", "重點觀測區", "觀察區"]
+            if any(force_cat in cat for force_cat in force_include_categories):
+                # 直接加入，不需檢查白名單
                 if tips:
-                    s += f"   💡 Trello 決策提示: {tips}\n"
-                cat_msg_list.append(s + "\n")
+                    s += f"   💡 Trello 決策提示: {tips}\\n"
+                cat_msg_list.append(s + "\\n")
                 generated_charts.append(draw_chart_if_needed(hist, sym))
+            else:
+                # 其他分類維持原有白名單檢查
+                if any(keyword in action_command for keyword in cfg.ACTION_WHITELIST) or "長線" in action_command or "籌碼動能" in action_command:
+                    if tips:
+                        s += f"   💡 Trello 決策提示: {tips}\\n"
+                    cat_msg_list.append(s + "\\n")
+                    generated_charts.append(draw_chart_if_needed(hist, sym))
 
         if cat_msg_list:
             msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
