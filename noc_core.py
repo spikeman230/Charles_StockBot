@@ -214,7 +214,7 @@ class NOCStrategy:
             else:
                 return -1.0
         else:
-            # 🐻 重裝防禦模式：維持嚴格季線層級標準
+            # 🐻 重裝防禦模式：維持嚴格標準 (股價 > 20MA 且 20MA > 60MA)
             hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
             hist_df['60MA'] = hist_df['Close'].rolling(60).mean()
             current_price = hist_df['Close'].iloc[-1]
