@@ -769,6 +769,8 @@ if __name__ == "__main__":
                 inv_str += f" 📊 財報: {fund_msg}\n"
                 inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\n\n"
                 msg_list.append(inv_str)
+                
+                # 庫藏股中只要不是靜默的，就算可行動警報
                 has_actionable_alerts = True
 
     # =============================================================================
@@ -825,8 +827,7 @@ if __name__ == "__main__":
                 chip_msg += f" (連賣 {abs(trust_streak)} 天)"
 
             sym_state = noc_state.get(sym, StockState())
-            # 修改 3a：避開黑名單關鍵字「持股觀望」
-            alert = "✅ 趨勢追蹤中，尚未觸發佈局點"
+            alert = "✅ 長線多頭排列，持股觀望"
             trigger_label = ""
             action_plan_text = ""
 
@@ -881,24 +882,22 @@ if __name__ == "__main__":
             else:
                 s += f" 👉 作戰指令: {alert}\n"
 
-            # 修改 3b：智慧過濾邏輯（放行條件 + 黑名單檢查）
-            action_command = s
-            # 定義放行條件：觸發訊號 或 白名單關鍵字 或 包含「籌碼動能」
-            has_valid_signal = bool(trigger_label) or any(keyword in action_command for keyword in cfg.ACTION_WHITELIST) or "籌碼動能" in action_command
-            
-            if has_valid_signal:
-                # 檢查黑名單
+            # 修改 3：戰區 2 過濾漏洞修補 – 只有在 trigger_label 有值時才考慮推播
+            if trigger_label:
+                action_command = s
                 if any(keyword in action_command for keyword in cfg.ACTION_BLACKLIST):
                     logger.info(f"🛑 [過濾器攔截] {sym} 存在黑名單關鍵字(如營收衰退/均線不合)，不進行推播。")
-                    continue
+                    continue 
                 
-                # 通過所有檢查，加入推播
+                # 通過黑名單檢查後，加入推播清單
                 if tips: 
                     s += f" 💡 Trello 決策提示: {tips}\n"
                 cat_msg_list.append(s + "\n")
                 generated_charts.append(draw_chart_if_needed(hist, sym))
                 has_actionable_alerts = True
-            # 無效訊號直接跳過（不推播）
+            else:
+                # 無觸發訊號，靜默跳過（不推播也不攔截）
+                logger.debug(f"🔇 [靜默跳過] {sym} 無觸發訊號，不推播。")
 
         if cat_msg_list:
             msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
