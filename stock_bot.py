@@ -707,6 +707,23 @@ if __name__ == "__main__":
                     pnl_alert = f"📉【紀律定期扣款】資產小幅修正 {roi_pct:.2f}%，實施自動防守扣款。"
                 else: 
                     pnl_alert = "🧘‍♂️【長線鎖籌】趨勢結構穩定，靜待資產長線複利翻倍。"
+                
+                # 修正錯誤 2：補上 inv_str 建構（一般型 ETF 分支）
+                inv_str = f"◆ {data['name']} ({sym})\n"
+                inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
+                
+                chip_msg = td["Chip_Status"]
+                chip_matrix = NOCChipMatrix()
+                chip_tactics_msg = chip_matrix.analyze(hist, market_mode=market_mode)
+                inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
+                inv_str += f" 💰 法人籌碼: {chip_msg}\n"
+
+                fund_msg = strategy.get_fundamental_health(raw_id)
+                inv_str += f" 📊 財報: {fund_msg}\n"
+                inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\n\n"
+                msg_list.append(inv_str)
+                generated_charts.append(draw_chart_if_needed(hist, sym))
+                has_actionable_alerts = True
             else:
                 # 🌟 四象限絕對戰術狀態機 & 15% 物理防爆門
                 current_atr_multiplier = 2.0 if is_yellow_light else 3.0
@@ -747,32 +764,30 @@ if __name__ == "__main__":
                     pnl_alert = f"🔍【中立觀察】價格震盪，監控防禦底線 ({final_stop:.2f})。"
                     noc_state[sym].trailing_stop = final_stop
 
-            # 修改 2：庫藏股靜默過濾
-            silent_keywords = ["中立觀察", "長線鎖籌", "洗盤耐受區"]
-            is_silent = any(kw in pnl_alert for kw in silent_keywords)
-            
-            if is_silent and cfg.SILENT_MODE:
-                logger.info(f"🔇 [靜默模式] 庫藏股 {sym} 指令為 '{pnl_alert}'，符合靜默關鍵字，不進行推播與繪圖。")
-            else:
-                generated_charts.append(draw_chart_if_needed(hist, sym))
+                # 修改 2：庫藏股靜默過濾（原錯誤 1 亦在此修正）
+                silent_keywords = ["中立觀察", "長線鎖籌", "洗盤耐受區"]
+                is_silent = any(kw in pnl_alert for kw in silent_keywords)
                 
-                # 🌟 庫藏股黃金對齊排版：1.技術 ➡️ 2.籌碼 ➡️ 3.財報 ➡️ 4.指令
-                inv_str = f"◆ {data['name']} ({sym})\n" if "一般型" in etf_icon else f"{etf_icon} {data['name']} ({sym})\n"
-                inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
-                
-                chip_msg = td["Chip_Status"]
-                chip_matrix = NOCChipMatrix()
-                chip_tactics_msg = chip_matrix.analyze(hist, market_mode=market_mode)
-                s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
+                if is_silent and cfg.SILENT_MODE:
+                    logger.info(f"🔇 [靜默模式] 庫藏股 {sym} 指令為 '{pnl_alert}'，符合靜默關鍵字，不進行推播與繪圖。")
+                else:
+                    generated_charts.append(draw_chart_if_needed(hist, sym))
+                    
+                    # 🌟 庫藏股黃金對齊排版
+                    inv_str = f"{etf_icon} {data['name']} ({sym})\n"
+                    inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
+                    
+                    chip_msg = td["Chip_Status"]
+                    chip_matrix = NOCChipMatrix()
+                    chip_tactics_msg = chip_matrix.analyze(hist, market_mode=market_mode)
+                    inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
+                    inv_str += f" 💰 法人籌碼: {chip_msg}\n"
 
-
-                fund_msg = strategy.get_fundamental_health(raw_id)
-                inv_str += f" 📊 財報: {fund_msg}\n"
-                inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\n\n"
-                msg_list.append(inv_str)
-                
-                # 庫藏股中只要不是靜默的，就算可行動警報
-                has_actionable_alerts = True
+                    fund_msg = strategy.get_fundamental_health(raw_id)
+                    inv_str += f" 📊 財報: {fund_msg}\n"
+                    inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\n\n"
+                    msg_list.append(inv_str)
+                    has_actionable_alerts = True
 
     # =============================================================================
     # === 戰區 2：觀察、雷達與重點觀測區偵測 ===
@@ -828,7 +843,7 @@ if __name__ == "__main__":
                 chip_msg += f" (連賣 {abs(trust_streak)} 天)"
 
             sym_state = noc_state.get(sym, StockState())
-            alert = "✅ 趨勢追蹤中，尚未觸發佈局點"  # 👈 避開「持股觀望」這個黑名單字眼
+            alert = "✅ 趨勢追蹤中，尚未觸發佈局點" # 👈 避開「持股觀望」這個黑名單字眼
             trigger_label = ""
             action_plan_text = ""
 
@@ -855,15 +870,16 @@ if __name__ == "__main__":
                         alert = f"🚀【長線波段佈局觸發】"
                         action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=market_mode)
 
-            if s := "": 
-                pass # 佔位
+            # 移除無用的 if s := "": pass
                 
             # 🌟 統一高規黃金排版對齊輸出
             s = f"🎯 {name} ({sym})\n"
             s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
             s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
             
-            chip_tactics_msg = analyze_chip_tactics(turnover, vol_ratio, market_mode=market_mode)
+            # 錯誤 3 修正：改用 NOCChipMatrix
+            chip_matrix = NOCChipMatrix()
+            chip_tactics_msg = chip_matrix.analyze(hist, market_mode=market_mode)
             s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
             s += f" 💰 法人動向: {chip_msg}\n"
             s += f" 📊 財報透視: {fund_health}\n"
@@ -885,7 +901,6 @@ if __name__ == "__main__":
 
             # 修改 3：戰區 2 過濾漏洞修補 – 只有在 trigger_label 有值時才考慮推播
             if trigger_label:
-                # 修改 3：戰區 2 過濾漏洞修補 & 絕對防禦力場
                 action_command = s
 
                 # 🚀 智慧過濾器：判定是否具備「實質推播價值」
@@ -907,7 +922,7 @@ if __name__ == "__main__":
                         s += f" 💡 Trello 決策提示: {tips}\n"
                     cat_msg_list.append(s + "\n")
                     generated_charts.append(draw_chart_if_needed(hist, sym))
-                    has_actionable_alerts = True  # 標記有重要動作
+                    has_actionable_alerts = True
                 else:
                     # 無觸發訊號，靜默跳過（不推播也不攔截）
                     logger.debug(f"🔇 [靜默跳過] {sym} 無觸發訊號，不推播。")
