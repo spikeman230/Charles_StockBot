@@ -1,250 +1,5 @@
 {
-    "3231.TW": {
-        "status": "REAL_HOLD",
-        "entry": 130.5,
-        "trailing_stop": 135.35714285714286
-    },
-    "8431.TWO": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "NVDA": {
-        "status": "REAL_HOLD",
-        "entry": 144.5,
-        "trailing_stop": 219.61000497000558
-    },
-    "00881.TW": {
-        "status": "REAL_HOLD_ETF",
-        "entry": 26.0,
-        "trailing_stop": 0.0
-    },
-    "00878.TW": {
-        "status": "REAL_HOLD_ETF",
-        "entry": 22.21,
-        "trailing_stop": 0.0
-    },
-    "00919.TW": {
-        "status": "REAL_HOLD_ETF",
-        "entry": 23.0,
-        "trailing_stop": 0.0
-    },
-    "009816.TW": {
-        "status": "REAL_HOLD_ETF",
-        "entry": 10.73,
-        "trailing_stop": 0.0
-    },
-    "2353.TW": {
-        "status": "REAL_HOLD",
-        "entry": 28.15,
-        "trailing_stop": 27.721428189958846
-    },
-    "2356.TW": {
-        "status": "REAL_HOLD",
-        "entry": 52.8,
-        "trailing_stop": 47.0
-    },
-    "3481.TW": {
-        "status": "REAL_HOLD",
-        "entry": 36.85,
-        "trailing_stop": 34.48571504865374
-    },
-    "2449.TW": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2880.TW": {
-        "status": "HOLD",
-        "entry": 32.5,
-        "trailing_stop": 30.97857121058873
-    },
-    "00878": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "009816": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2449": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "0050": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2356": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "00881": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2379": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "1605": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "1609": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "6239": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2887": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "1301": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "1326": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "1476": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "1536": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "1795": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "1513": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "1802": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2303": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2317": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2352": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2344": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2330": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2353": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2377": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2382": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2606": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2409": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2408": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2886": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2637": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "3019": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "3037": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "3231": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "3481": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "4904": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
     "6415": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "6269": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
@@ -259,12 +14,7 @@
         "entry": 0.0,
         "trailing_stop": 0.0
     },
-    "8431": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "9933": {
+    "6269": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
@@ -274,62 +24,7 @@
         "entry": 0.0,
         "trailing_stop": 0.0
     },
-    "3714": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2207": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "1722": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "6579": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "3017": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2308": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "006208": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "00713": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "0056": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "00919": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2603": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2881": {
+    "9933": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
@@ -339,7 +34,7 @@
         "entry": 0.0,
         "trailing_stop": 0.0
     },
-    "2891": {
+    "2881": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
@@ -349,7 +44,12 @@
         "entry": 0.0,
         "trailing_stop": 0.0
     },
-    "5871": {
+    "2891": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2883": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
@@ -359,12 +59,12 @@
         "entry": 0.0,
         "trailing_stop": 0.0
     },
-    "1303": {
+    "5871": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
     },
-    "2883": {
+    "1303": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
@@ -389,6 +89,11 @@
         "entry": 0.0,
         "trailing_stop": 0.0
     },
+    "3017": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
     "3293": {
         "status": "NONE",
         "entry": 0.0,
@@ -404,17 +109,12 @@
         "entry": 0.0,
         "trailing_stop": 0.0
     },
-    "3413": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
-    "2027": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0
-    },
     "3653": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3413": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
@@ -429,7 +129,7 @@
         "entry": 0.0,
         "trailing_stop": 0.0
     },
-    "2834": {
+    "2027": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
@@ -439,7 +139,7 @@
         "entry": 0.0,
         "trailing_stop": 0.0
     },
-    "3045": {
+    "2834": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
@@ -449,12 +149,22 @@
         "entry": 0.0,
         "trailing_stop": 0.0
     },
-    "5522": {
+    "3045": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
     },
     "2454": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3714": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "5522": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
@@ -472,6 +182,31 @@
     "3013": {
         "status": "NONE",
         "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2356.TW": {
+        "status": "REAL_HOLD",
+        "entry": 52.8,
+        "trailing_stop": 47.0
+    },
+    "8431.TWO": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "00878.TW": {
+        "status": "REAL_HOLD_ETF",
+        "entry": 22.21,
+        "trailing_stop": 0.0
+    },
+    "00881.TW": {
+        "status": "REAL_HOLD_ETF",
+        "entry": 26.0,
+        "trailing_stop": 0.0
+    },
+    "009816.TW": {
+        "status": "REAL_HOLD_ETF",
+        "entry": 13.24,
         "trailing_stop": 0.0
     }
 }
