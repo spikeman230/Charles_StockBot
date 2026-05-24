@@ -393,5 +393,10 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
+    },
+    "0050.TW": {
+        "status": "REAL_HOLD",
+        "entry": 0.0,
+        "trailing_stop": 93.84142946515765
     }
 }
