@@ -843,12 +843,8 @@ if __name__ == "__main__":
             # =========================================================
             action_command = s
             
-            # 放行條件：1. 技術面金叉狙擊 2. 籌碼面主力點火 3. 白名單動作
-            has_valid_signal = (
-                bool(trigger_label) or 
-                "主力點火" in matrix_signal or 
-                any(kw in action_command for kw in cfg.ACTION_WHITELIST)
-            )
+            # 放行條件：僅 1. 技術面金叉狙擊 或 2. 籌碼面主力點火（已移除白名單）
+            has_valid_signal = bool(trigger_label) or "主力點火" in matrix_signal
             
             # 黑名單防禦力場
             fatal_flaws = cfg.ACTION_BLACKLIST + ["攔截", "衰退", "警報", "無情淘汰", "拒絕追高"]
