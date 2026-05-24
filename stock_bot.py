@@ -578,7 +578,7 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v15.5 (龍蝦養殖完全體) 啟動。時間：{curr_time}")
+    logger.info(f"NOC 終極戰情室 v16.0 長短雙軌版 啟動。時間：{curr_time}")
     
     db = NOCDatabase()
     strategy = NOCStrategy(db)
@@ -735,7 +735,7 @@ if __name__ == "__main__":
                 has_actionable_alerts = True
 
     # =========================================================================
-    # 戰區 2：觀察、雷達與重點觀測區 (雙腦分流)
+    # 戰區 2：觀察、雷達與重點觀測區 (雙腦分流) - 重構過濾器
     # =========================================================================
     for cat, stocks in STOCK_DICT.items():
         if not stocks: 
@@ -815,12 +815,12 @@ if __name__ == "__main__":
                         alert = f"🚀【長線波段佈局觸發】"
                         action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
 
-            # 建構輸出字串 (所有股票都會建構，但過濾器決定是否加入)
+            # 建構輸出字串
             s = f"🎯 {name} ({sym})\n"
             s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
             s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
             
-            # 籌碼分析：短線區使用 local_market_mode，長線區用全域 market_mode
+            # 籌碼分析：短線區使用 local_market_mode
             matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
             s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
             s += f" 💰 法人動向: {chip_msg}\n"
@@ -838,37 +838,36 @@ if __name__ == "__main__":
             else:
                 s += f" 👉 作戰指令: {alert}\n"
 
-            # 過濾器：只有當股票屬於「強制輸出分類」或「符合有效訊號」時才推播
-            force_include_categories = ["⚡ 籌碼動態追蹤區", "🎯 雷達鎖定 (長線優質火種區)", "重點觀測區", "觀察區"]
-            if any(force_cat in cat for force_cat in force_include_categories):
-                # 強制輸出分類：直接加入（但仍需檢查黑名單致命缺陷）
-                action_command = s
-                fatal_flaws = cfg.ACTION_BLACKLIST + ["攔截", "衰退", "警報", "無情淘汰", "拒絕追高"]
-                if any(keyword in action_command for keyword in fatal_flaws):
-                    logger.info(f"🛑 [強制分類攔截] {sym} 觸發致命缺陷，強制封鎖推播。")
-                    continue
-                if tips: 
-                    s += f" 💡 Trello 決策提示: {tips}\n"
-                cat_msg_list.append(s + "\n")
-                generated_charts.append(draw_chart_if_needed(hist, sym))
-                has_actionable_alerts = True
+            # =========================================================
+            # 統一智慧推播過濾器 (全觀察區適用：沒點火、沒狙擊就閉嘴)
+            # =========================================================
+            action_command = s
+            
+            # 放行條件：1. 技術面金叉狙擊 2. 籌碼面主力點火 3. 白名單動作
+            has_valid_signal = (
+                bool(trigger_label) or 
+                "主力點火" in matrix_signal or 
+                any(kw in action_command for kw in cfg.ACTION_WHITELIST)
+            )
+            
+            # 黑名單防禦力場
+            fatal_flaws = cfg.ACTION_BLACKLIST + ["攔截", "衰退", "警報", "無情淘汰", "拒絕追高"]
+            has_fatal_flaw = any(keyword in action_command for keyword in fatal_flaws)
+
+            # 最終推播裁決
+            if has_valid_signal:
+                if has_fatal_flaw:
+                    logger.info(f"🛑 [過濾器攔截] {sym} 雖有訊號，但觸發致命缺陷或大盤黃燈攔截，強制封鎖推播。")
+                else:
+                    # 放行推播！
+                    if tips: 
+                        s += f" 💡 Trello 決策提示: {tips}\n"
+                    cat_msg_list.append(s + "\n")
+                    generated_charts.append(draw_chart_if_needed(hist, sym))
+                    has_actionable_alerts = True
             else:
-                # 其他分類：必須有觸發訊號且通過黑白名單檢查
-                if trigger_label:
-                    action_command = s
-                    has_valid_signal = bool(trigger_label) or any(kw in action_command for kw in cfg.ACTION_WHITELIST) or "籌碼動能" in action_command or "主力點火" in matrix_signal
-                    fatal_flaws = cfg.ACTION_BLACKLIST + ["攔截", "衰退", "警報", "無情淘汰", "拒絕追高"]
-                    if has_valid_signal:
-                        if any(keyword in action_command for keyword in fatal_flaws):
-                            logger.info(f"🛑 [過濾器攔截] {sym} 觸發基本面衰退或系統攔截，強制封鎖推播。")
-                            continue
-                        if tips: 
-                            s += f" 💡 Trello 決策提示: {tips}\n"
-                        cat_msg_list.append(s + "\n")
-                        generated_charts.append(draw_chart_if_needed(hist, sym))
-                        has_actionable_alerts = True
-                    else:
-                        logger.debug(f"🔇 [靜默跳過] {sym} 無觸發訊號，不推播。")
+                # 無觸發訊號，靜默跳過
+                logger.debug(f"🔇 [靜默跳過] {sym} 無重要觸發訊號，不推播。")
 
         if cat_msg_list:
             msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
