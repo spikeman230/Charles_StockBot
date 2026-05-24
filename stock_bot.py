@@ -791,7 +791,7 @@ if __name__ == "__main__":
                 chip_msg += f" (連賣 {abs(trust_streak)} 天)"
 
             sym_state = noc_state.get(sym, StockState())
-            alert = "✅ 趨勢追蹤中，尚未觸發佈局點"
+            alert = "✅ 條件監控中，暫無動作"
             trigger_label = ""
             action_plan_text = ""
 
