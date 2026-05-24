@@ -1,5 +1,5 @@
 # =============================================================================
-# NOC 戰情室核心引擎 (noc_core.py) v15.5 - 龍蝦養殖波段籌碼完全體
+# NOC 戰情室核心引擎 (noc_core.py) v16.0 - 龍蝦養殖波段籌碼完全體
 # 核心戰略：
 # 1. 籌碼矩陣擴充：導入量比與換手率多維籌碼判定，精準捕捉主力發動、洗盤與倒貨訊號。
 # 2. 植入 60MA Trend_Score 趨勢判定器，從源頭過濾所有不符合大波段多頭之標的。
@@ -153,18 +153,18 @@ class NOCStrategy:
         except Exception as e:
             self.logger.error(f"❌ 大盤風向儀運算異常: {e}")
             return {"status": "🟡 黃燈", "desc": "總體經濟風向引擎異常，強制啟動系統震盪保護機制。"}
-
+    "
     def get_trend_score(self, hist_df: pd.DataFrame, market_mode: str = "BEAR") -> float:
         if len(hist_df) < 60:
             return -1.0
-          
+      
         if market_mode == "BULL":
             hist_df['10MA'] = hist_df['Close'].rolling(10).mean()
             hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
             current_price = hist_df['Close'].iloc[-1]
             ma10 = hist_df['10MA'].iloc[-1]
             ma20 = hist_df['20MA'].iloc[-1]
-            
+        
             if current_price > ma10 and ma10 > ma20:
                 return 1.0
             else:
@@ -175,33 +175,36 @@ class NOCStrategy:
             current_price = hist_df['Close'].iloc[-1]
             ma20 = hist_df['20MA'].iloc[-1]
             ma60 = hist_df['60MA'].iloc[-1]
-            
+        
+            # 嚴格多頭：股價站上20MA且20MA在60MA之上
             if current_price > ma20 and ma20 > ma60:
                 return 1.0
+            # 底部起漲潛力股：股價同時站上20MA與60MA（但20MA尚未金叉60MA）
             elif current_price > ma20 and current_price > ma60:
                 return 0.5
             else:
                 return -1.0
-
+    
     def get_fundamental_health(self, symbol: str) -> str:
         try:
             clean_symbol = symbol.replace(".TW", "").replace(".TWO", "")
             ticker = yf.Ticker(f"{clean_symbol}.TW")
             info = ticker.info
             revenue_growth = info.get("revenueGrowth")
-            
+        
             if revenue_growth is not None:
                 yoy_pct = revenue_growth * 100
                 if revenue_growth < -0.15:
-                    return f"❌ 【基本面衰退】營收 YoY 呈現衰退 ({yoy_pct:.2f}%)，不符合長線波段體質！"
+                    return f"? 【基本面衰退】營收 YoY 呈現嚴重衰退 ({yoy_pct:.2f}%)，不符合長線波段體質！"
                 elif revenue_growth < 0:
-                    return f"⚠️ 【營收谷底轉機】營收 YoY 偏弱 ({yoy_pct:.2f}%)，但允許技術面與籌碼面突圍！"
+                    return f"?? 【營收谷底轉機】營收 YoY 偏弱 ({yoy_pct:.2f}%)，但允許技術面與籌碼面突圍！"
                 else:
-                    return f"✅ 【基本面優良】營收 YoY 成長 ({yoy_pct:.2f}%)，符合龍蝦養殖標準"
+                    return f"? 【基本面優良】營收 YoY 成長 ({yoy_pct:.2f}%)，符合龍蝦養殖標準"
             else:
-                return "⚠️ 【數據寬容】外部 API 暫無 YoY 數據，交由技術與籌碼面判定。"
+                # 關鍵：API抓不到資料 → 寬容處理，不帶警報字眼
+                return "?? 【數據寬容】外部 API 暫無 YoY 數據，交由技術與籌碼面判定。"
         except Exception:
-            return "✅【營收健康】符合波段持有條件"
+            return "?【營收健康】符合波段持有條件"
 
     def check_defcon_1_status(self) -> bool:
         try:
