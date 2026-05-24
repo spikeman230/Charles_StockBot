@@ -153,7 +153,7 @@ class NOCStrategy:
         except Exception as e:
             self.logger.error(f"❌ 大盤風向儀運算異常: {e}")
             return {"status": "🟡 黃燈", "desc": "總體經濟風向引擎異常，強制啟動系統震盪保護機制。"}
-    "
+    
     def get_trend_score(self, hist_df: pd.DataFrame, market_mode: str = "BEAR") -> float:
         if len(hist_df) < 60:
             return -1.0
