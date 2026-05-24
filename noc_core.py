@@ -31,7 +31,6 @@ def analyze_chip_tactics(turnover: float, volume_ratio: float, market_mode: str 
     籌碼矩陣判定引擎 (雙模式自適應版)：
     BULL 模式：對籌碼數據進行 1.3 倍敏感度放大，更容易發出點火與啟動訊號。
     """
-    # 🌟 動態敏感度放大器
     t_val = turnover * 1.3 if market_mode == "BULL" else turnover
     v_val = volume_ratio * 1.3 if market_mode == "BULL" else volume_ratio
 
@@ -56,16 +55,8 @@ class NOCChipMatrix:
     - BEAR 模式：量 > 5日均量 1.5倍 + 突破 20日高點 → 主力點火
     """
     def analyze(self, df: pd.DataFrame, market_mode: str = "BEAR") -> str:
-        """
-        參數：
-            df : 必須包含 'Volume', 'High' 等欄位
-            market_mode : "BULL" 或 "BEAR"
-        回傳：
-            點火訊號字串
-        """
         try:
             latest = df.iloc[-1]
-            # 計算 5 日均量
             avg_volume_5 = df['Volume'].rolling(5).mean().iloc[-1]
             volume_ratio = latest['Volume'] / avg_volume_5 if avg_volume_5 != 0 else 0.0
 
@@ -76,7 +67,6 @@ class NOCChipMatrix:
                 volume_threshold = 1.5
                 high_lookback = 20
 
-            # 計算 N 日內最高價
             recent_high = df['High'].rolling(high_lookback).max().iloc[-1]
 
             if volume_ratio >= volume_threshold and latest['High'] >= recent_high:
@@ -84,7 +74,6 @@ class NOCChipMatrix:
             else:
                 return "➖ 無點火訊號"
         except Exception as e:
-            # 防爆盾：保留原始錯誤處理
             logger.error(f"籌碼矩陣分析異常: {e}")
             return "⚠️ 籌碼分析失敗"
 
@@ -92,32 +81,19 @@ class NOCChipMatrix:
 # 💾 輔助模組: 執行緒安全資料庫連線防爆盾
 # =============================================================================
 class MockConn:
-    """
-    模擬資料庫連接對象。
-    提供符合標準 SQL 連線的 close 介面，全面防範主程式在執行緒關閉連線時發生 AttributeError。
-    """
     def close(self) -> None:
-        """執行安全關閉連線程序"""
         pass
 
 # =============================================================================
 # 💾 模組 1: 執行緒安全資料庫管理員 (Database Manager)
 # =============================================================================
 class NOCDatabase:
-    """
-    NOC 系統核心狀態資料庫。
-    採用執行緒鎖（threading.Lock）機制，確保主程式與複數雷達在並行運作時，數據讀寫絕對安全。
-    """
     def __init__(self, db_path: str = "noc_state.json"):
         self.db_path = db_path
         self._lock = threading.Lock()
-        # 🌟 內建連線防爆盾，完美防止 stock_bot 呼叫 local_db.conn.close() 時崩潰
         self.conn = MockConn()
 
     def load_state(self) -> dict:
-        """
-        以執行緒安全之最高規格，從本地儲存檔案中完整載入系統戰略狀態
-        """
         with self._lock:
             try:
                 with open(self.db_path, "r", encoding="utf-8") as f:
@@ -130,9 +106,6 @@ class NOCDatabase:
                 return {}
 
     def save_state(self, data: dict) -> bool:
-        """
-        以執行緒安全之最高規格，將最新的核心戰略部署寫入本地儲存檔案
-        """
         with self._lock:
             try:
                 with open(self.db_path, "w", encoding="utf-8") as f:
@@ -146,18 +119,11 @@ class NOCDatabase:
 # 🌡️ 模組 2: 大盤風向儀與趨勢濾網 (Macro & Trend Strategy)
 # =============================================================================
 class NOCStrategy:
-    """
-    NOC 戰情決策核心。
-    專責總體經濟風向判定、長線均線斜率精算，以及基本面護城河的無情過濾。
-    """
     def __init__(self, db: Optional[NOCDatabase] = None):
         self.logger = logging.getLogger(__name__)
         self.db = db
 
     def get_macro_status(self) -> dict:
-        """
-        大盤風向儀：判定加權指數的紅綠燈狀態，決定系統目前是否允許動用新兵力。
-        """
         try:
             twii = yf.Ticker("^TWII").history(period="6mo")
             if twii.empty:
@@ -169,41 +135,30 @@ class NOCStrategy:
             td = twii.iloc[-1]
             y_td = twii.iloc[-2]
 
-            # 🟢 綠燈區：大盤穩穩站上月線（20MA）且月線上揚，多頭順風，允許執行長線波段佈局
             if td['Close'] > td['20MA'] and td['20MA'] >= y_td['20MA']:
                 return {
                     "status": "🟢 綠燈", 
                     "desc": "大盤多頭格局順風。積極抱緊長線底倉，防守線隨波段墊高，允許兵力推升至上限。"
                 }
-            # 🔴 紅燈區：大盤有效跌破季線（60MA），空頭風暴來襲，觸發強制停進協議
             elif td['Close'] < td['60MA']:
                 return {
                     "status": "🔴 紅燈", 
                     "desc": "大盤崩盤警告（跌破季線）。啟動防空 protocols，全面停止新標的建倉，嚴格保留現金。"
                 }
-            # 🟡 黃燈區：其餘震盪修正、洗盤整理期間
             else:
                 return {
                     "status": "🟡 黃燈", 
                     "desc": "大盤進入高密度震盪洗盤期。嚴禁動用新資金盲目重倉，嚴格看守防禦底線。"
                 }
-                
         except Exception as e:
             self.logger.error(f"❌ 大盤風向儀運算異常: {e}")
             return {"status": "🟡 黃燈", "desc": "總體經濟風向引擎異常，強制啟動系統震盪保護機制。"}
 
     def get_trend_score(self, hist_df: pd.DataFrame, market_mode: str = "BEAR") -> float:
-        """
-        長線波段趨勢判定器 (雙模式自適應版)：
-        BEAR 模式：嚴格標準 (股價 > 20MA 且 20MA > 60MA) → 1.0
-                   另新增底部起漲條件 (股價 > 20MA 且股價 > 60MA) → 0.5
-        BULL 模式：股價 > 10MA 且 10MA > 20MA → 1.0
-        """
         if len(hist_df) < 60:
             return -1.0
           
         if market_mode == "BULL":
-            # 🐂 狂牛模式：提早卡位飆股
             hist_df['10MA'] = hist_df['Close'].rolling(10).mean()
             hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
             current_price = hist_df['Close'].iloc[-1]
@@ -215,7 +170,6 @@ class NOCStrategy:
             else:
                 return -1.0
         else:
-            # 🐻 重裝防禦模式：維持嚴格標準，但放寬底部轉機
             hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
             hist_df['60MA'] = hist_df['Close'].rolling(60).mean()
             current_price = hist_df['Close'].iloc[-1]
@@ -225,25 +179,15 @@ class NOCStrategy:
             if current_price > ma20 and ma20 > ma60:
                 return 1.0
             elif current_price > ma20 and current_price > ma60:
-                # 底部起漲潛力股：股價已站上雙均線，但均線尚未黃金交叉
                 return 0.5
             else:
                 return -1.0
 
     def get_fundamental_health(self, symbol: str) -> str:
-        """
-        基本面強制濾網 (柔化版)：
-        - 營收衰退 > 15% 才視為嚴重衰退
-        - 衰退 0~15% 視為「谷底轉機」，允許技術面突圍
-        - 資料缺失時回傳「數據寬容」，不帶警報字眼
-        """
         try:
-            # 去除可能包含的台股市場後綴，進行純代碼感知
             clean_symbol = symbol.replace(".TW", "").replace(".TWO", "")
             ticker = yf.Ticker(f"{clean_symbol}.TW")
             info = ticker.info
-            
-            # 獲取最新一季的營收年增率表現
             revenue_growth = info.get("revenueGrowth")
             
             if revenue_growth is not None:
@@ -255,28 +199,18 @@ class NOCStrategy:
                 else:
                     return f"✅ 【基本面優良】營收 YoY 成長 ({yoy_pct:.2f}%)，符合龍蝦養殖標準"
             else:
-                # 找不到資料 → 寬容處理，不帶警報字眼
                 return "⚠️ 【數據寬容】外部 API 暫無 YoY 數據，交由技術與籌碼面判定。"
-               
         except Exception:
-            # 健全的默認防禦機制，確保外部 API 震盪時系統不中斷，並維持嚴格標準
             return "✅【營收健康】符合波段持有條件"
 
     def check_defcon_1_status(self) -> bool:
-        """
-        DEFCON 1 協議監測：
-        判斷大盤是否面臨系統性結構崩壞。若觸發，將強制阻斷全系統所有買進電路。
-        """
         try:
             twii = yf.Ticker("^TWII").history(period="3mo")
             if twii.empty:
                 return False
-                
             twii['60MA'] = twii['Close'].rolling(60).mean()
             current_close = twii['Close'].iloc[-1]
             ma60 = twii['60MA'].iloc[-1]
-            
-            # 若加權指數收盤價跌破生命季線，即視為進入極度危險之 DEFCON 1 狀態
             if current_close < ma60:
                 return True
             return False
@@ -288,76 +222,74 @@ class NOCStrategy:
 # 🛡️ 模組 3: 移動防禦與雙軌兵力精算師 (Risk Manager)
 # =============================================================================
 class NOCRiskManager:
-    """
-    軍規部位與防禦精算核心。
-    負責針對個股特有波動度（ATR）進行防守線規劃，並依總兵力配置實施長短雙軌兵力切割。
-    """
     def __init__(self, total_capital: float = 130000.0):
         self.total_capital = total_capital
 
     def calculate_atr(self, hist_df: pd.DataFrame, period: int = 14) -> float:
-        """
-        精算真實波動幅度 (ATR)：用以透視個股特定『股性』與洗盤劇烈度。
-        """
         if len(hist_df) < period + 1:
-            # 防呆機制：若資料不足，預設以現價的 2.5% 作為基礎波動度基準
             return hist_df['Close'].iloc[-1] * 0.025
             
         high_low = hist_df['High'] - hist_df['Low']
         high_close = np.abs(hist_df['High'] - hist_df['Close'].shift())
         low_close = np.abs(hist_df['Low'] - hist_df['Close'].shift())
-        
         ranges = pd.concat([high_low, high_close, low_close], axis=1)
         true_range = ranges.max(axis=1)
         return true_range.rolling(period).mean().iloc[-1]
 
-    def get_position_and_defense(self, symbol: str, current_price: float, hist_df: pd.DataFrame = None, market_mode: str = "BEAR") -> dict:
+    def get_position_and_defense(self, symbol: str, current_price: float, hist_df: pd.DataFrame = None, 
+                                 market_mode: str = "BEAR", is_yellow_light: bool = False) -> dict:
         """
-        軍規級波段兵力精算 (雙模式自適應版)：
-        BULL 模式：快進快出，防禦縮緊至 1.8 ATR，提早獲利入袋。
-        BEAR 模式：長線死抱，防禦擴大至 3.0 ATR，抵禦惡意甩轎。
+        軍規級波段兵力精算 (雙模式自適應版) + 黃燈強制縮緊至 2.0 ATR
         """
         try:
             if hist_df is None or hist_df.empty:
                 hist_df = yf.Ticker(symbol).history(period="6mo")
             atr = self.calculate_atr(hist_df, period=14)
             
-            # 實施 15% 總兵力天花板配置
-            max_allocation = self.total_capital * 0.15
-            core_capital = max_allocation * 0.5
-            tactical_capital = max_allocation * 0.5
-            
-            core_shares = math.floor(core_capital / current_price)
-            tactical_shares = math.floor(tactical_capital / current_price)
-            
-            # 🌟 動態防護切換核心：
-            atr_multiplier = 1.8 if market_mode == "BULL" else 3.0
+            # 黃燈強制使用 2.0 倍 ATR，否則依市場模式
+            if is_yellow_light:
+                atr_multiplier = 2.0
+            else:
+                atr_multiplier = 1.8 if market_mode == "BULL" else 3.0
             trailing_stop = current_price - (atr * atr_multiplier)
             
-            # 融合技術面：抓取月線(20MA)，採多重濾網融合
+            # 融合 20MA 防線（取較低者）
             if not hist_df.empty and len(hist_df) >= 20:
                 hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
                 ma20 = hist_df['20MA'].iloc[-1]
                 if not pd.isna(ma20):
-                    # 取兩者較低者，賦予長線養殖模式最大寬容度，防止主力刻意洗盤甩轎
                     defense_line = min(trailing_stop, ma20)
                 else:
                     defense_line = trailing_stop
             else:
                 defense_line = trailing_stop
 
+            # 單筆風險控管 (總資金的 2%)
+            max_risk_amount = self.total_capital * 0.02
+            risk_per_share = current_price - defense_line
+            if risk_per_share <= 0:
+                risk_per_share = current_price * 0.10
+            max_shares = math.floor(max_risk_amount / risk_per_share)
+            
+            # 依 15% 天花板限制最終股數
+            max_allocation_shares = math.floor((self.total_capital * 0.15) / current_price)
+            total_shares = min(max_shares, max_allocation_shares)
+            
+            # 長線底倉與短線游擊各半（若總股數為奇數，核心多一股）
+            core_shares = total_shares // 2
+            tactical_shares = total_shares - core_shares
+            
             return {
                 "current_price": round(current_price, 2),
                 "defense_line": round(defense_line, 2), 
-                "core_shares": int(core_shares), # 長線底倉建議配置股數
-                "tactical_shares": int(tactical_shares), # 短線游擊建議配置股數
-                "total_shares": int(core_shares + tactical_shares),
-                "risk_per_share": round(current_price - defense_line, 2)
+                "core_shares": int(core_shares),
+                "tactical_shares": int(tactical_shares),
+                "total_shares": int(total_shares),
+                "risk_per_share": round(risk_per_share, 2)
             }
             
         except Exception as e:
             logger.error(f"❌ 執行部位與移動防禦精算時發生異常: {e}")
-            # 安全防退協議：啟動 10% 價格硬性防損與基礎兵力配置，確保主系統絕對不會中斷崩潰
             fallback_stop = current_price * 0.90
             fallback_shares = math.floor((self.total_capital * 0.075) / current_price)
             return {
@@ -373,25 +305,15 @@ class NOCRiskManager:
 # 🚀 模組 4: 戰略財務數據獲取引擎 (Data Fetcher Engine)
 # =============================================================================
 class NOCDataFetcher:
-    """
-    NOC 核心資料抓取引擎。
-    專責處理財務報告、基本面數據的非同步/多執行緒獲取，並提供與本地狀態資料庫的橋接。
-    """
     def __init__(self, token: str = ""):
         self.token = token
         self.logger = logging.getLogger(__name__)
 
     def fetch_financial_statements(self, symbol: str, db: NOCDatabase) -> None:
-        """
-        全面同步指定標的之長線波段財務數據，並以多執行緒安全鎖定規格寫入狀態庫。
-        """
         try:
             self.logger.info(f"🚀 [DataFetcher] 啟動多執行緒安全線路，同步標的 {symbol} 的長線基本面數據...")
-            
-            # 從安全資料庫載入當前狀態
             current_state = db.load_state()
             current_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
             if symbol not in current_state:
                 current_state[symbol] = {
                     "status": "NONE",
@@ -402,10 +324,7 @@ class NOCDataFetcher:
             else:
                 if isinstance(current_state[symbol], dict):
                     current_state[symbol]["last_fetch"] = current_time_str
-                    
-            # 將安全更新後的數據重新存回資料庫
             db.save_state(current_state)
             self.logger.info(f"✅ [DataFetcher] 標的 {symbol} 的波段基本面狀態資料同步更新成功。")
-            
         except Exception as e:
             self.logger.error(f"❌ [DataFetcher] 執行多執行緒財務數據抓取時攔截到異常: {e}")
