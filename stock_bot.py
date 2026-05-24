@@ -859,8 +859,8 @@ if __name__ == "__main__":
                 else:
                     # 放行推播！
                     if tips: 
-                        s += f" 💡 Trello 決策提示: {tips}\\n"
-                    cat_msg_list.append(s + "\\n")
+                        s += f" 💡 Trello 決策提示: {tips}\n"
+                    cat_msg_list.append(s + "\n")
                     generated_charts.append(draw_chart_if_needed(hist, sym))
                     has_actionable_alerts = True
             else:
@@ -872,8 +872,8 @@ if __name__ == "__main__":
                     else:
                         # 放行推播！
                         if tips: 
-                            s += f" 💡 Trello 決策提示: {tips}\\n"
-                        cat_msg_list.append(s + "\\n")
+                            s += f" 💡 Trello 決策提示: {tips}\n"
+                        cat_msg_list.append(s + "\n")
                         generated_charts.append(draw_chart_if_needed(hist, sym))
                         has_actionable_alerts = True
                 else:
