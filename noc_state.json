@@ -197,17 +197,17 @@
     "00878.TW": {
         "status": "REAL_HOLD_ETF",
         "entry": 22.21,
-        "trailing_stop": 0.0
+        "trailing_stop": 26.48213949203491
     },
     "00881.TW": {
         "status": "REAL_HOLD_ETF",
         "entry": 26.0,
-        "trailing_stop": 0.0
+        "trailing_stop": 48.83971301487514
     },
     "009816.TW": {
         "status": "REAL_HOLD_ETF",
         "entry": 13.24,
-        "trailing_stop": 0.0
+        "trailing_stop": 13.635856791904995
     },
     "009816": {
         "status": "NONE",
