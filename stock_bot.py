@@ -624,7 +624,7 @@ if __name__ == "__main__":
     STOCK_DICT = TRELLO_DICT if TRELLO_DICT else {}
     MY_PORTFOLIO = TRELLO_PORTFOLIO if TRELLO_PORTFOLIO else {}
 
-    for fname, label in [(cfg.RADAR_FILE, "🎯 雷達鎖定 (長線優質火種區)"), (cfg.LIGHTNING_FILE, "⚡ 籌碼動態追蹤區")]:
+    for fname, label in [(cfg.RADAR_FILE, "👀 長線觀察區 (雷達自動火種)"), (cfg.LIGHTNING_FILE, "👀 短線觀察區 (閃電自動火種)")]:
         if Path(fname).exists():
             try:
                 with open(fname, "r", encoding="utf-8") as f: 
