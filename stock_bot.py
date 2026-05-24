@@ -837,33 +837,47 @@ if __name__ == "__main__":
                     s += f" 👉 作戰指令: {alert}\n"
             else:
                 s += f" 👉 作戰指令: {alert}\n"
-
+            
             # =========================================================
-            # 統一智慧推播過濾器 (全觀察區適用：沒點火、沒狙擊就閉嘴)
+            # 統一智慧推播過濾器 + 強制輸出分類白名單
             # =========================================================
             action_command = s
-            
-            # 放行條件：僅 1. 技術面金叉狙擊 或 2. 籌碼面主力點火（已移除白名單）
-            has_valid_signal = bool(trigger_label) or "主力點火" in matrix_signal
-            
-            # 黑名單防禦力場
+
+            # 強制輸出分類（白名單）：無論有無技術/籌碼訊號，都強制推播（仍需檢查黑名單）
+            force_include_categories = ["長線觀測區", "短線觀測區"]   # 請依您的 Trello 列表名稱調整
+            is_force_output = any(force_cat in cat for force_cat in force_include_categories)
+
+            # 黑名單防禦力場（所有股票都必須檢查）
             fatal_flaws = cfg.ACTION_BLACKLIST + ["攔截", "衰退", "警報", "無情淘汰", "拒絕追高"]
             has_fatal_flaw = any(keyword in action_command for keyword in fatal_flaws)
 
-            # 最終推播裁決
-            if has_valid_signal:
+            # 決定是否推播
+            if is_force_output:
+                # 強制輸出分類：只要有訊號或無致命缺陷就推播（但最好仍檢查致命缺陷）
                 if has_fatal_flaw:
-                    logger.info(f"🛑 [過濾器攔截] {sym} 雖有訊號，但觸發致命缺陷或大盤黃燈攔截，強制封鎖推播。")
+                    logger.info(f"🛑 [強制分類攔截] {sym} 屬於強制輸出區，但觸發致命缺陷，強制封鎖推播。")
                 else:
                     # 放行推播！
                     if tips: 
-                        s += f" 💡 Trello 決策提示: {tips}\n"
-                    cat_msg_list.append(s + "\n")
+                        s += f" 💡 Trello 決策提示: {tips}\\n"
+                    cat_msg_list.append(s + "\\n")
                     generated_charts.append(draw_chart_if_needed(hist, sym))
                     has_actionable_alerts = True
             else:
-                # 無觸發訊號，靜默跳過
-                logger.debug(f"🔇 [靜默跳過] {sym} 無重要觸發訊號，不推播。")
+                # 一般分類：僅當有技術訊號或主力點火時才考慮推播
+                has_valid_signal = bool(trigger_label) or "主力點火" in matrix_signal
+                if has_valid_signal:
+                    if has_fatal_flaw:
+                        logger.info(f"🛑 [過濾器攔截] {sym} 雖有訊號，但觸發致命缺陷，強制封鎖推播。")
+                    else:
+                        # 放行推播！
+                        if tips: 
+                            s += f" 💡 Trello 決策提示: {tips}\\n"
+                        cat_msg_list.append(s + "\\n")
+                        generated_charts.append(draw_chart_if_needed(hist, sym))
+                        has_actionable_alerts = True
+                else:
+                    logger.debug(f"🔇 [靜默跳過] {sym} 無重要觸發訊號，不推播。")
 
         if cat_msg_list:
             msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
