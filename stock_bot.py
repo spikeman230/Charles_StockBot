@@ -30,7 +30,6 @@ from dotenv import load_dotenv
 from typing import Optional, Dict, Tuple, Any
 from pathlib import Path
 
-# 🌟 深度引入 NOC 核心防禦模組 (長線波段基石)
 from noc_core import NOCDatabase, NOCStrategy, NOCDataFetcher, NOCRiskManager, analyze_chip_tactics, NOCChipMatrix
 
 # =============================================================================
@@ -48,8 +47,6 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-
-# 強制靜音 yfinance 內部錯誤，維持戰情主控台純淨
 logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
 # =============================================================================
@@ -66,9 +63,9 @@ TRELLO_TOKEN = os.getenv("TRELLO_TOKEN")
 TRELLO_BOARD_ID = os.getenv("TRELLO_BOARD_ID")
 
 class Config:
-    TOTAL_CAPITAL : float = float(os.getenv("TOTAL_CAPITAL", "130000")) # 總兵力天花板 13 萬
+    TOTAL_CAPITAL : float = float(os.getenv("TOTAL_CAPITAL", "130000"))
     RISK_PER_TRADE : float = float(os.getenv("RISK_PER_TRADE", "0.02"))
-    ATR_MULTIPLIER : float = float(os.getenv("ATR_MULTIPLIER", "3.0")) # 升級至 3.0，賦予長線佈局完整容錯空間
+    ATR_MULTIPLIER : float = float(os.getenv("ATR_MULTIPLIER", "3.0"))
     YOY_EXPLOSION_PCT : float = float(os.getenv("YOY_EXPLOSION_PCT", "10.0"))
     PE_LIMIT : float = float(os.getenv("PE_LIMIT", "40.0"))
     SILENT_MODE : bool = os.getenv("SILENT_MODE", "false").lower() == "true"
@@ -81,7 +78,6 @@ class Config:
     LIGHTNING_FILE : str = "lightning_targets.json"
     GUERRILLA_FILE : str = "guerrilla_targets.json"
     
-    # 戰略白名單與黑名單過濾機制
     ACTION_WHITELIST : list = ["建倉", "試單", "波段", "佈局", "長線鎖籌", "加碼", "扣款", "獲利巡航", "浮虧防禦", "洗盤耐受", "戰術撤離", "基本面瓦解", "物理防爆門", "護城河瓦解", "洗盤耐受區", "籌碼動能"]
     ACTION_BLACKLIST : list = ["持股觀望", "暫停進場", "嚴格觀望", "不建議進場", "等待", "不動用資金", "不適用", "營收衰退", "大盤進入震盪洗盤期"]
 
@@ -157,25 +153,15 @@ def get_etf_strategy(symbol: str, name: str) -> Tuple[str, float, str]:
 # === 2.2 軍規長線部署計畫產出器 ===
 # =============================================================================
 def build_tactical_plan(symbol: str, close: float, hist: pd.DataFrame, trend_score: float, fund_health: str, manual_stop: float = 0.0, market_mode: str = "BEAR") -> str:
-    """
-    重構版決策計畫：全面廢除有天花板的短線目標價，改以 3.0 ATR 與月線融合之防守線為依據。
-    """
-    # 1. 攔截基本面警報
     if "衰退" in fund_health or "警報" in fund_health:
         return f" 🛡️ 【基本面攔截】營收年增率衰退，不予執行任何長線養殖建倉！\n"
-        
-    # 2. 攔截長線均線下彎與過度乖離
     if trend_score < 0:
         return f" 🛡️ 【趨勢面攔截】該標的未符合長線多頭條件，放棄長線佈局計畫。\n"
 
-    # 初始化核心風控精算師
     risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
-    defense_data = risk_calculator.get_position_and_defense(symbol, close, hist, market_mode=market_mode)
-    
+    defense_data = risk_calculator.get_position_and_defense(symbol, close, hist, market_mode=market_mode, is_yellow_light=False)
     stop_loss = defense_data["defense_line"]
     stop_reason = f"融合風控防禦底線 (ATR倍數: {'1.8' if market_mode=='BULL' else '3.0'})"
-    
-    # 總司令絕對防線覆寫機制
     if manual_stop > 0:
         stop_loss = manual_stop
         stop_reason = "總司令絕對防線 (Trello 覆寫價)"
@@ -268,16 +254,16 @@ def _parse_card_to_portfolio(card: dict) -> Tuple[str, dict]:
     name_part = raw_name[len(symbol):].strip() if ticker_match else raw_name
     name = re.sub(r"\(.*?\)", "", name_part).strip() or symbol
     desc = card.get("desc", "")
-    buy_price, shares, manual_stop = 0.0, 1000, 0.0 # 👈 新增防線預設值
+    buy_price, shares, manual_stop = 0.0, 1000, 0.0
     price_match = re.search(r"成本[：:]\s*([0-9.]+)", desc)
     shares_match = re.search(r"股數[：:]\s*([0-9]+)", desc)
-    stop_match = re.search(r"(防線|停損|防守)[：:]\s*([0-9.]+)", desc) # 👈 新增正則表達式抓取
+    stop_match = re.search(r"(防線|停損|防守)[：:]\s*([0-9.]+)", desc)
     if price_match: 
         buy_price = float(price_match.group(1))
     if shares_match: 
         shares = int(shares_match.group(1))
     if stop_match:
-        manual_stop = float(stop_match.group(2)) # 👈 寫入變數
+        manual_stop = float(stop_match.group(2))
     return symbol, {"name": name, "buy_price": buy_price, "shares": shares, "trello_tip": desc, "manual_stop": manual_stop}
 
 def fetch_trello_deployment() -> Tuple[Optional[dict], Optional[dict]]:
@@ -442,7 +428,6 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         return cached
 
     try:
-        # 進行純數字提取，執行執行緒安全基本面資料對接
         match = re.search(r"\d+", symbol)
         if match and FINMIND_TOKEN:
             raw_id = match.group()
@@ -451,17 +436,13 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
             local_fetcher.fetch_financial_statements(raw_id, local_db)
 
         stock = yf.Ticker(symbol)
-        
-        # 🌟 獲取發行總股數 (籌碼情報擴充)
         info = stock.info
         shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
-        
         hist = stock.history(period="8mo").dropna(subset=["Close"])
         if len(hist) < 60: 
             return None
 
         hist["Shares_Out"] = shares_out if shares_out else np.nan
-
         hist["Date_Key"] = hist.index.date
         if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
             chip_df = get_finmind_chip_data(symbol, (datetime.datetime.now() - datetime.timedelta(days=200)).strftime("%Y-%m-%d"))
@@ -470,12 +451,11 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
 
         hist = calculate_chip_signals(hist)
 
-        curr_hour = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).hour
-        # 修改 2：導入精準線性量能預估 (動態時間計算)
+        # 動態量能預估 (使用本地時區)
         now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
         market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
         market_close = now.replace(hour=13, minute=30, second=0, microsecond=0)
-        total_trading_minutes = (market_close - market_open).total_seconds() / 60.0 # 270 分鐘
+        total_trading_minutes = (market_close - market_open).total_seconds() / 60.0
         if market_open < now < market_close:
             elapsed_mins = max(1.0, (now - market_open).total_seconds() / 60.0)
             vol_mult = total_trading_minutes / elapsed_mins
@@ -485,7 +465,6 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         if len(hist) > 0: 
             hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = int(hist["Volume"].iloc[-1] * vol_mult)
 
-        # 基礎技術分析防線計算
         hist["5MA"] = hist["Close"].rolling(5).mean()
         hist["20MA"] = hist["Close"].rolling(20).mean()
         hist["25MA"] = hist["Close"].rolling(25).mean()
@@ -493,7 +472,6 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         hist["5VMA"] = hist["Est_Volume"].rolling(5).mean()
         hist["60VMA"] = hist["Volume"].rolling(60).mean()
         
-        # 🌟 計算換手率與量比 (確保 100% 執行與防空值處理)
         hist["Turnover_Rate"] = ((hist["Est_Volume"] / hist["Shares_Out"]) * 100).fillna(1.5)
         hist["Volume_Ratio"] = (hist["Est_Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
 
@@ -552,8 +530,8 @@ def preload_all_stocks(all_symbols: Dict[str, str]) -> None:
         for future in as_completed(futures):
             try: 
                 future.result()
-            except Exception as e: # 修改 3：解除多執行緒的沉默吃灰
-                logger.error(f"標的 {future_to_symbol[future]} 預載入失敗: {e}")
+            except Exception as e: 
+                logger.error(f"標的 {futures[future]} 預載入失敗: {e}")
 
 # =============================================================================
 # === 8. 圖表渲染與資產推播模組 ===
@@ -602,16 +580,12 @@ if __name__ == "__main__":
 
     logger.info(f"NOC 終極戰情室 v15.5 (龍蝦養殖完全體) 啟動。時間：{curr_time}")
     
-    # 宣告連線對象
     db = NOCDatabase()
     strategy = NOCStrategy(db)
-    
-    # 修改 4：喚醒進階武器 NOCChipMatrix
     chip_matrix_analyzer = NOCChipMatrix()
     
     msg_list = []
     
-    # 🌟 1. 大盤風向紅綠燈核心感知 (拔插頭/熔斷機制/黃燈防禦)
     macro_info = strategy.get_macro_status()
     is_yellow_light = False
 
@@ -635,13 +609,12 @@ if __name__ == "__main__":
         is_yellow_light = True
         update_trello_system_status_bg("🟡 黃燈防禦協議 (半倉/收緊防護)", "🟡")
         
-    # 2. 檢查假日靜默協議
     if not is_trading_day(curr_date):
         logger.info("今日非台股交易日。戰情室啟動靜默休眠機制。")
         update_trello_system_status_bg("非交易日/休市靜默", "🔴")
         if curr_dt.hour <= 10:
             send_reports(f"NOC 戰情報告 {curr_date} (休市)", f"📡 【NOC 戰情室靜默休眠】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n🔴 今日市場休市，全系統處於資產監守維護狀態，不推播繁雜雜訊。", [])
-        #sys.exit(0)
+        # sys.exit(0) # 保留註解供測試
 
     if not is_yellow_light:
         logger.info("通過環境感知檢查，開始同步雲端 Trello 看板部署...")
@@ -651,7 +624,6 @@ if __name__ == "__main__":
     STOCK_DICT = TRELLO_DICT if TRELLO_DICT else {}
     MY_PORTFOLIO = TRELLO_PORTFOLIO if TRELLO_PORTFOLIO else {}
 
-    # 載入收盤雷達火種清單
     for fname, label in [(cfg.RADAR_FILE, "🎯 雷達鎖定 (長線優質火種區)"), (cfg.LIGHTNING_FILE, "⚡ 籌碼動態追蹤區")]:
         if Path(fname).exists():
             try:
@@ -660,17 +632,15 @@ if __name__ == "__main__":
             except Exception as e:
                 logger.error(f"讀取 {fname} 失敗: {e}")
 
-    # 彙整所有待處理標的代號
     all_symbols = {sym: data["name"] for sym, data in MY_PORTFOLIO.items()}
     for stocks in STOCK_DICT.values():
         for sym, item in stocks.items():
             all_symbols[sym] = item.get("name", sym) if isinstance(item, dict) else item
 
-    # 執行高速並行下載與運算
     preload_all_stocks(all_symbols)
 
     is_bull_market, market_msg = get_market_regime()
-    market_mode = "BULL" if is_bull_market else "BEAR" # 👈 擷取大盤開關
+    market_mode = "BULL" if is_bull_market else "BEAR"
     logger.info(f"📡 市場模式切換 => {market_mode} (大盤訊號: {market_msg})")
     
     noc_state = load_state()
@@ -682,12 +652,11 @@ if __name__ == "__main__":
     msg_list = [macro_msg]
     generated_charts = []
     has_data = False
-    # 修改 1：新增全域動作旗標
     has_actionable_alerts = False
 
-    # =============================================================================
-    # === 戰區 1：庫藏股 (實體長線底倉持股維護動態防禦 - 四象限戰術狀態機) ===
-    # =============================================================================
+    # =========================================================================
+    # 戰區 1：庫藏股
+    # =========================================================================
     if MY_PORTFOLIO:
         msg_list.append("━━━━━━━━━━━━━━\n💼 【庫藏股 (長線鎖籌動態防禦動態)】\n━━━━━━━━━━━━━━\n")
         for sym, data in MY_PORTFOLIO.items():
@@ -710,100 +679,64 @@ if __name__ == "__main__":
             vol_ratio = td["Volume_Ratio"]
             yoy = td["YoY"]
 
-            if "一般型" not in etf_icon:
-                if sym_state.status != "REAL_HOLD_ETF": 
-                    noc_state[sym] = StockState(status="REAL_HOLD_ETF", entry=buy_price)
-                if roi_pct <= -10.0: 
-                    pnl_alert = f"💎【左側黃金坑加碼】長線配置帳面回檔達 {roi_pct:.2f}%，建立長線核心底倉！"
-                elif roi_pct <= -5.0: 
-                    pnl_alert = f"📉【紀律定期扣款】資產小幅修正 {roi_pct:.2f}%，實施自動防守扣款。"
-                else: 
-                    pnl_alert = "🧘‍♂️【長線鎖籌】趨勢結構穩定，靜待資產長線複利翻倍。"
-                
-                # 修正錯誤 2：補上 inv_str 建構（一般型 ETF 分支）
-                inv_str = f"◆ {data['name']} ({sym})\n"
+            # 修復：庫藏股 ATR 倍數隨市場模式切換（黃燈例外）
+            if is_yellow_light:
+                current_atr_multiplier = 2.0
+            else:
+                current_atr_multiplier = 1.8 if market_mode == "BULL" else 3.0
+            calculated_stop = curr_price - (atr * current_atr_multiplier)
+            calculated_stop = min(calculated_stop, ma20) if not pd.isna(ma20) else calculated_stop
+
+            if sym_state.status != "REAL_HOLD" and sym_state.status != "REAL_HOLD_ETF":
+                noc_state[sym] = StockState(status="REAL_HOLD", entry=buy_price, trailing_stop=calculated_stop)
+                sym_state = noc_state[sym]
+
+            trello_stop = data.get("manual_stop", 0.0)
+            if trello_stop > 0:
+                final_stop = max(trello_stop, sym_state.trailing_stop, calculated_stop)
+            else:
+                final_stop = max(sym_state.trailing_stop, calculated_stop)
+
+            if isinstance(yoy, (int, float)) and yoy < 0:
+                pnl_alert = "💀【護城河瓦解】營收 YoY 衰退，明日開盤即刻清倉！"
+                noc_state[sym] = StockState(status="NONE")
+            elif roi_pct <= -15.0 or curr_price < ma60 or curr_price < final_stop:
+                pnl_alert = f"🩸【戰術撤離】跌破防守底線 ({final_stop:.2f})，無條件停損變現！"
+                noc_state[sym] = StockState(status="NONE")
+            elif trello_stop > 0 and sym_state.trailing_stop != final_stop:
+                pnl_alert = f"🛡️【手動指揮】已依據 Trello 覆寫防守線至 {final_stop:.2f}"
+                noc_state[sym].trailing_stop = final_stop
+            elif roi_pct > 0 and curr_price > ma20:
+                pnl_alert = f"🔥【獲利巡航】獲利奔跑中，防禦線上移至 {final_stop:.2f}！"
+                noc_state[sym].trailing_stop = final_stop
+            elif roi_pct <= 0 and curr_price >= ma60 and curr_price >= final_stop:
+                pnl_alert = f"🛡️【洗盤耐受區】嚴禁攤平加碼，死守底線 ({final_stop:.2f})！"
+                noc_state[sym].trailing_stop = final_stop
+            else:
+                pnl_alert = f"🔍【中立觀察】價格震盪，監控防禦底線 ({final_stop:.2f})。"
+                noc_state[sym].trailing_stop = final_stop
+
+            silent_keywords = ["中立觀察", "長線鎖籌", "洗盤耐受區"]
+            is_silent = any(kw in pnl_alert for kw in silent_keywords)
+            if is_silent and cfg.SILENT_MODE:
+                logger.info(f"🔇 [靜默模式] 庫藏股 {sym} 指令為 '{pnl_alert}'，符合靜默關鍵字，不進行推播與繪圖。")
+            else:
+                generated_charts.append(draw_chart_if_needed(hist, sym))
+                inv_str = f"{etf_icon} {data['name']} ({sym})\n"
                 inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
-                
                 chip_msg = td["Chip_Status"]
                 matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=market_mode)
-                chip_tactics_msg = matrix_signal # 使用進階籌碼矩陣訊號
-                inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
+                inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
                 inv_str += f" 💰 法人籌碼: {chip_msg}\n"
-
                 fund_msg = strategy.get_fundamental_health(raw_id)
                 inv_str += f" 📊 財報: {fund_msg}\n"
                 inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\n\n"
                 msg_list.append(inv_str)
-                generated_charts.append(draw_chart_if_needed(hist, sym))
                 has_actionable_alerts = True
-            else:
-                # 🌟 四象限絕對戰術狀態機 & 15% 物理防爆門
-                current_atr_multiplier = 2.0 if is_yellow_light else 3.0
-                calculated_stop = curr_price - (atr * current_atr_multiplier)
-                
-                # 與 20MA 取低值融合，賦予長線防護網最大寬容度
-                calculated_stop = min(calculated_stop, ma20) if not pd.isna(ma20) else calculated_stop
 
-                if sym_state.status != "REAL_HOLD":
-                    noc_state[sym] = StockState(status="REAL_HOLD", entry=buy_price, trailing_stop=calculated_stop)
-                    sym_state = noc_state[sym]
-                
-               # 🛡️ 擷取 Trello 手動防線設定
-                trello_stop = data.get("manual_stop", 0.0)
-                
-                # 修改 1：修復 Trello 手動防線的「獲利天花板」地雷
-                if trello_stop > 0:
-                    final_stop = max(trello_stop, sym_state.trailing_stop, calculated_stop)
-                else:
-                    final_stop = max(sym_state.trailing_stop, calculated_stop)
-
-                if isinstance(yoy, (int, float)) and yoy < 0:
-                    pnl_alert = "💀【護城河瓦解】營收 YoY 衰退，明日開盤即刻清倉！"
-                    noc_state[sym] = StockState(status="NONE")
-                elif roi_pct <= -15.0 or curr_price < ma60 or curr_price < final_stop:
-                    pnl_alert = f"🩸【戰術撤離】跌破防守底線 ({final_stop:.2f})，無條件停損變現！"
-                    noc_state[sym] = StockState(status="NONE")
-                elif trello_stop > 0 and sym_state.trailing_stop != final_stop:
-                    pnl_alert = f"🛡️【手動指揮】已依據 Trello 覆寫防守線至 {final_stop:.2f}"
-                    noc_state[sym].trailing_stop = final_stop
-                elif roi_pct > 0 and curr_price > ma20:
-                    pnl_alert = f"🔥【獲利巡航】獲利奔跑中，防禦線上移至 {final_stop:.2f}！"
-                    noc_state[sym].trailing_stop = final_stop
-                elif roi_pct <= 0 and curr_price >= ma60 and curr_price >= final_stop:
-                    pnl_alert = f"🛡️【洗盤耐受區】嚴禁攤平加碼，死守底線 ({final_stop:.2f})！"
-                    noc_state[sym].trailing_stop = final_stop
-                else:
-                    pnl_alert = f"🔍【中立觀察】價格震盪，監控防禦底線 ({final_stop:.2f})。"
-                    noc_state[sym].trailing_stop = final_stop
-
-                # 修改 2：庫藏股靜默過濾（原錯誤 1 亦在此修正）
-                silent_keywords = ["中立觀察", "長線鎖籌", "洗盤耐受區"]
-                is_silent = any(kw in pnl_alert for kw in silent_keywords)
-                
-                if is_silent and cfg.SILENT_MODE:
-                    logger.info(f"🔇 [靜默模式] 庫藏股 {sym} 指令為 '{pnl_alert}'，符合靜默關鍵字，不進行推播與繪圖。")
-                else:
-                    generated_charts.append(draw_chart_if_needed(hist, sym))
-                    
-                    # 🌟 庫藏股黃金對齊排版
-                    inv_str = f"{etf_icon} {data['name']} ({sym})\n"
-                    inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
-                    
-                    chip_msg = td["Chip_Status"]
-                    matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=market_mode)
-                    chip_tactics_msg = matrix_signal
-                    inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
-                    inv_str += f" 💰 法人籌碼: {chip_msg}\n"
-
-                    fund_msg = strategy.get_fundamental_health(raw_id)
-                    inv_str += f" 📊 財報: {fund_msg}\n"
-                    inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\n\n"
-                    msg_list.append(inv_str)
-                    has_actionable_alerts = True
-
-    # =============================================================================
-    # === 戰區 2：觀察、雷達與重點觀測區偵測 ===
-    # =============================================================================
+    # =========================================================================
+    # 戰區 2：觀察、雷達與重點觀測區 (雙腦分流)
+    # =========================================================================
     for cat, stocks in STOCK_DICT.items():
         if not stocks: 
             continue
@@ -838,12 +771,10 @@ if __name__ == "__main__":
             turnover = td["Turnover_Rate"]
             vol_ratio = td["Volume_Ratio"]
 
-            # 修改 5：實作戰區 2 的「長短雙手劍 (看板分流邏輯)」
-            # 判斷看板屬性：短線類（重點、籌碼、閃電）使用 BULL 模式，長線使用市場模式
+            # 分流大腦：短線區使用 BULL 模式
             is_lightning = "重點" in cat or "籌碼" in cat or "閃電" in cat
             local_market_mode = "BULL" if is_lightning else market_mode
 
-            # 呼叫 noc_core 長線濾網模組 (使用 local_market_mode)
             trend_score = strategy.get_trend_score(hist, market_mode=local_market_mode)
             fund_health = strategy.get_fundamental_health(raw_id)
 
@@ -860,18 +791,15 @@ if __name__ == "__main__":
                 chip_msg += f" (連賣 {abs(trust_streak)} 天)"
 
             sym_state = noc_state.get(sym, StockState())
-            alert = "✅ 趨勢追蹤中，尚未觸發佈局點" # 👈 避開「持股觀望」這個黑名單字眼
+            alert = "✅ 趨勢追蹤中，尚未觸發佈局點"
             trigger_label = ""
             action_plan_text = ""
 
-            # 狀態機風控核心邏輯對接
             if sym_state.status == "REAL_HOLD": 
                 alert = f"💼 持股防禦區 | 📍 最新防線: {sym_state.trailing_stop:.1f}"
             elif sym_state.status == "NONE":
                 if td["Sniper_Signal"]:
                     trigger_label = "🌟 長線多頭結構扭轉金叉"
-                    # 執行基本面與長線趨勢硬核攔截
-                    # 修改 5：短線區跳過基本面攔截
                     if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
                         alert = "🛡️【基本面攔截】營收 YoY 衰退，無情淘汰。"
                     elif trend_score < 0:
@@ -881,35 +809,28 @@ if __name__ == "__main__":
                         action_plan_text = ""
                     else:
                         risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
-                        defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=local_market_mode)
+                        defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=local_market_mode, is_yellow_light=is_yellow_light)
                         stop_price = defense_info["defense_line"]
-                        
                         noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
                         alert = f"🚀【長線波段佈局觸發】"
                         action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
 
-            # 移除無用的 if s := "": pass
-                
-            # 🌟 統一高規黃金排版對齊輸出
+            # 建構輸出字串 (所有股票都會建構，但過濾器決定是否加入)
             s = f"🎯 {name} ({sym})\n"
             s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
             s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
             
-            # 修改 4：喚醒進階武器 NOCChipMatrix
-            matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=market_mode)
-            chip_tactics_msg = matrix_signal
-            s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
+            # 籌碼分析：短線區使用 local_market_mode，長線區用全域 market_mode
+            matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
+            s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
             s += f" 💰 法人動向: {chip_msg}\n"
             s += f" 📊 財報透視: {fund_health}\n"
             
             if trigger_label:
                 s += f" 🎯 條件觸發: {trigger_label}\n"
-                
-                # 🌟 黃燈防禦電路：雷達新火種掃描若未通過長線濾網，禁止產出推播，隔絕盤中雜訊。
                 if is_yellow_light and (trend_score < 0 or (not is_lightning and ("衰退" in fund_health or "警報" in fund_health))):
                     logger.info(f"🛑 [黃燈防禦攔截] {sym} 大盤黃燈期間未通過嚴格長線雙濾網，強制屏蔽推播。")
                     continue
-                    
                 if action_plan_text: 
                     s += f"{action_plan_text}"
                 else: 
@@ -917,41 +838,45 @@ if __name__ == "__main__":
             else:
                 s += f" 👉 作戰指令: {alert}\n"
 
-            # 修改 3：戰區 2 過濾漏洞修補 – 只有在 trigger_label 有值時才考慮推播
-            if trigger_label:
+            # 過濾器：只有當股票屬於「強制輸出分類」或「符合有效訊號」時才推播
+            force_include_categories = ["⚡ 籌碼動態追蹤區", "🎯 雷達鎖定 (長線優質火種區)", "重點觀測區", "觀察區"]
+            if any(force_cat in cat for force_cat in force_include_categories):
+                # 強制輸出分類：直接加入（但仍需檢查黑名單致命缺陷）
                 action_command = s
-
-                # 🚀 智慧過濾器：判定是否具備「實質推播價值」
-                # 放行條件：1.有技術觸發 OR 2.符合白名單(如建倉) OR 3.有籌碼動能 OR 4.進階矩陣發出主力點火
-                has_valid_signal = bool(trigger_label) or any(keyword in action_command for keyword in cfg.ACTION_WHITELIST) or "籌碼動能" in action_command or "主力點火" in matrix_signal
-
-                # 🛡️ 絕對防禦力場 (彌補原本黑名單的漏洞)
-                # 只要內文出現以下任一字眼，管他技術面多好，直接封殺！
                 fatal_flaws = cfg.ACTION_BLACKLIST + ["攔截", "衰退", "警報", "無情淘汰", "拒絕追高"]
-
-                if has_valid_signal:
-                    # 檢查是否觸發致命缺陷或系統硬核攔截
-                    if any(keyword in action_command for keyword in fatal_flaws):
-                        logger.info(f"🛑 [過濾器攔截] {sym} 觸發基本面衰退或系統攔截，強制封鎖推播。")
-                        continue 
-                
-                    # 放行推播！
-                    if tips: 
-                        s += f" 💡 Trello 決策提示: {tips}\n"
-                    cat_msg_list.append(s + "\n")
-                    generated_charts.append(draw_chart_if_needed(hist, sym))
-                    has_actionable_alerts = True
-                else:
-                    # 無觸發訊號，靜默跳過（不推播也不攔截）
-                    logger.debug(f"🔇 [靜默跳過] {sym} 無觸發訊號，不推播。")
+                if any(keyword in action_command for keyword in fatal_flaws):
+                    logger.info(f"🛑 [強制分類攔截] {sym} 觸發致命缺陷，強制封鎖推播。")
+                    continue
+                if tips: 
+                    s += f" 💡 Trello 決策提示: {tips}\n"
+                cat_msg_list.append(s + "\n")
+                generated_charts.append(draw_chart_if_needed(hist, sym))
+                has_actionable_alerts = True
+            else:
+                # 其他分類：必須有觸發訊號且通過黑白名單檢查
+                if trigger_label:
+                    action_command = s
+                    has_valid_signal = bool(trigger_label) or any(kw in action_command for kw in cfg.ACTION_WHITELIST) or "籌碼動能" in action_command or "主力點火" in matrix_signal
+                    fatal_flaws = cfg.ACTION_BLACKLIST + ["攔截", "衰退", "警報", "無情淘汰", "拒絕追高"]
+                    if has_valid_signal:
+                        if any(keyword in action_command for keyword in fatal_flaws):
+                            logger.info(f"🛑 [過濾器攔截] {sym} 觸發基本面衰退或系統攔截，強制封鎖推播。")
+                            continue
+                        if tips: 
+                            s += f" 💡 Trello 決策提示: {tips}\n"
+                        cat_msg_list.append(s + "\n")
+                        generated_charts.append(draw_chart_if_needed(hist, sym))
+                        has_actionable_alerts = True
+                    else:
+                        logger.debug(f"🔇 [靜默跳過] {sym} 無觸發訊號，不推播。")
 
         if cat_msg_list:
             msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
             msg_list.extend(cat_msg_list)
 
-    # =============================================================================
-    # === 戰區 3：ETF 雙引擎長線績效競技場 ===
-    # =============================================================================
+    # =========================================================================
+    # 戰區 3：ETF 績效競技場
+    # =========================================================================
     etf_arena = {"💰高股息防禦組": [], "🚀市值與主題成長組": []}
     current_year = curr_date.year
 
@@ -987,23 +912,21 @@ if __name__ == "__main__":
                 msg_list.append(f"{rank} {etf['name']} ({etf['sym']})\n 季度動能: {etf['qtr_roi']:+.1f}% ｜ 本年累計: {etf['ytd_roi']:+.1f}% ({status})\n")
             msg_list.append("\n")
 
-    # =============================================================================
-    # === 狀態儲存與最終推播發送電路 ===
-    # =============================================================================
+    # =========================================================================
+    # 最終儲存與推播
+    # =========================================================================
     if not has_data: 
         logger.info("無有效標的運算數據，終止行程。")
         sys.exit(0)
         
     save_state(noc_state)
 
-    # 修改 4：最終靜默判斷
     if not has_actionable_alerts and cfg.SILENT_MODE:
         logger.info("🔇 [靜默模式] 今日無任何可行動警報（無建倉/停損/獲利巡航等重要事件），系統靜默退出。")
         sys.exit(0)
 
     send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v15.5 波段鎖籌版】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
     
-    # 資源回收：清除生成的暫存圖表檔案
     for chart in generated_charts:
         if Path(chart).exists(): 
             Path(chart).unlink()
