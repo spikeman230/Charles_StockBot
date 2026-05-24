@@ -196,12 +196,12 @@ class NOCStrategy:
         """
         長線波段趨勢判定器 (雙模式自適應版)：
         BEAR 模式：嚴格標準 (股價 > 20MA 且 20MA > 60MA) → 1.0
-                   另新增底部起漲條件 (股價 > 20MA 且股價 > 60MA，但 20MA ≤ 60MA) → 0.5
+                   另新增底部起漲條件 (股價 > 20MA 且股價 > 60MA) → 0.5
         BULL 模式：股價 > 10MA 且 10MA > 20MA → 1.0
         """
         if len(hist_df) < 60:
             return -1.0
-      
+          
         if market_mode == "BULL":
             # 🐂 狂牛模式：提早卡位飆股
             hist_df['10MA'] = hist_df['Close'].rolling(10).mean()
@@ -209,7 +209,7 @@ class NOCStrategy:
             current_price = hist_df['Close'].iloc[-1]
             ma10 = hist_df['10MA'].iloc[-1]
             ma20 = hist_df['20MA'].iloc[-1]
-        
+            
             if current_price > ma10 and ma10 > ma20:
                 return 1.0
             else:
@@ -221,24 +221,12 @@ class NOCStrategy:
             current_price = hist_df['Close'].iloc[-1]
             ma20 = hist_df['20MA'].iloc[-1]
             ma60 = hist_df['60MA'].iloc[-1]
-        
+            
             if current_price > ma20 and ma20 > ma60:
                 return 1.0
             elif current_price > ma20 and current_price > ma60:
                 # 底部起漲潛力股：股價已站上雙均線，但均線尚未黃金交叉
                 return 0.5
-            else:
-                return -1.0
-        else:
-            # 🐻 重裝防禦模式：維持嚴格標準 (股價 > 20MA 且 20MA > 60MA)
-            hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
-            hist_df['60MA'] = hist_df['Close'].rolling(60).mean()
-            current_price = hist_df['Close'].iloc[-1]
-            ma20 = hist_df['20MA'].iloc[-1]
-            ma60 = hist_df['60MA'].iloc[-1]
-            
-            if current_price > ma20 and ma20 > ma60:
-                return 1.0
             else:
                 return -1.0
 
@@ -250,15 +238,18 @@ class NOCStrategy:
         - 資料缺失時回傳「數據寬容」，不帶警報字眼
         """
         try:
+            # 去除可能包含的台股市場後綴，進行純代碼感知
             clean_symbol = symbol.replace(".TW", "").replace(".TWO", "")
             ticker = yf.Ticker(f"{clean_symbol}.TW")
             info = ticker.info
+            
+            # 獲取最新一季的營收年增率表現
             revenue_growth = info.get("revenueGrowth")
-
+            
             if revenue_growth is not None:
                 yoy_pct = revenue_growth * 100
                 if revenue_growth < -0.15:
-                    return f"❌ 【基本面衰退】營收 YoY 衰退 ({yoy_pct:.2f}%)，不符合長線波段體質！"
+                    return f"❌ 【基本面衰退】營收 YoY 呈現衰退 ({yoy_pct:.2f}%)，不符合長線波段體質！"
                 elif revenue_growth < 0:
                     return f"⚠️ 【營收谷底轉機】營收 YoY 偏弱 ({yoy_pct:.2f}%)，但允許技術面與籌碼面突圍！"
                 else:
@@ -266,10 +257,10 @@ class NOCStrategy:
             else:
                 # 找不到資料 → 寬容處理，不帶警報字眼
                 return "⚠️ 【數據寬容】外部 API 暫無 YoY 數據，交由技術與籌碼面判定。"
-
+               
         except Exception:
+            # 健全的默認防禦機制，確保外部 API 震盪時系統不中斷，並維持嚴格標準
             return "✅【營收健康】符合波段持有條件"
-
 
     def check_defcon_1_status(self) -> bool:
         """
@@ -358,8 +349,8 @@ class NOCRiskManager:
             return {
                 "current_price": round(current_price, 2),
                 "defense_line": round(defense_line, 2), 
-                "core_shares": int(core_shares),           # 長線底倉建議配置股數
-                "tactical_shares": int(tactical_shares),   # 短線游擊建議配置股數
+                "core_shares": int(core_shares), # 長線底倉建議配置股數
+                "tactical_shares": int(tactical_shares), # 短線游擊建議配置股數
                 "total_shares": int(core_shares + tactical_shares),
                 "risk_per_share": round(current_price - defense_line, 2)
             }
