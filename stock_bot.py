@@ -1,5 +1,5 @@
 # =============================================================================
-# NOC 終極戰情室 v15.5 - 長線波段鎖籌重構完全體 (龍蝦養殖專用)
+# NOC 終極戰情室 v16.0 長短雙軌版 (龍蝦養殖專用)
 # 優化項目：四象限絕對戰術狀態機、15% 物理防爆門、大盤黃燈防禦電路、籌碼換手率與量比擴充
 # 鐵律聲明：全程式保留完整註解與完整電路，嚴禁精簡壓縮，確保戰情穿透力。
 # =============================================================================
@@ -771,8 +771,8 @@ if __name__ == "__main__":
             turnover = td["Turnover_Rate"]
             vol_ratio = td["Volume_Ratio"]
 
-            # 分流大腦：短線區使用 BULL 模式
-            is_lightning = "重點" in cat or "籌碼" in cat or "閃電" in cat
+            # 分流大腦：短線看板使用 BULL 模式（列表名稱包含「短線」）
+            is_lightning = "短線" in cat
             local_market_mode = "BULL" if is_lightning else market_mode
 
             trend_score = strategy.get_trend_score(hist, market_mode=local_market_mode)
@@ -791,7 +791,7 @@ if __name__ == "__main__":
                 chip_msg += f" (連賣 {abs(trust_streak)} 天)"
 
             sym_state = noc_state.get(sym, StockState())
-            alert = "✅ 條件監控中，暫無動作"
+            alert = "✅ 趨勢追蹤中，尚未觸發佈局點"
             trigger_label = ""
             action_plan_text = ""
 
@@ -925,7 +925,7 @@ if __name__ == "__main__":
         logger.info("🔇 [靜默模式] 今日無任何可行動警報（無建倉/停損/獲利巡航等重要事件），系統靜默退出。")
         sys.exit(0)
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v15.5 波段鎖籌版】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.0 長短雙軌版】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
     
     for chart in generated_charts:
         if Path(chart).exists(): 
