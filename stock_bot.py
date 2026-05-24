@@ -471,7 +471,16 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         hist = calculate_chip_signals(hist)
 
         curr_hour = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).hour
-        vol_mult = {10: 4.5, 12: 1.5, 13: 1.1}.get(curr_hour, 1.0)
+        # 修改 2：導入精準線性量能預估 (動態時間計算)
+        now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+        market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
+        market_close = now.replace(hour=13, minute=30, second=0, microsecond=0)
+        total_trading_minutes = (market_close - market_open).total_seconds() / 60.0 # 270 分鐘
+        if market_open < now < market_close:
+            elapsed_mins = max(1.0, (now - market_open).total_seconds() / 60.0)
+            vol_mult = total_trading_minutes / elapsed_mins
+        else:
+            vol_mult = 1.0
         hist["Est_Volume"] = hist["Volume"].copy()
         if len(hist) > 0: 
             hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = int(hist["Volume"].iloc[-1] * vol_mult)
@@ -543,8 +552,8 @@ def preload_all_stocks(all_symbols: Dict[str, str]) -> None:
         for future in as_completed(futures):
             try: 
                 future.result()
-            except: 
-                pass
+            except Exception as e: # 修改 3：解除多執行緒的沉默吃灰
+                logger.error(f"標的 {future_to_symbol[future]} 預載入失敗: {e}")
 
 # =============================================================================
 # === 8. 圖表渲染與資產推播模組 ===
@@ -596,6 +605,9 @@ if __name__ == "__main__":
     # 宣告連線對象
     db = NOCDatabase()
     strategy = NOCStrategy(db)
+    
+    # 修改 4：喚醒進階武器 NOCChipMatrix
+    chip_matrix_analyzer = NOCChipMatrix()
     
     msg_list = []
     
@@ -713,8 +725,8 @@ if __name__ == "__main__":
                 inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
                 
                 chip_msg = td["Chip_Status"]
-                chip_matrix = NOCChipMatrix()
-                chip_tactics_msg = chip_matrix.analyze(hist, market_mode=market_mode)
+                matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=market_mode)
+                chip_tactics_msg = matrix_signal # 使用進階籌碼矩陣訊號
                 inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
                 inv_str += f" 💰 法人籌碼: {chip_msg}\n"
 
@@ -739,9 +751,9 @@ if __name__ == "__main__":
                # 🛡️ 擷取 Trello 手動防線設定
                 trello_stop = data.get("manual_stop", 0.0)
                 
-                # 防守線判斷：若有 Trello 手動防線則優先採用，否則執行 NOC 系統 3.0 ATR 只上移紀律
+                # 修改 1：修復 Trello 手動防線的「獲利天花板」地雷
                 if trello_stop > 0:
-                    final_stop = trello_stop
+                    final_stop = max(trello_stop, sym_state.trailing_stop, calculated_stop)
                 else:
                     final_stop = max(sym_state.trailing_stop, calculated_stop)
 
@@ -751,7 +763,7 @@ if __name__ == "__main__":
                 elif roi_pct <= -15.0 or curr_price < ma60 or curr_price < final_stop:
                     pnl_alert = f"🩸【戰術撤離】跌破防守底線 ({final_stop:.2f})，無條件停損變現！"
                     noc_state[sym] = StockState(status="NONE")
-                elif trello_stop > 0 and sym_state.trailing_stop != trello_stop:
+                elif trello_stop > 0 and sym_state.trailing_stop != final_stop:
                     pnl_alert = f"🛡️【手動指揮】已依據 Trello 覆寫防守線至 {final_stop:.2f}"
                     noc_state[sym].trailing_stop = final_stop
                 elif roi_pct > 0 and curr_price > ma20:
@@ -778,8 +790,8 @@ if __name__ == "__main__":
                     inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
                     
                     chip_msg = td["Chip_Status"]
-                    chip_matrix = NOCChipMatrix()
-                    chip_tactics_msg = chip_matrix.analyze(hist, market_mode=market_mode)
+                    matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=market_mode)
+                    chip_tactics_msg = matrix_signal
                     inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
                     inv_str += f" 💰 法人籌碼: {chip_msg}\n"
 
@@ -826,8 +838,13 @@ if __name__ == "__main__":
             turnover = td["Turnover_Rate"]
             vol_ratio = td["Volume_Ratio"]
 
-            # 呼叫 noc_core 長線濾網模組
-            trend_score = strategy.get_trend_score(hist, market_mode=market_mode)
+            # 修改 5：實作戰區 2 的「長短雙手劍 (看板分流邏輯)」
+            # 判斷看板屬性：短線類（重點、籌碼、閃電）使用 BULL 模式，長線使用市場模式
+            is_lightning = "重點" in cat or "籌碼" in cat or "閃電" in cat
+            local_market_mode = "BULL" if is_lightning else market_mode
+
+            # 呼叫 noc_core 長線濾網模組 (使用 local_market_mode)
+            trend_score = strategy.get_trend_score(hist, market_mode=local_market_mode)
             fund_health = strategy.get_fundamental_health(raw_id)
 
             vol_status = "📈 出量" if est_vol > vma5 * 1.2 else ("📉 量縮" if est_vol < vma5 * 0.8 else "➖ 量平")
@@ -854,7 +871,8 @@ if __name__ == "__main__":
                 if td["Sniper_Signal"]:
                     trigger_label = "🌟 長線多頭結構扭轉金叉"
                     # 執行基本面與長線趨勢硬核攔截
-                    if "衰退" in fund_health or "警報" in fund_health:
+                    # 修改 5：短線區跳過基本面攔截
+                    if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
                         alert = "🛡️【基本面攔截】營收 YoY 衰退，無情淘汰。"
                     elif trend_score < 0:
                         alert = "🛡️【趨勢攔截】長線多頭條件未滿足，拒絕追高。"
@@ -863,12 +881,12 @@ if __name__ == "__main__":
                         action_plan_text = ""
                     else:
                         risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
-                        defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=market_mode)
+                        defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=local_market_mode)
                         stop_price = defense_info["defense_line"]
                         
                         noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
                         alert = f"🚀【長線波段佈局觸發】"
-                        action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=market_mode)
+                        action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
 
             # 移除無用的 if s := "": pass
                 
@@ -877,9 +895,9 @@ if __name__ == "__main__":
             s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
             s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
             
-            # 錯誤 3 修正：改用 NOCChipMatrix
-            chip_matrix = NOCChipMatrix()
-            chip_tactics_msg = chip_matrix.analyze(hist, market_mode=market_mode)
+            # 修改 4：喚醒進階武器 NOCChipMatrix
+            matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=market_mode)
+            chip_tactics_msg = matrix_signal
             s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {chip_tactics_msg}\n"
             s += f" 💰 法人動向: {chip_msg}\n"
             s += f" 📊 財報透視: {fund_health}\n"
@@ -888,7 +906,7 @@ if __name__ == "__main__":
                 s += f" 🎯 條件觸發: {trigger_label}\n"
                 
                 # 🌟 黃燈防禦電路：雷達新火種掃描若未通過長線濾網，禁止產出推播，隔絕盤中雜訊。
-                if is_yellow_light and (trend_score < 0 or "衰退" in fund_health or "警報" in fund_health):
+                if is_yellow_light and (trend_score < 0 or (not is_lightning and ("衰退" in fund_health or "警報" in fund_health))):
                     logger.info(f"🛑 [黃燈防禦攔截] {sym} 大盤黃燈期間未通過嚴格長線雙濾網，強制屏蔽推播。")
                     continue
                     
@@ -904,8 +922,8 @@ if __name__ == "__main__":
                 action_command = s
 
                 # 🚀 智慧過濾器：判定是否具備「實質推播價值」
-                # 放行條件：1.有技術觸發 OR 2.符合白名單(如建倉) OR 3.有籌碼動能
-                has_valid_signal = bool(trigger_label) or any(keyword in action_command for keyword in cfg.ACTION_WHITELIST) or "籌碼動能" in action_command
+                # 放行條件：1.有技術觸發 OR 2.符合白名單(如建倉) OR 3.有籌碼動能 OR 4.進階矩陣發出主力點火
+                has_valid_signal = bool(trigger_label) or any(keyword in action_command for keyword in cfg.ACTION_WHITELIST) or "籌碼動能" in action_command or "主力點火" in matrix_signal
 
                 # 🛡️ 絕對防禦力場 (彌補原本黑名單的漏洞)
                 # 只要內文出現以下任一字眼，管他技術面多好，直接封殺！
