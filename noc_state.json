@@ -292,7 +292,7 @@
     "0050.TW": {
         "status": "REAL_HOLD",
         "entry": 0.0,
-        "trailing_stop": 95.0375
+        "trailing_stop": 95.04749984741211
     },
     "2356.TW": {
         "status": "REAL_HOLD",
@@ -302,11 +302,91 @@
     "00878.TW": {
         "status": "REAL_HOLD",
         "entry": 22.21,
-        "trailing_stop": 26.734815692901613
+        "trailing_stop": 26.7353157043457
     },
     "009816.TW": {
         "status": "REAL_HOLD",
         "entry": 13.24,
-        "trailing_stop": 13.73450002670288
+        "trailing_stop": 13.73600001335144
+    },
+    "00878": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2377": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "009816": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "0050": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2409": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2356": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3163": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2324": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2353": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2352": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3714": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "1301": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "1513": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "1326": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "1476": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "1605": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
     }
 }
