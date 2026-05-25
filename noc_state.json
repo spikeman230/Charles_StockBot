@@ -292,7 +292,7 @@
     "0050.TW": {
         "status": "REAL_HOLD",
         "entry": 0.0,
-        "trailing_stop": 95.04749984741211
+        "trailing_stop": 95.0525001525879
     },
     "2356.TW": {
         "status": "REAL_HOLD",
@@ -302,12 +302,12 @@
     "00878.TW": {
         "status": "REAL_HOLD",
         "entry": 22.21,
-        "trailing_stop": 26.7353157043457
+        "trailing_stop": 26.735815715789794
     },
     "009816.TW": {
         "status": "REAL_HOLD",
         "entry": 13.24,
-        "trailing_stop": 13.73600001335144
+        "trailing_stop": 13.736500024795532
     },
     "00878": {
         "status": "NONE",
@@ -385,6 +385,256 @@
         "trailing_stop": 0.0
     },
     "1605": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2308": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3008": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3034": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3711": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2357": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2395": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2301": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2345": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "4938": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "6669": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2002": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2615": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "8299": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2383": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3443": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "6488": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "8069": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "6274": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "6176": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3044": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "4958": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3702": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2404": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3532": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3105": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "5347": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "5483": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2313": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2368": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3042": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3583": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "5269": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "6531": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "4966": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "8016": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2451": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "8081": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3227": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "1514": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2049": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "4919": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2610": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "1504": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2618": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "1717": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "6446": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "1402": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "6579": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3376": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "2014": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
