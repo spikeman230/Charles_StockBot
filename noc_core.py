@@ -46,20 +46,40 @@ def analyze_chip_tactics(turnover: float, volume_ratio: float, market_mode: str 
         return "➖ 籌碼動態平穩"
 
 # =============================================================================
-# 🚀 模組 0.1: 進階籌碼矩陣判定引擎 (NOCChipMatrix) - 動態突破條件
+# 🚀 模組 0.1: 進階籌碼矩陣判定引擎 (NOCChipMatrix) - 動態突破條件 + 股本分級
 # =============================================================================
 class NOCChipMatrix:
     """
-    華爾街級籌碼矩陣判定器，支援雙模式突破門檻：
-    - BULL 模式：量 > 5日均量 1.3倍 + 突破 10日高點 → 主力點火
-    - BEAR 模式：量 > 5日均量 1.5倍 + 突破 20日高點 → 主力點火
+    華爾街級籌碼矩陣判定器，支援雙模式突破門檻及股本分級：
+    - BULL 模式：量比 ≥ 1.3倍 + 突破 N 日高點
+    - BEAR 模式：量比 ≥ 1.5倍 + 突破 N 日高點
+    - 股本分級動態調整換手率門檻（大型股 ≥ 1%，中型股 ≥ 2.5%，小型股 ≥ 5%）
     """
     def analyze(self, df: pd.DataFrame, market_mode: str = "BEAR") -> str:
         try:
             latest = df.iloc[-1]
-            avg_volume_5 = df['Volume'].rolling(5).mean().iloc[-1]
-            volume_ratio = latest['Volume'] / avg_volume_5 if avg_volume_5 != 0 else 0.0
+            
+            # 1. 獲取主程式傳入的精算籌碼指標
+            volume_ratio = latest.get('Volume_Ratio')
+            turnover_rate = latest.get('Turnover_Rate', 0.0)
+            shares_out = latest.get('Shares_Out', 0.0)
+            
+            # 🛡️ 防呆：如果沒有 Volume_Ratio，則手動計算 (除以昨天均量防稀釋)
+            if volume_ratio is None or pd.isna(volume_ratio):
+                vma5_yesterday = df['Volume'].rolling(5).mean().shift(1).iloc[-1]
+                volume_ratio = latest['Volume'] / vma5_yesterday if vma5_yesterday else 0.0
 
+            # 2. 🌟 股本分級制度 (動態換手率門檻)
+            if pd.isna(shares_out) or shares_out == 0:
+                turnover_threshold = 3.0 # 預設防呆門檻
+            elif shares_out >= 3_000_000_000:
+                turnover_threshold = 1.0 # 大型權值股 (>30億股)：換手 1% 即視為異常點火
+            elif shares_out >= 1_000_000_000:
+                turnover_threshold = 2.5 # 中型成長股 (10億~30億股)：換手 2.5% 達標
+            else:
+                turnover_threshold = 5.0 # 小型動能妖股 (<10億股)：需嚴格要求換手 5% 避免騙線
+
+            # 3. 市場模式對應的量比與高點門檻
             if market_mode == "BULL":
                 volume_threshold = 1.3
                 high_lookback = 10
@@ -69,11 +89,14 @@ class NOCChipMatrix:
 
             recent_high = df['High'].rolling(high_lookback).max().iloc[-1]
 
-            if volume_ratio >= volume_threshold and latest['High'] >= recent_high:
+            # 4. 🎯 終極點火判定：量比達標 + 突破前高 + 換手率達標
+            if (volume_ratio >= volume_threshold) and (latest['High'] >= recent_high) and (turnover_rate >= turnover_threshold):
                 return "🔥 主力點火 (籌碼突破)"
             else:
                 return "➖ 無點火訊號"
+                
         except Exception as e:
+            # 防爆盾：保留原始錯誤處理
             logger.error(f"籌碼矩陣分析異常: {e}")
             return "⚠️ 籌碼分析失敗"
 
@@ -195,16 +218,15 @@ class NOCStrategy:
             if revenue_growth is not None:
                 yoy_pct = revenue_growth * 100
                 if revenue_growth < -0.15:
-                    return f"? 【基本面衰退】營收 YoY 呈現嚴重衰退 ({yoy_pct:.2f}%)，不符合長線波段體質！"
+                    return f"❌ 【基本面衰退】營收 YoY 呈現嚴重衰退 ({yoy_pct:.2f}%)，不符合長線波段體質！"
                 elif revenue_growth < 0:
-                    return f"?? 【營收谷底轉機】營收 YoY 偏弱 ({yoy_pct:.2f}%)，但允許技術面與籌碼面突圍！"
+                    return f"⚠️ 【營收谷底轉機】營收 YoY 偏弱 ({yoy_pct:.2f}%)，但允許技術面與籌碼面突圍！"
                 else:
-                    return f"? 【基本面優良】營收 YoY 成長 ({yoy_pct:.2f}%)，符合龍蝦養殖標準"
+                    return f"✅ 【基本面優良】營收 YoY 成長 ({yoy_pct:.2f}%)，符合龍蝦養殖標準"
             else:
-                # 關鍵：API抓不到資料 → 寬容處理，不帶警報字眼
-                return "?? 【數據寬容】外部 API 暫無 YoY 數據，交由技術與籌碼面判定。"
+                return "⚠️ 【數據寬容】外部 API 暫無 YoY 數據，交由技術與籌碼面判定。"
         except Exception:
-            return "?【營收健康】符合波段持有條件"
+            return "✅【營收健康】符合波段持有條件"
 
     def check_defcon_1_status(self) -> bool:
         try:
