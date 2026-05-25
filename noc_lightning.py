@@ -79,48 +79,73 @@ cfg = LightningConfig()
 # =============================================================================
 def scan_stock_for_anomaly(symbol: str) -> dict:
     """
-    籌碼動能異常觀測器：
-    不進行任何交易決策，僅偵測單日爆量 (大於 5 日均量 2 倍) 且價格劇烈波動的標的，
-    做為主力籌碼介入的「足跡」觀察。
+    籌碼動能異常觀測器 + 旱地拔蔥 Boss 級突破偵測
+    - 一般異常：爆量 2 倍以上，漲幅 ≥ 3%
+    - 旱地拔蔥：昨日收盤低於季線、今日站上季線 + 爆量 3 倍以上 + 長紅 ≥ 4%
     """
     try:
+        # 擴充歷史資料至 6 個月，確保足夠計算 60MA
         stock = yf.Ticker(symbol)
-        hist = stock.history(period="1mo").dropna(subset=["Close", "Volume"])
+        hist = stock.history(period="6mo").dropna(subset=["Close", "Volume"])
         
-        if len(hist) < 5:
+        if len(hist) < 60:
             return None
             
-        # 精算基礎均量與現價
+        # 計算技術指標
         hist['5VMA'] = hist['Volume'].rolling(5).mean()
-        current_vol = hist['Volume'].iloc[-1]
-        vma5 = hist['5VMA'].iloc[-2] # 取前一日的 5日均量作為基準比較
+        hist['60MA'] = hist['Close'].rolling(60).mean()
         
+        # 今日與昨日資料
+        current_vol = hist['Volume'].iloc[-1]
+        prev_vol_ma5 = hist['5VMA'].iloc[-2]          # 昨日的 5 日均量
         current_close = hist['Close'].iloc[-1]
         prev_close = hist['Close'].iloc[-2]
-        price_change_pct = ((current_close - prev_close) / prev_close) * 100
+        current_ma60 = hist['60MA'].iloc[-1]
+        prev_ma60 = hist['60MA'].iloc[-2]
         
-        # 防呆機制：避免除以零
-        if pd.isna(vma5) or vma5 == 0:
+        # 防呆處理
+        if pd.isna(prev_vol_ma5) or prev_vol_ma5 == 0:
             return None
             
-        vol_ratio = current_vol / vma5
+        vol_ratio = current_vol / prev_vol_ma5
+        price_change_pct = ((current_close - prev_close) / prev_close) * 100
         
-        # 🛡️ 觀測條件：爆量 2 倍以上，且漲幅大於 3% (顯示有主力點火跡象)
-        if vol_ratio >= 2.0 and price_change_pct >= 3.0:
+        # ========== 雙階層判定 ==========
+        # 條件 A：旱地拔蔥 (Boss 級)
+        just_crossed_60ma = (current_close > current_ma60) and (prev_close <= prev_ma60)
+        is_monster = just_crossed_60ma and (vol_ratio >= 3.0) and (price_change_pct >= 4.0)
+        
+        # 條件 B：一般籌碼異常
+        is_anomaly = (vol_ratio >= 2.0) and (price_change_pct >= 3.0)
+        
+        if is_monster:
             raw_id = symbol.replace(".TW", "").replace(".TWO", "")
             return {
                 "symbol": symbol,
-                "name": raw_id, 
+                "name": raw_id,
+                "close": round(current_close, 2),
+                "vol_ratio": round(vol_ratio, 1),
+                "change_pct": round(price_change_pct, 1),
+                "tactics": "🔥【旱地拔蔥】底部極端爆量，長紅突破季線起漲！",
+                "trello_tip": f"極端爆量 {vol_ratio:.1f} 倍！無懼基本面，強烈建議納入短線追蹤！"
+            }
+        elif is_anomaly:
+            raw_id = symbol.replace(".TW", "").replace(".TWO", "")
+            return {
+                "symbol": symbol,
+                "name": raw_id,
                 "close": round(current_close, 2),
                 "vol_ratio": round(vol_ratio, 1),
                 "change_pct": round(price_change_pct, 1),
                 "tactics": "⚡ 籌碼動能異常 (嚴禁追高，僅供波段觀察)",
                 "trello_tip": f"爆量 {vol_ratio:.1f} 倍。此為市場雜訊觀測，請交由 NOC 核心執行長線濾網判定。"
             }
+        else:
+            return None
             
     except Exception as e:
+        # 發生任何錯誤均靜默回傳 None，不影響整體掃描
         return None
-    return None
 
 # =============================================================================
 # === 3. 主控作戰執行緒 (Main Execution) ===
