@@ -873,8 +873,8 @@ if __name__ == "__main__":
             action_command = s
 
             # 強制輸出分類（白名單）：無論有無技術/籌碼訊號，都強制推播（仍需檢查黑名單）
-            force_include_categories = ["長線觀測區", "短線觀測區"] # 請依您的 Trello 列表名稱調整
-            is_force_output = any(force_cat in cat for force_cat in force_include_categories)
+            force_include_categories = ["👀 長線觀察區 (雷達自動火種)", "👀 短線觀察區 (閃電自動火種)"]
+            is_force_output = cat in force_include_categories
 
             # 黑名單防禦力場（所有股票都必須檢查）
             fatal_flaws = cfg.ACTION_BLACKLIST + ["攔截", "衰退", "警報", "無情淘汰", "拒絕追高"]
