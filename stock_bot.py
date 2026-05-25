@@ -503,6 +503,13 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         hist["Is_Breakout"] = ((hist["Close"].shift(1) < hist["5MA"].shift(1)) & (hist["Close"] > hist["5MA"]) & (hist["Est_Volume"] > hist["5VMA"] * 1.2))
         hist["Sniper_Signal"] = (hist["Is_Bottoming"].rolling(3).max().fillna(0).astype(bool) & hist["Is_Breakout"])
         hist["Sniper_Memory_5D"] = hist["Sniper_Signal"].rolling(5).max().fillna(0)
+        
+        # 新增：旱地拔蔥 (底部極端爆量起漲) 訊號
+        just_crossed_60ma = (hist["Close"] > hist["60MA"]) & (hist["Close"].shift(1) <= hist["60MA"].shift(1))
+        extreme_volume = hist["Volume_Ratio"] >= 3.0
+        solid_green = (hist["Close"] >= hist["Close"].shift(1) * 1.04)
+        hist["Monster_Breakout"] = (just_crossed_60ma & extreme_volume & solid_green)
+        
         hist["20_High"] = hist["High"].rolling(20).max().shift(1)
         hist["Shadow_Ratio"] = (hist["High"] - hist[["Open", "Close"]].max(axis=1)) / (hist["High"] - hist["Low"]).replace(0, 0.001)
 
@@ -795,10 +802,32 @@ if __name__ == "__main__":
             trigger_label = ""
             action_plan_text = ""
 
+            # =========================================================
+            # 狀態機觸發判斷 (優先級：旱地拔蔥 > 狙擊金叉)
+            # =========================================================
             if sym_state.status == "REAL_HOLD": 
                 alert = f"💼 持股防禦區 | 📍 最新防線: {sym_state.trailing_stop:.1f}"
             elif sym_state.status == "NONE":
-                if td["Sniper_Signal"]:
+                # 1. 最高優先級：旱地拔蔥 (Monster Breakout)
+                if td.get("Monster_Breakout", False):
+                    trigger_label = "🔥【旱地拔蔥】底部極端爆量，長紅突破季線！"
+                    # 對接長短線分流：短線看板無視基本面，長線看板嚴格攔截
+                    if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
+                        alert = "🛡️【基本面攔截】營收 YoY 衰退，無情淘汰。"
+                    elif trend_score < 0:
+                        alert = "🛡️【趨勢攔截】長線多頭條件未滿足，拒絕追高。"
+                    elif is_yellow_light:
+                        alert = "🟡【黃燈強制攔截】大盤震盪洗盤，強制攔截新倉。"
+                        action_plan_text = ""
+                    else:
+                        risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
+                        defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=local_market_mode, is_yellow_light=is_yellow_light)
+                        stop_price = defense_info["defense_line"]
+                        noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
+                        alert = "🐉【妖股起漲預警】資金強勢介入，無視基本面，強烈建議觀察試單！"
+                        action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
+                # 2. 次優先級：狙擊金叉 (Sniper_Signal)
+                elif td.get("Sniper_Signal", False):
                     trigger_label = "🌟 長線多頭結構扭轉金叉"
                     if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
                         alert = "🛡️【基本面攔截】營收 YoY 衰退，無情淘汰。"
@@ -844,7 +873,7 @@ if __name__ == "__main__":
             action_command = s
 
             # 強制輸出分類（白名單）：無論有無技術/籌碼訊號，都強制推播（仍需檢查黑名單）
-            force_include_categories = ["長線觀測區", "短線觀測區"]   # 請依您的 Trello 列表名稱調整
+            force_include_categories = ["長線觀測區", "短線觀測區"] # 請依您的 Trello 列表名稱調整
             is_force_output = any(force_cat in cat for force_cat in force_include_categories)
 
             # 黑名單防禦力場（所有股票都必須檢查）
@@ -853,11 +882,10 @@ if __name__ == "__main__":
 
             # 決定是否推播
             if is_force_output:
-                # 強制輸出分類：只要有訊號或無致命缺陷就推播（但最好仍檢查致命缺陷）
+                # 強制輸出分類：只要無致命缺陷就推播（不需要技術訊號）
                 if has_fatal_flaw:
                     logger.info(f"🛑 [強制分類攔截] {sym} 屬於強制輸出區，但觸發致命缺陷，強制封鎖推播。")
                 else:
-                    # 放行推播！
                     if tips: 
                         s += f" 💡 Trello 決策提示: {tips}\n"
                     cat_msg_list.append(s + "\n")
@@ -870,7 +898,6 @@ if __name__ == "__main__":
                     if has_fatal_flaw:
                         logger.info(f"🛑 [過濾器攔截] {sym} 雖有訊號，但觸發致命缺陷，強制封鎖推播。")
                     else:
-                        # 放行推播！
                         if tips: 
                             s += f" 💡 Trello 決策提示: {tips}\n"
                         cat_msg_list.append(s + "\n")
