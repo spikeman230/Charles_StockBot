@@ -1,5 +1,5 @@
 # =============================================================================
-# NOC 終極戰情室 v16.0 長短雙軌版 (龍蝦養殖專用)
+# NOC 終極戰情室 v16.1 - 長短雙軌版 + SQLite 盤後補給 (龍蝦養殖專用)
 # 優化項目：四象限絕對戰術狀態機、15% 物理防爆門、大盤黃燈防禦電路、籌碼換手率與量比擴充
 # 鐵律聲明：全程式保留完整註解與完整電路，嚴禁精簡壓縮，確保戰情穿透力。
 # =============================================================================
@@ -21,6 +21,7 @@ import logging
 import time
 import random
 import threading
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
 from email.mime.multipart import MIMEMultipart
@@ -420,51 +421,21 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     return hist
 
 # =============================================================================
-# === 6. 核心數據抓取與技術指標精算引擎 ===
+# === 6. 核心數據抓取與技術指標精算引擎 (優先使用 SQLite) ===
 # =============================================================================
 def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
     cached = DATA_CACHE.get(symbol)
-    if cached is not None: 
+    if cached is not None:
         return cached
 
-    try:
-        match = re.search(r"\d+", symbol)
-        if match and FINMIND_TOKEN:
-            raw_id = match.group()
-            local_db = NOCDatabase()
-            local_fetcher = NOCDataFetcher(token=FINMIND_TOKEN)
-            local_fetcher.fetch_financial_statements(raw_id, local_db)
-
-        stock = yf.Ticker(symbol)
-        info = stock.info
-        shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
-        hist = stock.history(period="8mo").dropna(subset=["Close"])
-        if len(hist) < 60: 
-            return None
-
-        hist["Shares_Out"] = shares_out if shares_out else np.nan
-        hist["Date_Key"] = hist.index.date
-        if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
-            chip_df = get_finmind_chip_data(symbol, (datetime.datetime.now() - datetime.timedelta(days=200)).strftime("%Y-%m-%d"))
-            if not chip_df.empty:
-                hist = hist.merge(chip_df, left_on="Date_Key", right_index=True, how="left").ffill().fillna(0)
-
-        hist = calculate_chip_signals(hist)
-
-        # 動態量能預估 (使用本地時區)
-        now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
-        market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
-        market_close = now.replace(hour=13, minute=30, second=0, microsecond=0)
-        total_trading_minutes = (market_close - market_open).total_seconds() / 60.0
-        if market_open < now < market_close:
-            elapsed_mins = max(1.0, (now - market_open).total_seconds() / 60.0)
-            vol_mult = total_trading_minutes / elapsed_mins
-        else:
-            vol_mult = 1.0
+    def _calc_indicators(hist: pd.DataFrame, shares_out: float) -> pd.DataFrame:
+        """技術指標計算（共用）"""
+        # 注意：此處假設 hist 已包含 'Open', 'High', 'Low', 'Close', 'Volume'
+        # 且索引為日期，已排序
+        
+        # 計算 Est_Volume（盤後執行時 vol_mult=1.0，直接使用 Volume）
         hist["Est_Volume"] = hist["Volume"].copy()
-        if len(hist) > 0: 
-            hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = int(hist["Volume"].iloc[-1] * vol_mult)
-
+        
         hist["5MA"] = hist["Close"].rolling(5).mean()
         hist["20MA"] = hist["Close"].rolling(20).mean()
         hist["25MA"] = hist["Close"].rolling(25).mean()
@@ -472,7 +443,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         hist["5VMA"] = hist["Est_Volume"].rolling(5).mean()
         hist["60VMA"] = hist["Volume"].rolling(60).mean()
         
-        hist["Turnover_Rate"] = ((hist["Est_Volume"] / hist["Shares_Out"]) * 100).fillna(1.5)
+        hist["Turnover_Rate"] = ((hist["Est_Volume"] / shares_out) * 100).fillna(1.5) if not np.isnan(shares_out) else 1.5
         hist["Volume_Ratio"] = (hist["Est_Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
 
         hist["25MA_Rising"] = hist["25MA"] > hist["25MA"].shift(1)
@@ -504,7 +475,6 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         hist["Sniper_Signal"] = (hist["Is_Bottoming"].rolling(3).max().fillna(0).astype(bool) & hist["Is_Breakout"])
         hist["Sniper_Memory_5D"] = hist["Sniper_Signal"].rolling(5).max().fillna(0)
         
-        # 新增：旱地拔蔥 (底部極端爆量起漲) 訊號
         just_crossed_60ma = (hist["Close"] > hist["60MA"]) & (hist["Close"].shift(1) <= hist["60MA"].shift(1))
         extreme_volume = hist["Volume_Ratio"] >= 3.0
         solid_green = (hist["Close"] >= hist["Close"].shift(1) * 1.04)
@@ -512,12 +482,63 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         
         hist["20_High"] = hist["High"].rolling(20).max().shift(1)
         hist["Shadow_Ratio"] = (hist["High"] - hist[["Open", "Close"]].max(axis=1)) / (hist["High"] - hist["Low"]).replace(0, 0.001)
+        
+        return hist
 
+    try:
+        # 優先從 SQLite 讀取歷史資料
+        db_path = "noc_warroom.db"
+        hist = None
+        if Path(db_path).exists():
+            conn = sqlite3.connect(db_path)
+            query = "SELECT date, open, high, low, close, volume FROM stock_prices WHERE symbol = ? ORDER BY date"
+            df_db = pd.read_sql_query(query, conn, params=(symbol,), parse_dates=['date'])
+            conn.close()
+            if not df_db.empty and len(df_db) >= 60:
+                df_db.set_index('date', inplace=True)
+                # 標準化欄位名稱
+                df_db.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
+                hist = df_db
+                logger.debug(f"從 SQLite 載入 {symbol} 共 {len(hist)} 筆資料")
+        
+        # 若 SQLite 資料不足或無資料，則回退到 yfinance 抓取
+        if hist is None or len(hist) < 60:
+            logger.info(f"SQLite 中 {symbol} 資料不足 ({len(hist) if hist is not None else 0} 筆)，改用 yfinance 即時抓取")
+            stock = yf.Ticker(symbol)
+            hist = stock.history(period="8mo").dropna(subset=["Close"])
+            if len(hist) < 60:
+                return None
+        
+        # 獲取發行股數（仍需從 yfinance 的 info 獲取）
+        stock = yf.Ticker(symbol)
+        info = stock.info
+        shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
+        if shares_out is None:
+            shares_out = np.nan
+        
+        # 計算技術指標
+        hist = _calc_indicators(hist, shares_out)
+        
+        # 若有 FinMind 權杖且為台股，額外合併法人買賣超資料
+        if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
+            chip_df = get_finmind_chip_data(symbol, (datetime.datetime.now() - datetime.timedelta(days=200)).strftime("%Y-%m-%d"))
+            if not chip_df.empty:
+                hist["Date_Key"] = hist.index.date
+                chip_df = chip_df.reset_index()
+                chip_df["Date"] = pd.to_datetime(chip_df["Date"]).dt.date
+                hist = hist.merge(chip_df, left_on="Date_Key", right_on="Date", how="left").ffill().fillna(0)
+                hist.set_index(hist.index.name, inplace=True)
+                hist.drop(columns=["Date_Key"], errors='ignore', inplace=True)
+        hist = calculate_chip_signals(hist)
+        
+        # 補上 PE 與 YoY（即時抓取）
         hist["PE"] = get_pe_ratio(symbol)
         hist["YoY"] = get_revenue_yoy(symbol)
-
+        
+        # 存入快取
         DATA_CACHE.set(symbol, hist)
         return hist
+        
     except Exception as e:
         logger.error(f"❌ 標的 [{symbol}] 執行技術分析精算失敗: {e}")
         return None
@@ -585,7 +606,7 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v16.0 長短雙軌版 啟動。時間：{curr_time}")
+    logger.info(f"NOC 終極戰情室 v16.1 長短雙軌版 (SQLite 盤後補給) 啟動。時間：{curr_time}")
     
     db = NOCDatabase()
     strategy = NOCStrategy(db)
@@ -686,7 +707,6 @@ if __name__ == "__main__":
             vol_ratio = td["Volume_Ratio"]
             yoy = td["YoY"]
 
-            # 修復：庫藏股 ATR 倍數隨市場模式切換（黃燈例外）
             if is_yellow_light:
                 current_atr_multiplier = 2.0
             else:
@@ -778,7 +798,6 @@ if __name__ == "__main__":
             turnover = td["Turnover_Rate"]
             vol_ratio = td["Volume_Ratio"]
 
-            # 分流大腦：短線看板使用 BULL 模式（列表名稱包含「短線」）
             is_lightning = "短線" in cat
             local_market_mode = "BULL" if is_lightning else market_mode
 
@@ -802,16 +821,11 @@ if __name__ == "__main__":
             trigger_label = ""
             action_plan_text = ""
 
-            # =========================================================
-            # 狀態機觸發判斷 (優先級：旱地拔蔥 > 狙擊金叉)
-            # =========================================================
             if sym_state.status == "REAL_HOLD": 
                 alert = f"💼 持股防禦區 | 📍 最新防線: {sym_state.trailing_stop:.1f}"
             elif sym_state.status == "NONE":
-                # 1. 最高優先級：旱地拔蔥 (Monster Breakout)
                 if td.get("Monster_Breakout", False):
                     trigger_label = "🔥【旱地拔蔥】底部極端爆量，長紅突破季線！"
-                    # 對接長短線分流：短線看板無視基本面，長線看板嚴格攔截
                     if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
                         alert = "🛡️【基本面攔截】營收 YoY 衰退，無情淘汰。"
                     elif trend_score < 0:
@@ -826,7 +840,6 @@ if __name__ == "__main__":
                         noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
                         alert = "🐉【妖股起漲預警】資金強勢介入，無視基本面，強烈建議觀察試單！"
                         action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
-                # 2. 次優先級：狙擊金叉 (Sniper_Signal)
                 elif td.get("Sniper_Signal", False):
                     trigger_label = "🌟 長線多頭結構扭轉金叉"
                     if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
@@ -844,12 +857,10 @@ if __name__ == "__main__":
                         alert = f"🚀【長線波段佈局觸發】"
                         action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
 
-            # 建構輸出字串
             s = f"🎯 {name} ({sym})\n"
             s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
             s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
             
-            # 籌碼分析：短線區使用 local_market_mode
             matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
             s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
             s += f" 💰 法人動向: {chip_msg}\n"
@@ -867,22 +878,14 @@ if __name__ == "__main__":
             else:
                 s += f" 👉 作戰指令: {alert}\n"
             
-            # =========================================================
-            # 統一智慧推播過濾器 + 強制輸出分類白名單
-            # =========================================================
             action_command = s
-
-            # 強制輸出分類（白名單）：無論有無技術/籌碼訊號，都強制推播（仍需檢查黑名單）
             force_include_categories = ["長線觀測區", "短線觀測區"]
-            is_force_output = cat in force_include_categories   # 完全相等才強制輸出
+            is_force_output = cat in force_include_categories
             
-            # 黑名單防禦力場（所有股票都必須檢查）
             fatal_flaws = cfg.ACTION_BLACKLIST + ["攔截", "衰退", "警報", "無情淘汰", "拒絕追高"]
             has_fatal_flaw = any(keyword in action_command for keyword in fatal_flaws)
 
-            # 決定是否推播
             if is_force_output:
-                # 強制輸出分類：只要無致命缺陷就推播（不需要技術訊號）
                 if has_fatal_flaw:
                     logger.info(f"🛑 [強制分類攔截] {sym} 屬於強制輸出區，但觸發致命缺陷，強制封鎖推播。")
                 else:
@@ -892,7 +895,6 @@ if __name__ == "__main__":
                     generated_charts.append(draw_chart_if_needed(hist, sym))
                     has_actionable_alerts = True
             else:
-                # 一般分類：僅當有技術訊號或主力點火時才考慮推播
                 has_valid_signal = bool(trigger_label) or "主力點火" in matrix_signal
                 if has_valid_signal:
                     if has_fatal_flaw:
@@ -961,7 +963,7 @@ if __name__ == "__main__":
         logger.info("🔇 [靜默模式] 今日無任何可行動警報（無建倉/停損/獲利巡航等重要事件），系統靜默退出。")
         sys.exit(0)
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.0 長短雙軌版】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.1 長短雙軌版 (SQLite 補給)】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
     
     for chart in generated_charts:
         if Path(chart).exists(): 
