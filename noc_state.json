@@ -568,5 +568,35 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0
+    },
+    "1303": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3017": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "8046": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "3533": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "1590": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
+    },
+    "5522": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0
     }
 }
