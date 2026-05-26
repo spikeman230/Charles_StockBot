@@ -292,7 +292,7 @@
     "0050.TW": {
         "status": "REAL_HOLD",
         "entry": 0.0,
-        "trailing_stop": 95.0525001525879
+        "trailing_stop": 95.44250030517578
     },
     "2356.TW": {
         "status": "REAL_HOLD",
@@ -302,12 +302,12 @@
     "00878.TW": {
         "status": "REAL_HOLD",
         "entry": 22.21,
-        "trailing_stop": 26.735815715789794
+        "trailing_stop": 26.994491958618163
     },
     "009816.TW": {
         "status": "REAL_HOLD",
         "entry": 13.24,
-        "trailing_stop": 13.736500024795532
+        "trailing_stop": 13.816500043869018
     },
     "00878": {
         "status": "NONE",
