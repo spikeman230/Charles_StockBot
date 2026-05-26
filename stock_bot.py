@@ -430,12 +430,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
 
     def _calc_indicators(hist: pd.DataFrame, shares_out: float) -> pd.DataFrame:
         """技術指標計算（共用）"""
-        # 注意：此處假設 hist 已包含 'Open', 'High', 'Low', 'Close', 'Volume'
-        # 且索引為日期，已排序
-        
-        # 計算 Est_Volume（盤後執行時 vol_mult=1.0，直接使用 Volume）
         hist["Est_Volume"] = hist["Volume"].copy()
-        
         hist["5MA"] = hist["Close"].rolling(5).mean()
         hist["20MA"] = hist["Close"].rolling(20).mean()
         hist["25MA"] = hist["Close"].rolling(25).mean()
@@ -443,13 +438,15 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         hist["5VMA"] = hist["Est_Volume"].rolling(5).mean()
         hist["60VMA"] = hist["Volume"].rolling(60).mean()
         
-        hist["Turnover_Rate"] = ((hist["Est_Volume"] / shares_out) * 100).fillna(1.5) if not np.isnan(shares_out) else 1.5
+        if not np.isnan(shares_out) and shares_out > 0:
+            hist["Turnover_Rate"] = ((hist["Est_Volume"] / shares_out) * 100).fillna(1.5)
+        else:
+            hist["Turnover_Rate"] = 1.5
         hist["Volume_Ratio"] = (hist["Est_Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
 
         hist["25MA_Rising"] = hist["25MA"] > hist["25MA"].shift(1)
         hist["Is_Red_Candle"] = hist["Close"] > hist["Open"]
         hist["Lower_Shadow_Ratio"] = (hist[["Open", "Close"]].min(axis=1) - hist["Low"]) / (hist["High"] - hist["Low"]).replace(0, 0.001)
-
         hist["Signal_2560"] = (hist["25MA"] > hist["25MA"].shift(3)) & (hist["5VMA"] > hist["60VMA"]) & (hist["Low"] <= hist["25MA"] * 1.015) & (hist["Close"] >= hist["25MA"] * 0.985) & (hist["Est_Volume"] < hist["5VMA"])
         hist["High_60"] = hist["High"].rolling(window=60, min_periods=20).max()
         hist["Low_60"] = hist["Low"].rolling(window=60, min_periods=20).min()
@@ -462,9 +459,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         delta = hist["Close"].diff()
         rs = delta.clip(lower=0).ewm(com=13, adjust=False).mean() / (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean().replace(0, np.nan)
         hist["RSI"] = (100 - (100 / (1 + rs))).fillna(50)
-
         hist["ATR"] = pd.concat([hist["High"] - hist["Low"], (hist["High"] - hist["Close"].shift(1)).abs(), (hist["Low"] - hist["Close"].shift(1)).abs()], axis=1).max(axis=1).rolling(14).mean()
-
         hist["MACD"] = hist["Close"].ewm(span=12, adjust=False).mean() - hist["Close"].ewm(span=26, adjust=False).mean()
         hist["MACD_Hist"] = hist["MACD"] - hist["MACD"].ewm(span=9, adjust=False).mean()
         hist["STD20"] = hist["Close"].rolling(20).std()
@@ -482,26 +477,34 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         
         hist["20_High"] = hist["High"].rolling(20).max().shift(1)
         hist["Shadow_Ratio"] = (hist["High"] - hist[["Open", "Close"]].max(axis=1)) / (hist["High"] - hist["Low"]).replace(0, 0.001)
-        
         return hist
 
     try:
-        # 優先從 SQLite 讀取歷史資料
+        # ---------- 1. 嘗試從 SQLite 讀取 ----------
         db_path = "noc_warroom.db"
         hist = None
-        if Path(db_path).exists():
-            conn = sqlite3.connect(db_path)
-            query = "SELECT date, open, high, low, close, volume FROM stock_prices WHERE symbol = ? ORDER BY date"
-            df_db = pd.read_sql_query(query, conn, params=(symbol,), parse_dates=['date'])
-            conn.close()
-            if not df_db.empty and len(df_db) >= 60:
-                df_db.set_index('date', inplace=True)
-                # 標準化欄位名稱
-                df_db.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
-                hist = df_db
-                logger.debug(f"從 SQLite 載入 {symbol} 共 {len(hist)} 筆資料")
+        db_available = False
         
-        # 若 SQLite 資料不足或無資料，則回退到 yfinance 抓取
+        if Path(db_path).exists():
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                # 檢查表格是否存在
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='stock_prices'")
+                if cursor.fetchone() is not None:
+                    db_available = True
+                    query = "SELECT date, open, high, low, close, volume FROM stock_prices WHERE symbol = ? ORDER BY date"
+                    df_db = pd.read_sql_query(query, conn, params=(symbol,), parse_dates=['date'])
+                    if not df_db.empty and len(df_db) >= 60:
+                        df_db.set_index('date', inplace=True)
+                        df_db.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
+                        hist = df_db
+                        logger.debug(f"從 SQLite 載入 {symbol} 共 {len(hist)} 筆資料")
+                conn.close()
+            except Exception as e:
+                logger.debug(f"SQLite 讀取失敗 ({symbol}): {e}，將改用 yfinance")
+        
+        # ---------- 2. 若 SQLite 無資料或不足，改用 yfinance ----------
         if hist is None or len(hist) < 60:
             logger.info(f"SQLite 中 {symbol} 資料不足 ({len(hist) if hist is not None else 0} 筆)，改用 yfinance 即時抓取")
             stock = yf.Ticker(symbol)
@@ -509,17 +512,17 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
             if len(hist) < 60:
                 return None
         
-        # 獲取發行股數（仍需從 yfinance 的 info 獲取）
+        # ---------- 3. 獲取發行股數 ----------
         stock = yf.Ticker(symbol)
         info = stock.info
         shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
         if shares_out is None:
             shares_out = np.nan
         
-        # 計算技術指標
+        # ---------- 4. 計算技術指標 ----------
         hist = _calc_indicators(hist, shares_out)
         
-        # 若有 FinMind 權杖且為台股，額外合併法人買賣超資料
+        # ---------- 5. 合併法人買賣超（若有 FinMind）----------
         if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
             chip_df = get_finmind_chip_data(symbol, (datetime.datetime.now() - datetime.timedelta(days=200)).strftime("%Y-%m-%d"))
             if not chip_df.empty:
@@ -531,11 +534,10 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
                 hist.drop(columns=["Date_Key"], errors='ignore', inplace=True)
         hist = calculate_chip_signals(hist)
         
-        # 補上 PE 與 YoY（即時抓取）
+        # ---------- 6. 補上 PE 與 YoY ----------
         hist["PE"] = get_pe_ratio(symbol)
         hist["YoY"] = get_revenue_yoy(symbol)
         
-        # 存入快取
         DATA_CACHE.set(symbol, hist)
         return hist
         
