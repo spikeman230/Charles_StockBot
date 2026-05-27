@@ -1,6 +1,5 @@
 # =============================================================================
-# NOC 終極戰情室 v16.1 長短雙軌版 (龍蝦養殖專用) - 推播優化最終版
-# 修復：KeyError 問題，強制初始化所有股票狀態
+# NOC 終極戰情室 v16.2 長短雙軌版 - 整合四象限量價矩陣
 # =============================================================================
 
 import yfinance as yf
@@ -30,7 +29,11 @@ from dotenv import load_dotenv
 from typing import Optional, Dict, Tuple, Any
 from pathlib import Path
 
-from noc_core import NOCDatabase, NOCStrategy, NOCDataFetcher, NOCRiskManager, analyze_chip_tactics, NOCChipMatrix, is_high_quality_signal
+from noc_core import (
+    NOCDatabase, NOCStrategy, NOCDataFetcher, NOCRiskManager,
+    analyze_chip_tactics, NOCChipMatrix, is_high_quality_signal,
+    assess_volume_turnover_signal # 新增導入
+)
 
 # =============================================================================
 # === 0. 初始化：載入環境變數 & 日誌系統 ===
@@ -587,7 +590,7 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v16.1 長短雙軌版 啟動。時間：{curr_time}")
+    logger.info(f"NOC 終極戰情室 v16.2 長短雙軌版 啟動。時間：{curr_time}")
     
     db = NOCDatabase()
     strategy = NOCStrategy(db)
@@ -756,7 +759,7 @@ if __name__ == "__main__":
                 has_actionable_alerts = True
 
     # =========================================================================
-    # 戰區 2：觀察、雷達與重點觀測區 (雙腦分流) - 重構過濾器 + v16.1 優化
+    # 戰區 2：觀察、雷達與重點觀測區 (雙腦分流) - 整合四象限矩陣
     # =========================================================================
     force_include_categories = ["長線觀測區", "短線觀測區"] # 強制輸出分類
     for cat, stocks in STOCK_DICT.items():
@@ -784,7 +787,7 @@ if __name__ == "__main__":
             k, d = td["K"], td["D"]
             
             atr = td["ATR"] if not pd.isna(td["ATR"]) else 0
-            pos = td["Price_Position"] if not pd.isna(td["Price_Position"]) else 0.5
+            price_position = td["Price_Position"] if not pd.isna(td["Price_Position"]) else 0.5
             trust_streak = int(td["Trust_Streak"])
             bias = ((close - ma20) / ma20) * 100 if ma20 else 0
             pe = td["PE"]
@@ -792,6 +795,7 @@ if __name__ == "__main__":
             
             turnover = td["Turnover_Rate"]
             vol_ratio = td["Volume_Ratio"]
+            shares_out = td.get("Shares_Out", 0.0)
 
             # 分流大腦：短線看板使用 BULL 模式（列表名稱包含「短線」）
             is_lightning = "短線" in cat
@@ -829,6 +833,20 @@ if __name__ == "__main__":
                 continue
 
             # =========================================================
+            # 新增：四象限矩陣信號計算（無論是否觸發訊號都先計算）
+            # =========================================================
+            quadrant_signal = assess_volume_turnover_signal(
+                vol_ratio=vol_ratio,
+                turnover=turnover,
+                shares_out=shares_out,
+                price_position=price_position
+            )
+            # 若四象限判定為「主力出貨區」或「量價背離陷阱」，則強制封鎖推播（即使有技術訊號）
+            if quadrant_signal in ("🔴 主力出貨區", "⚠️ 量價背離陷阱"):
+                logger.info(f"🛑 [四象限攔截] {sym} 信號為 {quadrant_signal}，強制封鎖推播。")
+                continue
+
+            # =========================================================
             # 狀態機觸發判斷 (優先級：旱地拔蔥 > 狙擊金叉)
             # =========================================================
             if sym_state.status == "REAL_HOLD": 
@@ -846,9 +864,8 @@ if __name__ == "__main__":
                         alert = "🟡【黃燈強制攔截】大盤震盪洗盤，強制攔截新倉。"
                         action_plan_text = ""
                     else:
-                        # === v16.1 新增：三重確認濾網 ===
+                        # 三重確認濾網
                         matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
-                        # 將趨勢分數存入 td 暫存供濾網使用
                         td['Trend_Score'] = trend_score
                         if not is_high_quality_signal(hist, td, matrix_signal, local_market_mode):
                             logger.info(f"🔇 低品質訊號攔截 {sym} : {trigger_label}")
@@ -887,16 +904,18 @@ if __name__ == "__main__":
                             alert = f"🚀【長線波段佈局觸發】"
                             action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
 
-            # 建構輸出字串
+            # 建構輸出字串（加入四象限信號）
             s = f"🎯 {name} ({sym})\n"
             s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
             s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
             
-            # 籌碼分析：短線區使用 local_market_mode
+            # 籌碼分析
             matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
             s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
             s += f" 💰 法人動向: {chip_msg}\n"
             s += f" 📊 財報透視: {fund_health}\n"
+            # 新增四象限信號行
+            s += f" 📐 量價四象限: {quadrant_signal}\n"
             
             if trigger_label:
                 s += f" 🎯 條件觸發: {trigger_label}\n"
@@ -1024,7 +1043,7 @@ if __name__ == "__main__":
         logger.info("🔇 [靜默模式] 今日無任何可行動警報（無建倉/停損/獲利巡航等重要事件），系統靜默退出。")
         sys.exit(0)
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.1 長短雙軌版】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.2 長短雙軌版】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
     
     for chart in generated_charts:
         if Path(chart).exists(): 
