@@ -1,341 +1,5 @@
 {
-    "8081": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3131": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3413": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1514": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2049": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2610": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "4919": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1504": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1717": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2618": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2027": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "6446": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2105": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "6005": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1402": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "6579": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3376": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2014": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "0050.TW": {
-        "status": "REAL_HOLD",
-        "entry": 0.0,
-        "trailing_stop": 95.94249992370605,
-        "last_alert_hash": "a0a9de40e9c807a0e2327e402aa16578"
-    },
-    "2356.TW": {
-        "status": "REAL_HOLD",
-        "entry": 52.8,
-        "trailing_stop": 52.53250026702881,
-        "last_alert_hash": "1c91617405d425d92266c9465c51f22e"
-    },
-    "00878.TW": {
-        "status": "REAL_HOLD",
-        "entry": 22.21,
-        "trailing_stop": 27.289524364471436,
-        "last_alert_hash": "29a4e89612b010ffc47483e5d44b52e1"
-    },
-    "009816.TW": {
-        "status": "REAL_HOLD",
-        "entry": 13.24,
-        "trailing_stop": 13.921000051498414,
-        "last_alert_hash": "6f66c681c03a7c97718ff78bb98981f4"
-    },
-    "2356": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "0050": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "00878": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2409": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2377": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "009816": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2353": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3163": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3714": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2352": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2324": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1301": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1326": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1476": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1513": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1536": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1605": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1795": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1802": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1609": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2303": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2317": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2330": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2382": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2344": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2379": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2408": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2449": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2606": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2886": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2887": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2637": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3019": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
     "3231": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3037": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -347,19 +11,13 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "3481": {
+    "6239": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
     "6116": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "6239": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -377,19 +35,7 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "8150": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
     "8431": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "9933": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -401,7 +47,13 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "2454": {
+    "8150": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "9933": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -419,13 +71,13 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "3034": {
+    "2454": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "3008": {
+    "3034": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -437,7 +89,7 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "2357": {
+    "3008": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -449,7 +101,7 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "2301": {
+    "2357": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -473,7 +125,7 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "6669": {
+    "2301": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -491,25 +143,25 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "5388": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2002": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
     "2615": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "2383": {
+    "2883": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2412": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1303": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -521,13 +173,13 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "3443": {
+    "5388": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "6488": {
+    "2383": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -539,7 +191,13 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "6274": {
+    "3443": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "3017": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -551,7 +209,13 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "4958": {
+    "6488": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "6274": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -563,7 +227,7 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "6176": {
+    "4958": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -593,19 +257,25 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
+    "8046": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
     "3105": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "6147": {
+    "5347": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "5347": {
+    "6147": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -623,13 +293,19 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
+    "3013": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
     "2313": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "3013": {
+    "3583": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -641,7 +317,13 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "3583": {
+    "4966": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "3533": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -659,19 +341,7 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "4966": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "8016": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2451": {
+    "8081": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -683,49 +353,13 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "1303": {
+    "8016": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "3017": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "8046": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3533": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1590": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "5522": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2883": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2412": {
+    "3131": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -737,7 +371,61 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
+    "2451": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "3413": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "4919": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
     "1519": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1514": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2049": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2618": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2027": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1504": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1717": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -755,23 +443,71 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
+    "6005": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "5522": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "6446": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "6579": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "0050.TW": {
+        "status": "REAL_HOLD",
+        "entry": 0.0,
+        "trailing_stop": 95.93500022888183,
+        "last_alert_hash": ""
+    },
+    "2356.TW": {
+        "status": "REAL_HOLD",
+        "entry": 52.8,
+        "trailing_stop": 52.50250034332275,
+        "last_alert_hash": ""
+    },
+    "00878.TW": {
+        "status": "REAL_HOLD",
+        "entry": 22.21,
+        "trailing_stop": 27.289024353027344,
+        "last_alert_hash": ""
+    },
+    "009816.TW": {
+        "status": "REAL_HOLD",
+        "entry": 13.99,
+        "trailing_stop": 13.916000032424927,
+        "last_alert_hash": ""
+    },
     "2377.TW": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "3b42994ea173ed7066612a9ec2fe829e"
+        "last_alert_hash": ""
     },
     "2409.TW": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "1227f4f4098ee467fa3564a843119844"
+        "last_alert_hash": ""
     },
     "2353.TW": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "b62894566d51f6aa2bb8a3e26b082014"
+        "last_alert_hash": ""
     },
     "NVDA": {
         "status": "NONE",
@@ -783,25 +519,25 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "a5af9def532ba37db7c7803748de8f28"
+        "last_alert_hash": ""
     },
     "2324.TW": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "807041ad90cf4cc85be74d5f9bc6e1ad"
+        "last_alert_hash": ""
     },
     "3163.TWO": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "027a3ba530cc5dcf6d7b1b79ab947303"
+        "last_alert_hash": ""
     },
     "3714.TW": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "0bf7fcc06c91b2cf96a1a56f7fcce856"
+        "last_alert_hash": ""
     },
     "1301.TW": {
         "status": "NONE",
@@ -825,7 +561,7 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "212c77bde5ef1760c32fc73a83eb6ebf"
+        "last_alert_hash": ""
     },
     "1536.TW": {
         "status": "NONE",
@@ -879,7 +615,7 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "a48467ad4ae23e26d5c182138f6ce9b7"
+        "last_alert_hash": ""
     },
     "2379.TW": {
         "status": "NONE",
@@ -963,13 +699,13 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "e25591f68001ca31f5b9fdfba177396d"
+        "last_alert_hash": ""
     },
     "6239.TW": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "40ae547992f4bb4d99b18eb154f8a485"
+        "last_alert_hash": ""
     },
     "6269.TW": {
         "status": "NONE",
@@ -987,7 +723,7 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "8e7fd6a9cde9dc6cac4a3146e54e1728"
+        "last_alert_hash": ""
     },
     "8431.TWO": {
         "status": "NONE",
@@ -1071,7 +807,7 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "bd0aaa73ffe0561cf803c08b00b61ff8"
+        "last_alert_hash": ""
     },
     "2881.TW": {
         "status": "NONE",
@@ -1101,7 +837,7 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "985dd5058d921c9b475ef8a8f8f32e6f"
+        "last_alert_hash": ""
     },
     "2615.TW": {
         "status": "NONE",
@@ -1203,7 +939,7 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "c8d5f2383fd24489f4da7ab2c10e145c"
+        "last_alert_hash": ""
     },
     "8046.TW": {
         "status": "NONE",
@@ -1215,7 +951,7 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "81edb1f3f21011e88755be7421611a0d"
+        "last_alert_hash": ""
     },
     "5347.TWO": {
         "status": "NONE",
@@ -1233,7 +969,7 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "c34e26e3ac138a5767c9621a8a533e13"
+        "last_alert_hash": ""
     },
     "2368.TW": {
         "status": "NONE",
@@ -1347,7 +1083,7 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "c38beb6e4b1343b7f4ecac4dbe9b00a8"
+        "last_alert_hash": ""
     },
     "2049.TW": {
         "status": "NONE",
@@ -1365,7 +1101,7 @@
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
-        "last_alert_hash": "fb1735d6aabd0eba56ac647501cc27c6"
+        "last_alert_hash": ""
     },
     "1504.TW": {
         "status": "NONE",
