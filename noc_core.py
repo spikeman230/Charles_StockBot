@@ -1,11 +1,6 @@
 # =============================================================================
-# NOC 戰情室核心引擎 (noc_core.py) v16.0 - 龍蝦養殖波段籌碼完全體
-# 核心戰略：
-# 1. 籌碼矩陣擴充：導入量比與換手率多維籌碼判定，精準捕捉主力發動、洗盤與倒貨訊號。
-# 2. 植入 60MA Trend_Score 趨勢判定器，從源頭過濾所有不符合大波段多頭之標的。
-# 3. 強制掛載 YoY 基本面健康濾網，無情淘汰營收衰退之泡沫企業。
-# 4. 風控防禦空間全面升級至 3.0 ATR，大幅拓寬容錯空間，抵禦主力惡意甩轎。
-# 5. 執行緒安全防護升級，內建 MockConn 防爆盾，完美對接外部多執行緒呼叫。
+# NOC 戰情室核心引擎 (noc_core.py) v16.1 - 龍蝦養殖波段籌碼完全體
+# 優化：新增高品質訊號濾網 (三重確認)
 # =============================================================================
 
 import yfinance as yf
@@ -353,3 +348,30 @@ class NOCDataFetcher:
             self.logger.info(f"✅ [DataFetcher] 標的 {symbol} 的波段基本面狀態資料同步更新成功。")
         except Exception as e:
             self.logger.error(f"❌ [DataFetcher] 執行多執行緒財務數據抓取時攔截到異常: {e}")
+
+# =============================================================================
+# 🧠 新增模組 5: 高品質訊號三重確認濾網 (v16.1 優化)
+# =============================================================================
+def is_high_quality_signal(hist: pd.DataFrame, td: pd.Series, matrix_signal: str, market_mode: str) -> bool:
+    """
+    三重確認濾網：
+    1. 量價突破：今日高點突破 20 日內最高點 (排除突破當天)
+    2. 量比足夠：量比 >= 2.0 (極端行情可放寬至 1.8，此處保守 2.0)
+    3. 籌碼強勢或趨勢強勢：籌碼訊號含「極速發動/加速起漲」 或 趨勢分數 > 0
+    """
+    # 計算前 20 日高點 (不含今天)
+    recent_20_high = hist['High'].rolling(20).max().shift(1).iloc[-1]
+    if pd.isna(recent_20_high):
+        recent_20_high = hist['High'].iloc[-2] # fallback
+
+    price_break = td['High'] > recent_20_high
+
+    vol_ratio = td.get('Volume_Ratio', 1.0)
+    strong_volume = vol_ratio >= 2.0
+
+    strong_chip = any(key in matrix_signal for key in ["極速發動", "加速起漲"])
+    # 取得趨勢分數 (需傳入 NOCStrategy 實例，此處簡化：直接從 td 取得預先計算好的 trend_score)
+    trend_score = td.get('Trend_Score', -1.0)
+    good_trend = trend_score > 0
+
+    return price_break and strong_volume and (strong_chip or good_trend)
