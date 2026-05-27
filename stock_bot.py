@@ -1,8 +1,6 @@
 # =============================================================================
 # NOC 終極戰情室 v16.1 長短雙軌版 (龍蝦養殖專用) - 推播優化最終版
-# 優化項目：四象限絕對戰術狀態機、15% 物理防爆門、大盤黃燈防禦電路、籌碼換手率與量比擴充
-# v16.1 新增：三重確認濾網、推播去重、ETF週報、黃燈完全攔截、活躍度門檻
-# 鐵律聲明：全程式保留完整註解與完整電路，嚴禁精簡壓縮，確保戰情穿透力。
+# 修復：KeyError 問題，強制初始化所有股票狀態
 # =============================================================================
 
 import yfinance as yf
@@ -22,7 +20,7 @@ import logging
 import time
 import random
 import threading
-import hashlib # 用於推播去重
+import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
 from email.mime.multipart import MIMEMultipart
@@ -93,7 +91,7 @@ class StockState:
     status : str = "NONE"
     entry : float = 0.0
     trailing_stop : float = 0.0
-    last_alert_hash : str = "" # 新增：避免重複推播
+    last_alert_hash : str = ""
 
     def to_dict(self) -> dict: 
         return asdict(self)
@@ -682,7 +680,11 @@ if __name__ == "__main__":
             roi_pct = ((curr_price - buy_price) / buy_price) * 100 if buy_price else 0
 
             etf_icon, _, _ = get_etf_strategy(sym, data["name"])
-            sym_state = noc_state.get(sym, StockState())
+            
+            # === 強制初始化狀態 ===
+            if sym not in noc_state:
+                noc_state[sym] = StockState()
+            sym_state = noc_state[sym]
 
             ma20 = td["20MA"]
             ma60 = td["60MA"]
@@ -810,7 +812,11 @@ if __name__ == "__main__":
             elif trust_streak < 0: 
                 chip_msg += f" (連賣 {abs(trust_streak)} 天)"
 
-            sym_state = noc_state.get(sym, StockState())
+            # === 強制初始化狀態 ===
+            if sym not in noc_state:
+                noc_state[sym] = StockState()
+            sym_state = noc_state[sym]
+
             alert = "✅ 趨勢追蹤中，尚未觸發佈局點"
             trigger_label = ""
             action_plan_text = ""
