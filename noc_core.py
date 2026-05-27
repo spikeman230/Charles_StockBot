@@ -1,6 +1,6 @@
 # =============================================================================
-# NOC 戰情室核心引擎 (noc_core.py) v16.1 - 龍蝦養殖波段籌碼完全體
-# 優化：新增高品質訊號濾網 (三重確認)
+# NOC 戰情室核心引擎 (noc_core.py) v16.2 - 龍蝦養殖波段籌碼完全體
+# 優化：新增量比×換手率四象限戰術矩陣 (assess_volume_turnover_signal)
 # =============================================================================
 
 import yfinance as yf
@@ -94,6 +94,44 @@ class NOCChipMatrix:
             # 防爆盾：保留原始錯誤處理
             logger.error(f"籌碼矩陣分析異常: {e}")
             return "⚠️ 籌碼分析失敗"
+
+# =============================================================================
+# 🚀 模組 0.2: 量比 × 換手率 四象限戰術矩陣 (v16.2 新增)
+# =============================================================================
+def assess_volume_turnover_signal(vol_ratio: float, turnover: float, shares_out: float, price_position: float) -> str:
+    """
+    量比 × 換手率 四象限戰術矩陣 (根據股本分級動態門檻)
+    - vol_ratio: 量比 (今日量 / 5日均量)
+    - turnover: 換手率 (%)
+    - shares_out: 股本 (股數)
+    - price_position: 股價在60日區間的位置 (0~1)，>0.8 代表接近高檔
+    回傳：戰術訊號文字
+    """
+    # 股本分級門檻
+    if shares_out >= 3_000_000_000:
+        turnover_threshold = 1.0
+    elif shares_out >= 1_000_000_000:
+        turnover_threshold = 2.5
+    else:
+        turnover_threshold = 5.0
+
+    # 強多信號 (起漲攻擊) - 量比 ≥1.5 且 換手率達門檻
+    if vol_ratio >= 1.5 and turnover >= turnover_threshold:
+        return "🟢 起漲攻擊區"
+    
+    # 死亡信號 (主力出貨) - 爆量(量比≥2) + 換手率 > 門檻1.6倍 + 股價位於高檔(>0.8)
+    if vol_ratio >= 2.0 and turnover >= turnover_threshold * 1.6 and price_position > 0.8:
+        return "🔴 主力出貨區"
+    
+    # 假突破陷阱 - 量比大(≥1.8) 但換手率極低 (<門檻一半)
+    if vol_ratio >= 1.8 and turnover < turnover_threshold * 0.5:
+        return "⚠️ 量價背離陷阱"
+    
+    # 量縮低換手 (洗盤/人氣退潮)
+    if vol_ratio < 0.8 and turnover < turnover_threshold:
+        return "➖ 量縮低換手 (洗盤/人氣退潮)"
+    
+    return "➖ 中性觀望"
 
 # =============================================================================
 # 💾 輔助模組: 執行緒安全資料庫連線防爆盾
@@ -350,13 +388,13 @@ class NOCDataFetcher:
             self.logger.error(f"❌ [DataFetcher] 執行多執行緒財務數據抓取時攔截到異常: {e}")
 
 # =============================================================================
-# 🧠 新增模組 5: 高品質訊號三重確認濾網 (v16.1 優化)
+# 🧠 模組 5: 高品質訊號三重確認濾網 (v16.1 保留)
 # =============================================================================
 def is_high_quality_signal(hist: pd.DataFrame, td: pd.Series, matrix_signal: str, market_mode: str) -> bool:
     """
     三重確認濾網：
     1. 量價突破：今日高點突破 20 日內最高點 (排除突破當天)
-    2. 量比足夠：量比 >= 2.0 (極端行情可放寬至 1.8，此處保守 2.0)
+    2. 量比足夠：量比 >= 2.0
     3. 籌碼強勢或趨勢強勢：籌碼訊號含「極速發動/加速起漲」 或 趨勢分數 > 0
     """
     # 計算前 20 日高點 (不含今天)
@@ -370,7 +408,6 @@ def is_high_quality_signal(hist: pd.DataFrame, td: pd.Series, matrix_signal: str
     strong_volume = vol_ratio >= 2.0
 
     strong_chip = any(key in matrix_signal for key in ["極速發動", "加速起漲"])
-    # 取得趨勢分數 (需傳入 NOCStrategy 實例，此處簡化：直接從 td 取得預先計算好的 trend_score)
     trend_score = td.get('Trend_Score', -1.0)
     good_trend = trend_score > 0
 
