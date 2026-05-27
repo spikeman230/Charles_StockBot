@@ -1,6 +1,6 @@
 # =============================================================================
-# NOC 終極戰情室 v16.3 長短雙軌版 - 解除警報重複限制
-# 變更：移除所有 last_alert_hash 去重邏輯，保留白名單強制輸出
+# NOC 終極戰情室 v16.4 長短雙軌版 - 實戰強化最終版
+# 包含：白名單強制輸出、四象限矩陣+K線形態、去重移除、黃燈攔截
 # =============================================================================
 
 import yfinance as yf
@@ -20,7 +20,7 @@ import logging
 import time
 import random
 import threading
-import hashlib # 保留匯入，但不再用於去重
+import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
 from email.mime.multipart import MIMEMultipart
@@ -36,9 +36,6 @@ from noc_core import (
     assess_volume_turnover_signal
 )
 
-# =============================================================================
-# === 0. 初始化：載入環境變數 & 日誌系統 ===
-# =============================================================================
 load_dotenv()
 
 LOG_FILE = "noc_system.log"
@@ -54,7 +51,7 @@ logger = logging.getLogger(__name__)
 logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
 # =============================================================================
-# === 1. 機密環境變數與全域波段組態 ===
+# 環境變數與組態
 # =============================================================================
 TG_TOKEN = os.getenv("TG_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
@@ -81,23 +78,23 @@ class Config:
     RADAR_FILE : str = "radar_targets.json"
     LIGHTNING_FILE : str = "lightning_targets.json"
     GUERRILLA_FILE : str = "guerrilla_targets.json"
-    
+
     ACTION_WHITELIST : list = ["建倉", "試單", "波段", "佈局", "長線鎖籌", "加碼", "扣款", "獲利巡航", "浮虧防禦", "洗盤耐受", "戰術撤離", "基本面瓦解", "物理防爆門", "護城河瓦解", "洗盤耐受區", "籌碼動能"]
     ACTION_BLACKLIST : list = ["持股觀望", "暫停進場", "嚴格觀望", "不建議進場", "等待", "不動用資金", "不適用", "營收衰退", "大盤進入震盪洗盤期"]
 
 cfg = Config()
 
 # =============================================================================
-# === 1.2 強型別波段狀態管理結構 (保留 last_alert_hash 但不再使用) ===
+# 波段狀態管理 (保留 last_alert_hash 但不再使用)
 # =============================================================================
 @dataclass
 class StockState:
     status : str = "NONE"
     entry : float = 0.0
     trailing_stop : float = 0.0
-    last_alert_hash : str = "" # 保留欄位相容舊狀態，但不再用於去重
+    last_alert_hash : str = ""
 
-    def to_dict(self) -> dict: 
+    def to_dict(self) -> dict:
         return asdict(self)
 
     @staticmethod
@@ -110,7 +107,7 @@ class StockState:
         )
 
 # =============================================================================
-# === 1.3 記憶體快取管理器 ===
+# 快取管理器
 # =============================================================================
 @dataclass
 class CacheEntry:
@@ -125,7 +122,7 @@ class DataCacheManager:
 
     def get(self, key: str) -> Optional[Any]:
         entry = self._cache.get(key)
-        if entry is None: 
+        if entry is None:
             return None
         if datetime.datetime.utcnow() - entry.timestamp > self._ttl:
             del self._cache[key]
@@ -136,28 +133,25 @@ class DataCacheManager:
         if len(self._cache) >= self._max:
             evict_count = max(1, self._max // 10)
             oldest_keys = sorted(self._cache, key=lambda k: self._cache[k].timestamp)[:evict_count]
-            for k in oldest_keys: 
+            for k in oldest_keys:
                 del self._cache[k]
         self._cache[key] = CacheEntry(data=data)
 
 DATA_CACHE = DataCacheManager(ttl_minutes=cfg.CACHE_TTL_MINUTES, max_items=cfg.CACHE_MAX_ITEMS)
 
 # =============================================================================
-# === 2. 戰略資產歸類引擎 ===
+# 戰略資產歸類
 # =============================================================================
 _ETF_DIV_KEYS = ["高股息","優息","0056","00878","00919","00929","00915","00713","00939","00940","00936"]
 _ETF_MKT_KEYS = ["0050","006208","市值","00881","科技","半導體","5G","00891","00892","009816"]
 
 def get_etf_strategy(symbol: str, name: str) -> Tuple[str, float, str]:
-    if any(k in name or k in symbol for k in _ETF_DIV_KEYS): 
+    if any(k in name or k in symbol for k in _ETF_DIV_KEYS):
         return "💰高股息", 5.0, "控管殖利率 (5%乖離預警)"
-    elif any(k in name or k in symbol for k in _ETF_MKT_KEYS): 
+    elif any(k in name or k in symbol for k in _ETF_MKT_KEYS):
         return "🚀市值/主題型", 10.0, "成長動能區 (10%乖離預警)"
     return "🔸一般型", 8.0, "趨勢防禦區 (8%乖離預警)"
 
-# =============================================================================
-# === 2.2 軍規長線部署計畫產出器 ===
-# =============================================================================
 def build_tactical_plan(symbol: str, close: float, hist: pd.DataFrame, trend_score: float, fund_health: str, manual_stop: float = 0.0, market_mode: str = "BEAR") -> str:
     if "衰退" in fund_health or "警報" in fund_health:
         return f" 🛡️ 【基本面攔截】營收年增率衰退，不予執行任何長線養殖建倉！\n"
@@ -183,42 +177,41 @@ def build_tactical_plan(symbol: str, close: float, hist: pd.DataFrame, trend_sco
     return plan
 
 # =============================================================================
-# === 3. 交易日感知模組 ===
+# 交易日感知
 # =============================================================================
 def is_trading_day(curr_date: datetime.date) -> bool:
-    if curr_date.weekday() >= 5: 
+    if curr_date.weekday() >= 5:
         return False
     try:
         tsm = yf.Ticker("2330.TW").history(period="5d")
-        if tsm.empty: 
-            return True 
+        if tsm.empty:
+            return True
         last_trading_date = tsm.index[-1].date()
         diff_days = (curr_date - last_trading_date).days
-        return diff_days <= 1 
+        return diff_days <= 1
     except Exception as e:
         logger.warning(f"交易日感知異常，默認開啟放行: {e}")
         return True
 
 # =============================================================================
-# === 4. Trello 自動化作戰看板整合模組 ===
+# Trello 整合
 # =============================================================================
-def _trello_params(**extra) -> dict: 
+def _trello_params(**extra) -> dict:
     return {"key": TRELLO_KEY, "token": TRELLO_TOKEN, **extra}
 
-def _trello_available() -> bool: 
+def _trello_available() -> bool:
     return all([TRELLO_KEY, TRELLO_TOKEN, TRELLO_BOARD_ID])
 
 def update_trello_system_status(status_msg: str, color: str = "🟢") -> None:
-    if not _trello_available(): 
+    if not _trello_available():
         return
     url = f"https://api.trello.com/1/boards/{TRELLO_BOARD_ID}/lists"
     try:
         res = requests.get(url, params=_trello_params(cards="open"), timeout=10)
         res.raise_for_status()
         lists_data = res.json()
-        if not lists_data: 
+        if not lists_data:
             return
-
         first_list_id = lists_data[0]["id"]
         status_card_id = None
         for lst in lists_data:
@@ -226,16 +219,14 @@ def update_trello_system_status(status_msg: str, color: str = "🟢") -> None:
                 if "NOC 系統狀態" in card["name"]:
                     status_card_id = card["id"]
                     break
-            if status_card_id: 
+            if status_card_id:
                 break
-
         tw_tz = datetime.timezone(datetime.timedelta(hours=8))
         date_str = datetime.datetime.now(tw_tz).strftime("%m/%d")
         new_name = f"{color} NOC 系統狀態：{status_msg} ({date_str})"
-
-        if status_card_id: 
+        if status_card_id:
             requests.put(f"https://api.trello.com/1/cards/{status_card_id}", params=_trello_params(name=new_name), timeout=10)
-        else: 
+        else:
             requests.post("https://api.trello.com/1/cards", params=_trello_params(idList=first_list_id, name=new_name, pos="top"), timeout=10)
     except Exception as e:
         logger.error(f"Trello 看板系統狀態更新失敗: {e}")
@@ -264,16 +255,16 @@ def _parse_card_to_portfolio(card: dict) -> Tuple[str, dict]:
     price_match = re.search(r"成本[：:]\s*([0-9.]+)", desc)
     shares_match = re.search(r"股數[：:]\s*([0-9]+)", desc)
     stop_match = re.search(r"(防線|停損|防守)[：:]\s*([0-9.]+)", desc)
-    if price_match: 
+    if price_match:
         buy_price = float(price_match.group(1))
-    if shares_match: 
+    if shares_match:
         shares = int(shares_match.group(1))
     if stop_match:
         manual_stop = float(stop_match.group(2))
     return symbol, {"name": name, "buy_price": buy_price, "shares": shares, "trello_tip": desc, "manual_stop": manual_stop}
 
 def fetch_trello_deployment() -> Tuple[Optional[dict], Optional[dict]]:
-    if not _trello_available(): 
+    if not _trello_available():
         return None, None
     url = f"https://api.trello.com/1/boards/{TRELLO_BOARD_ID}/lists"
     try:
@@ -285,7 +276,7 @@ def fetch_trello_deployment() -> Tuple[Optional[dict], Optional[dict]]:
             list_name = lst["name"]
             is_portfolio_list = "庫存" in list_name or "庫藏" in list_name
             for card in lst.get("cards", []):
-                if "NOC 系統狀態" in card["name"]: 
+                if "NOC 系統狀態" in card["name"]:
                     continue
                 if is_portfolio_list:
                     sym, info = _parse_card_to_portfolio(card)
@@ -294,27 +285,27 @@ def fetch_trello_deployment() -> Tuple[Optional[dict], Optional[dict]]:
                     sym, info = _parse_card_to_stock(card)
                     trello_dict.setdefault(list_name, {})[sym] = info
         return trello_dict, my_portfolio
-    except Exception as e: 
+    except Exception as e:
         logger.error(f"無法完整拉取 Trello 看板配置: {e}")
         return None, None
 
 # =============================================================================
-# === 5. 本地狀態與戰場數據處理模組 ===
+# 本地狀態管理
 # =============================================================================
 def load_state() -> Dict[str, StockState]:
-    if not Path(cfg.STATE_FILE).exists(): 
+    if not Path(cfg.STATE_FILE).exists():
         return {}
     try:
-        with open(cfg.STATE_FILE, "r", encoding="utf-8") as f: 
+        with open(cfg.STATE_FILE, "r", encoding="utf-8") as f:
             return {sym: StockState.from_dict(d) for sym, d in json.load(f).items()}
-    except: 
+    except:
         return {}
 
 def save_state(state: Dict[str, StockState]) -> None:
     try:
-        with open(cfg.STATE_FILE, "w", encoding="utf-8") as f: 
+        with open(cfg.STATE_FILE, "w", encoding="utf-8") as f:
             json.dump({sym: s.to_dict() for sym, s in state.items()}, f, ensure_ascii=False, indent=4)
-    except: 
+    except:
         pass
 
 def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, predict, chip_signal, alert) -> None:
@@ -322,16 +313,16 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, pred
     try:
         with open(cfg.LOG_FILE_CSV, mode="a", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
-            if not log_exists: 
+            if not log_exists:
                 writer.writerow(["日期","代號","名稱","收盤價","RSI","量能狀態","趨勢狀態","戰場預判","籌碼訊號","行動指令"])
             writer.writerow([date, symbol, name, f"{close_price:.2f}", f"{rsi:.2f}", vol_status, status, predict, chip_signal, alert])
-    except: 
+    except:
         pass
 
 def get_market_regime() -> Tuple[bool, str]:
     try:
         twii = yf.Ticker("^TWII").history(period="2mo")
-        if twii.empty: 
+        if twii.empty:
             raise ValueError("加權指數歷史數據下載失敗")
         twii["20MA"] = twii["Close"].rolling(20).mean()
         is_bull = twii["Close"].iloc[-1] > twii["20MA"].iloc[-1]
@@ -341,17 +332,17 @@ def get_market_regime() -> Tuple[bool, str]:
         return True, "搶修中 - 🟡 大盤海象未知"
 
 def get_revenue_yoy(symbol: str):
-    if not FINMIND_TOKEN: 
+    if not FINMIND_TOKEN:
         return "N/A"
     match = re.search(r"\d+", symbol)
-    if not match: 
+    if not match:
         return "N/A"
     try:
         url = "https://api.finmindtrade.com/api/v4/data"
         params = {
-            "dataset": "TaiwanStockMonthRevenue", 
-            "data_id": match.group(), 
-            "start_date": (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d"), 
+            "dataset": "TaiwanStockMonthRevenue",
+            "data_id": match.group(),
+            "start_date": (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d"),
             "token": FINMIND_TOKEN
         }
         r = requests.get(url, params=params, timeout=10)
@@ -362,7 +353,7 @@ def get_revenue_yoy(symbol: str):
             prev = df[(df["revenue_year"] == latest["revenue_year"] - 1) & (df["revenue_month"] == latest["revenue_month"])]
             if not prev.empty and prev.iloc[-1]["revenue"] > 0:
                 return float((latest["revenue"] - prev.iloc[-1]["revenue"]) / prev.iloc[-1]["revenue"] * 100)
-    except: 
+    except:
         pass
     return "N/A"
 
@@ -371,21 +362,21 @@ def get_pe_ratio(symbol: str):
         info = yf.Ticker(symbol).info
         pe = info.get("trailingPE") or info.get("forwardPE")
         return pe if pe else "N/A"
-    except: 
+    except:
         return "N/A"
 
 def get_finmind_chip_data(symbol: str, start_date_str: str) -> pd.DataFrame:
-    if not FINMIND_TOKEN: 
+    if not FINMIND_TOKEN:
         return pd.DataFrame()
     match = re.search(r"\d+", symbol)
-    if not match: 
+    if not match:
         return pd.DataFrame()
     try:
         url = "https://api.finmindtrade.com/api/v4/data"
         params = {
-            "dataset": "TaiwanStockInstitutionalInvestorsBuySell", 
-            "data_id": match.group(), 
-            "start_date": start_date_str, 
+            "dataset": "TaiwanStockInstitutionalInvestorsBuySell",
+            "data_id": match.group(),
+            "start_date": start_date_str,
             "token": FINMIND_TOKEN
         }
         r = requests.get(url, params=params, timeout=10)
@@ -399,40 +390,36 @@ def get_finmind_chip_data(symbol: str, start_date_str: str) -> pd.DataFrame:
             df.loc[df["name"].str.contains("自營商"), "type"] = "Dealer_Inv"
             pivot_df = df.groupby(["date", "type"])["net_buy"].sum().unstack(fill_value=0).reset_index()
             for col in ["Foreign_Inv", "Trust_Inv", "Dealer_Inv"]:
-                if col not in pivot_df.columns: 
+                if col not in pivot_df.columns:
                     pivot_df[col] = 0
             pivot_df["Date"] = pd.to_datetime(pivot_df["date"]).dt.date
             pivot_df.set_index("Date", inplace=True)
             return pivot_df[["Foreign_Inv", "Trust_Inv", "Dealer_Inv"]]
-    except: 
+    except:
         pass
     return pd.DataFrame()
 
 def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     hist["Chip_Status"] = "➖ 中性/偏空"
     hist["Trust_Streak"] = 0
-    if not {"Foreign_Inv", "Trust_Inv", "Dealer_Inv"}.issubset(hist.columns): 
+    if not {"Foreign_Inv", "Trust_Inv", "Dealer_Inv"}.issubset(hist.columns):
         return hist
-
     hist["Total_Institutional"] = hist["Foreign_Inv"] + hist["Trust_Inv"] + hist["Dealer_Inv"]
     hist["Signal_CoBuy"] = (hist["Foreign_Inv"] > 0) & (hist["Trust_Inv"] > 0)
     hist["Signal_Trust_Trend"] = ((hist["Trust_Inv"] > 0).astype(int).rolling(5).sum() >= 4) & (hist["Trust_Inv"] > 0)
-
     trust_dir = np.sign(hist["Trust_Inv"])
     hist["Trust_Streak"] = trust_dir.groupby((trust_dir != trust_dir.shift()).cumsum()).cumsum()
-
     conds = [hist["Signal_CoBuy"], hist["Signal_Trust_Trend"], hist["Total_Institutional"] > 0]
     hist["Chip_Status"] = np.select(conds, ["🤝 土洋齊買", "🏦 投信作帳", "📈 法人偏多"], default="➖ 中性/偏空")
     return hist
 
 # =============================================================================
-# === 6. 核心數據抓取與技術指標精算引擎 ===
+# 核心數據抓取與技術指標
 # =============================================================================
 def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
     cached = DATA_CACHE.get(symbol)
-    if cached is not None: 
+    if cached is not None:
         return cached
-
     try:
         match = re.search(r"\d+", symbol)
         if match and FINMIND_TOKEN:
@@ -445,7 +432,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         info = stock.info
         shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
         hist = stock.history(period="8mo").dropna(subset=["Close"])
-        if len(hist) < 60: 
+        if len(hist) < 60:
             return None
 
         hist["Shares_Out"] = shares_out if shares_out else np.nan
@@ -457,7 +444,6 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
 
         hist = calculate_chip_signals(hist)
 
-        # 動態量能預估 (使用本地時區)
         now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
         market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
         market_close = now.replace(hour=13, minute=30, second=0, microsecond=0)
@@ -468,7 +454,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         else:
             vol_mult = 1.0
         hist["Est_Volume"] = hist["Volume"].copy()
-        if len(hist) > 0: 
+        if len(hist) > 0:
             hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = int(hist["Volume"].iloc[-1] * vol_mult)
 
         hist["5MA"] = hist["Close"].rolling(5).mean()
@@ -477,9 +463,14 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         hist["60MA"] = hist["Close"].rolling(60).mean()
         hist["5VMA"] = hist["Est_Volume"].rolling(5).mean()
         hist["60VMA"] = hist["Volume"].rolling(60).mean()
-        
+
         hist["Turnover_Rate"] = ((hist["Est_Volume"] / hist["Shares_Out"]) * 100).fillna(1.5)
         hist["Volume_Ratio"] = (hist["Est_Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
+
+        # K線特徵欄位
+        hist['Candle_Ratio'] = (hist['High'] - hist[['Open','Close']].max(axis=1)) / (hist['High'] - hist['Low'] + 1e-9)
+        hist['Close_vs_High'] = hist['Close'] / hist['High']
+        hist['Is_Red'] = hist['Close'] >= hist['Open']
 
         hist["25MA_Rising"] = hist["25MA"] > hist["25MA"].shift(1)
         hist["Is_Red_Candle"] = hist["Close"] > hist["Open"]
@@ -509,12 +500,12 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         hist["Is_Breakout"] = ((hist["Close"].shift(1) < hist["5MA"].shift(1)) & (hist["Close"] > hist["5MA"]) & (hist["Est_Volume"] > hist["5VMA"] * 1.2))
         hist["Sniper_Signal"] = (hist["Is_Bottoming"].rolling(3).max().fillna(0).astype(bool) & hist["Is_Breakout"])
         hist["Sniper_Memory_5D"] = hist["Sniper_Signal"].rolling(5).max().fillna(0)
-        
+
         just_crossed_60ma = (hist["Close"] > hist["60MA"]) & (hist["Close"].shift(1) <= hist["60MA"].shift(1))
         extreme_volume = hist["Volume_Ratio"] >= 3.0
         solid_green = (hist["Close"] >= hist["Close"].shift(1) * 1.04)
         hist["Monster_Breakout"] = (just_crossed_60ma & extreme_volume & solid_green)
-        
+
         hist["20_High"] = hist["High"].rolling(20).max().shift(1)
         hist["Shadow_Ratio"] = (hist["High"] - hist[["Open", "Close"]].max(axis=1)) / (hist["High"] - hist["Low"]).replace(0, 0.001)
 
@@ -528,7 +519,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         return None
 
 # =============================================================================
-# === 7. 高效率並行預載入機制 ===
+# 並行預載入
 # =============================================================================
 def preload_all_stocks(all_symbols: Dict[str, str]) -> None:
     logger.info(f"啟動高並行預載快取電路，共計 {len(all_symbols)} 檔標的...")
@@ -540,13 +531,13 @@ def preload_all_stocks(all_symbols: Dict[str, str]) -> None:
     with ThreadPoolExecutor(max_workers=cfg.MAX_WORKERS) as executor:
         futures = {executor.submit(_fetch, item): item[0] for item in all_symbols.items()}
         for future in as_completed(futures):
-            try: 
+            try:
                 future.result()
-            except Exception as e: 
+            except Exception as e:
                 logger.error(f"標的 {futures[future]} 預載入失敗: {e}")
 
 # =============================================================================
-# === 8. 圖表渲染與資產推播模組 ===
+# 圖表與推播
 # =============================================================================
 def draw_chart_if_needed(hist: pd.DataFrame, symbol: str) -> str:
     chart_file = f"{symbol}_chart.png"
@@ -554,50 +545,49 @@ def draw_chart_if_needed(hist: pd.DataFrame, symbol: str) -> str:
         mc = mpf.make_marketcolors(up="red", down="green", edge="black", wick="black", volume="gray")
         mpf.plot(hist[-60:], type="candle", style=mpf.make_mpf_style(base_mpf_style="yahoo", marketcolors=mc), volume=True, mav=(5, 20, 60), title=f"Stock: {symbol} (Long-Term Wave)", savefig=chart_file)
     except:
-        try: 
+        try:
             mpf.plot(hist[-60:], type="candle", style="yahoo", volume=True, mav=(5, 20), title=f"Stock: {symbol}", savefig=chart_file)
-        except: 
+        except:
             pass
     return chart_file
 
 def send_reports(subject: str, text_body: str, chart_files: list) -> None:
     if TG_TOKEN and TG_CHAT_ID:
         for chunk in [text_body[i:i+4000] for i in range(0, len(text_body), 4000)]:
-            try: 
+            try:
                 requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage", json={"chat_id": TG_CHAT_ID, "text": chunk, "disable_web_page_preview": True}, timeout=10)
-            except: 
+            except:
                 pass
-            
     if EMAIL_USER and EMAIL_PASS and EMAIL_TO:
         try:
             msg = MIMEMultipart()
             msg["From"], msg["To"], msg["Subject"] = EMAIL_USER, EMAIL_TO, subject
             msg.attach(MIMEText(text_body, "plain", "utf-8"))
             for chart in chart_files:
-                if Path(chart).exists(): 
+                if Path(chart).exists():
                     msg.attach(MIMEImage(open(chart, "rb").read(), name=Path(chart).name))
             with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
                 server.login(EMAIL_USER, EMAIL_PASS)
                 server.send_message(msg)
-        except: 
+        except:
             pass
 
 # =============================================================================
-# === 9. 主控作戰執行緒進入點 (Main Block) ===
+# 主程式
 # =============================================================================
 if __name__ == "__main__":
     tw_tz = datetime.timezone(datetime.timedelta(hours=8))
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v16.3 長短雙軌版 啟動。時間：{curr_time}")
-    
+    logger.info(f"NOC 終極戰情室 v16.4 長短雙軌版 啟動。時間：{curr_time}")
+
     db = NOCDatabase()
     strategy = NOCStrategy(db)
     chip_matrix_analyzer = NOCChipMatrix()
-    
+
     msg_list = []
-    
+
     macro_info = strategy.get_macro_status()
     is_yellow_light = False
 
@@ -605,12 +595,8 @@ if __name__ == "__main__":
         logger.warning("🚨🚨🚨 觸發戰略級拔插頭熔斷協議！大盤環境進入極度危險空頭階段。")
         update_trello_system_status_bg("⚠️ 觸發空頭防禦協議 (全面停止建倉)", "🔴")
         send_reports(
-            f"🚨 NOC 系統最高防空警報 {curr_date}", 
-            f"📡 【NOC 系統強制熔斷通知】\n"
-            f"📅 時間：{curr_time}\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"大盤目前狀態為：{macro_info['status']} - {macro_info['desc']}\n"
-            f"已觸發最高資產保護協議，全系統雷達冷卻關閉，嚴格禁止任何開新倉買進動作！請總司令檢視既有長線持股！", 
+            f"🚨 NOC 系統最高防空警報 {curr_date}",
+            f"📡 【NOC 系統強制熔斷通知】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n大盤目前狀態為：{macro_info['status']} - {macro_info['desc']}\n已觸發最高資產保護協議，全系統雷達冷卻關閉，嚴格禁止任何開新倉買進動作！請總司令檢視既有長線持股！",
             []
         )
         sys.exit(0)
@@ -620,13 +606,12 @@ if __name__ == "__main__":
         cfg.ATR_MULTIPLIER = 2.0
         is_yellow_light = True
         update_trello_system_status_bg("🟡 黃燈防禦協議 (半倉/收緊防護)", "🟡")
-        
+
     if not is_trading_day(curr_date):
         logger.info("今日非台股交易日。戰情室啟動靜默休眠機制。")
         update_trello_system_status_bg("非交易日/休市靜默", "🔴")
         if curr_dt.hour <= 10:
             send_reports(f"NOC 戰情報告 {curr_date} (休市)", f"📡 【NOC 戰情室靜默休眠】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n🔴 今日市場休市，全系統處於資產監守維護狀態，不推播繁雜雜訊。", [])
-        # sys.exit(0) # 保留註解供測試
 
     if not is_yellow_light:
         logger.info("通過環境感知檢查，開始同步雲端 Trello 看板部署...")
@@ -639,7 +624,7 @@ if __name__ == "__main__":
     for fname, label in [(cfg.RADAR_FILE, "👀 長線觀察區 (雷達自動火種)"), (cfg.LIGHTNING_FILE, "👀 短線觀察區 (閃電自動火種)")]:
         if Path(fname).exists():
             try:
-                with open(fname, "r", encoding="utf-8") as f: 
+                with open(fname, "r", encoding="utf-8") as f:
                     STOCK_DICT[label] = json.load(f)
             except Exception as e:
                 logger.error(f"讀取 {fname} 失敗: {e}")
@@ -654,26 +639,26 @@ if __name__ == "__main__":
     is_bull_market, market_msg = get_market_regime()
     market_mode = "BULL" if is_bull_market else "BEAR"
     logger.info(f"📡 市場模式切換 => {market_mode} (大盤訊號: {market_msg})")
-    
+
     noc_state = load_state()
-    
+
     macro_msg = f"🌐 【大盤風向儀】：{macro_info['status']} | {market_msg}\n"
     if is_yellow_light:
         macro_msg += "⚠️ 【黃燈防禦】總兵力天花板強制鎖定 50% 水位 (6.5萬) / 雷達新火種禁止開新倉 / 防守線緊縮至 2.0 ATR 或月線\n"
-    
+
     msg_list = [macro_msg]
     generated_charts = []
     has_data = False
     has_actionable_alerts = False
 
     # =========================================================================
-    # 戰區 1：庫藏股（白名單強制輸出，已移除去重邏輯）
+    # 戰區 1：庫藏股 (白名單強制輸出)
     # =========================================================================
     if MY_PORTFOLIO:
         msg_list.append("━━━━━━━━━━━━━━\n💼 【庫藏股 (長線鎖籌動態防禦動態)】\n━━━━━━━━━━━━━━\n")
         for sym, data in MY_PORTFOLIO.items():
             hist = get_stock_data(sym, data["name"])
-            if hist is None: 
+            if hist is None:
                 continue
 
             raw_id = re.search(r"\d+", sym).group() if re.search(r"\d+", sym) else sym
@@ -683,7 +668,7 @@ if __name__ == "__main__":
             roi_pct = ((curr_price - buy_price) / buy_price) * 100 if buy_price else 0
 
             etf_icon, _, _ = get_etf_strategy(sym, data["name"])
-            
+
             if sym not in noc_state:
                 noc_state[sym] = StockState()
             sym_state = noc_state[sym]
@@ -730,7 +715,6 @@ if __name__ == "__main__":
                 pnl_alert = f"🔍【中立觀察】價格震盪，監控防禦底線 ({final_stop:.2f})。"
                 noc_state[sym].trailing_stop = final_stop
 
-            # ===== 已移除去重判斷，直接推播 =====
             silent_keywords = ["中立觀察", "長線鎖籌", "洗盤耐受區", "獲利巡航"]
             is_silent = any(kw in pnl_alert for kw in silent_keywords)
             if is_silent and cfg.SILENT_MODE:
@@ -750,39 +734,39 @@ if __name__ == "__main__":
                 has_actionable_alerts = True
 
     # =========================================================================
-    # 戰區 2：觀察、雷達與重點觀測區 (移除去重邏輯)
+    # 戰區 2：觀察區 (白名單: 長線觀測區, 短線觀測區)
     # =========================================================================
     force_include_categories = ["長線觀測區", "短線觀測區"]
     for cat, stocks in STOCK_DICT.items():
-        if not stocks: 
+        if not stocks:
             continue
 
         cat_msg_list = []
         for sym, item in stocks.items():
             name = item.get("name", sym) if isinstance(item, dict) else item
             tips = item.get("trello_tip", "") if isinstance(item, dict) else ""
-            
+
             manual_stop_price = 0.0
             stop_match = re.search(r"(?:死線|防線|停損)[:：]\s*([0-9.]+)", tips)
             if stop_match:
                 manual_stop_price = float(stop_match.group(1))
 
             hist = get_stock_data(sym, name)
-            if hist is None: 
+            if hist is None:
                 continue
-            
+
             raw_id = re.search(r"\d+", sym).group() if re.search(r"\d+", sym) else sym
             td, has_data = hist.iloc[-1], True
             close, rsi, ma5, ma20 = td["Close"], td["RSI"], td["5MA"], td["20MA"]
             vma5, est_vol = td["5VMA"], td["Est_Volume"]
-            
+
             atr = td["ATR"] if not pd.isna(td["ATR"]) else 0
             price_position = td["Price_Position"] if not pd.isna(td["Price_Position"]) else 0.5
             trust_streak = int(td["Trust_Streak"])
             bias = ((close - ma20) / ma20) * 100 if ma20 else 0
             pe = td["PE"]
             yoy = td["YoY"]
-            
+
             turnover = td["Turnover_Rate"]
             vol_ratio = td["Volume_Ratio"]
             shares_out = td.get("Shares_Out", 0.0)
@@ -800,9 +784,9 @@ if __name__ == "__main__":
             pe_str = f"{pe:.1f}" if isinstance(pe, float) else str(pe)
 
             chip_msg = td["Chip_Status"]
-            if trust_streak > 0: 
+            if trust_streak > 0:
                 chip_msg += f" (連買 {trust_streak} 天)"
-            elif trust_streak < 0: 
+            elif trust_streak < 0:
                 chip_msg += f" (連賣 {abs(trust_streak)} 天)"
 
             if sym not in noc_state:
@@ -817,19 +801,25 @@ if __name__ == "__main__":
                 logger.debug(f"🟡 黃燈模式跳過 {sym} (分類: {cat})")
                 continue
 
-            # 四象限信號
+            # 四象限信號 (含K線形態)
             quadrant_signal = assess_volume_turnover_signal(
                 vol_ratio=vol_ratio,
                 turnover=turnover,
                 shares_out=shares_out,
-                price_position=price_position
+                price_position=price_position,
+                candle_ratio=td['Candle_Ratio'],
+                is_red=td['Is_Red'],
+                close_vs_high=td['Close_vs_High']
             )
-            if quadrant_signal in ("🔴 主力出貨區", "⚠️ 量價背離陷阱"):
+
+            # 危險信號直接攔截
+            danger_signals = ("🔴 主力出貨區", "⚠️ 量價背離陷阱", "🔴 爆量長上影 (假突破/出貨)", "⚠️ 黑K出量 (賣壓沉重)")
+            if quadrant_signal in danger_signals:
                 logger.info(f"🛑 [四象限攔截] {sym} 信號為 {quadrant_signal}，強制封鎖推播。")
                 continue
 
             # 狀態機觸發判斷
-            if sym_state.status == "REAL_HOLD": 
+            if sym_state.status == "REAL_HOLD":
                 alert = f"💼 持股防禦區 | 📍 最新防線: {sym_state.trailing_stop:.1f}"
             elif sym_state.status == "NONE":
                 if td.get("Monster_Breakout", False):
@@ -883,25 +873,24 @@ if __name__ == "__main__":
             s = f"🎯 {name} ({sym})\n"
             s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
             s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
-            
             matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
             s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
             s += f" 💰 法人動向: {chip_msg}\n"
             s += f" 📊 財報透視: {fund_health}\n"
             s += f" 📐 量價四象限: {quadrant_signal}\n"
-            
+
             if trigger_label:
                 s += f" 🎯 條件觸發: {trigger_label}\n"
                 if is_yellow_light and (trend_score < 0 or (not is_lightning and ("衰退" in fund_health or "警報" in fund_health))):
                     logger.info(f"🛑 [黃燈防禦攔截] {sym} 大盤黃燈期間未通過嚴格長線雙濾網，強制屏蔽推播。")
                     continue
-                if action_plan_text: 
+                if action_plan_text:
                     s += f"{action_plan_text}"
-                else: 
+                else:
                     s += f" 👉 作戰指令: {alert}\n"
             else:
                 s += f" 👉 作戰指令: {alert}\n"
-            
+
             action_command = s
 
             is_force_output = cat in force_include_categories
@@ -910,16 +899,16 @@ if __name__ == "__main__":
                 if not is_active:
                     is_force_output = False
                     logger.debug(f"強制輸出分類 {cat} 中 {sym} 不活躍，降級過濾。")
-            
+
             fatal_flaws = cfg.ACTION_BLACKLIST + ["攔截", "衰退", "警報", "無情淘汰", "拒絕追高", "黃燈強制攔截"]
             has_fatal_flaw = any(keyword in action_command for keyword in fatal_flaws)
 
-            # 推播判斷（已移除去重）
+            # 推播決策 (已移除去重)
             if is_force_output:
                 if has_fatal_flaw:
                     logger.info(f"🛑 [強制分類攔截] {sym} 屬於強制輸出區，但觸發致命缺陷，強制封鎖推播。")
                 else:
-                    if tips: 
+                    if tips:
                         s += f" 💡 Trello 決策提示: {tips}\n"
                     cat_msg_list.append(s + "\n")
                     generated_charts.append(draw_chart_if_needed(hist, sym))
@@ -930,7 +919,7 @@ if __name__ == "__main__":
                     if has_fatal_flaw:
                         logger.info(f"🛑 [過濾器攔截] {sym} 雖有訊號，但觸發致命缺陷，強制封鎖推播。")
                     else:
-                        if tips: 
+                        if tips:
                             s += f" 💡 Trello 決策提示: {tips}\n"
                         cat_msg_list.append(s + "\n")
                         generated_charts.append(draw_chart_if_needed(hist, sym))
@@ -943,36 +932,30 @@ if __name__ == "__main__":
             msg_list.extend(cat_msg_list)
 
     # =========================================================================
-    # 戰區 3：ETF 績效競技場 (週報模式)
+    # 戰區 3：ETF 績效 (週報)
     # =========================================================================
     if curr_dt.weekday() == 4:
         etf_arena = {"💰高股息防禦組": [], "🚀市值與主題成長組": []}
         current_year = curr_date.year
-
         for sym, name in all_symbols.items():
             etf_icon, _, _ = get_etf_strategy(sym, name)
-            if "一般型" in etf_icon: 
+            if "一般型" in etf_icon:
                 continue
-
             hist = get_stock_data(sym, name)
-            if hist is None or len(hist) < 10: 
+            if hist is None or len(hist) < 10:
                 continue
-
             close_price = hist["Close"].iloc[-1]
             qtr_days = min(60, len(hist) - 1)
             qtr_price = hist["Close"].iloc[-(qtr_days + 1)]
             qtr_roi = ((close_price - qtr_price) / qtr_price) * 100 if qtr_price else 0
-
             hist_ytd = hist[hist.index.year == current_year]
             ytd_roi = (((close_price - hist_ytd["Close"].iloc[0]) / hist_ytd["Close"].iloc[0]) * 100 if not hist_ytd.empty and hist_ytd["Close"].iloc[0] != 0 else qtr_roi)
-
             group_key = "💰高股息防禦組" if "高股息" in etf_icon else "🚀市值與主題成長組"
             etf_arena[group_key].append({"name": name, "sym": sym, "qtr_roi": qtr_roi, "ytd_roi": ytd_roi})
-
         if any(etf_arena.values()):
             msg_list.append("━━━━━━━━━━━━━━\n🏆 【ETF 雙引擎長線績效競技場 (週報)】\n━━━━━━━━━━━━━━\n")
             for group_name, group_data in etf_arena.items():
-                if not group_data: 
+                if not group_data:
                     continue
                 msg_list.append(f"**{group_name}**\n")
                 for idx, etf in enumerate(sorted(group_data, key=lambda x: x["qtr_roi"], reverse=True)):
@@ -984,22 +967,22 @@ if __name__ == "__main__":
         logger.info("非週五，跳過 ETF 績效推播 (週報模式)")
 
     # =========================================================================
-    # 最終儲存與推播
+    # 最終推播
     # =========================================================================
-    if not has_data: 
+    if not has_data:
         logger.info("無有效標的運算數據，終止行程。")
         sys.exit(0)
-        
+
     save_state(noc_state)
 
     if not has_actionable_alerts and cfg.SILENT_MODE:
         logger.info("🔇 [靜默模式] 今日無任何可行動警報（無建倉/停損/獲利巡航等重要事件），系統靜默退出。")
         sys.exit(0)
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.3】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
-    
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.4】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+
     for chart in generated_charts:
-        if Path(chart).exists(): 
+        if Path(chart).exists():
             Path(chart).unlink()
-            
+
     logger.info("🚀 全系統長線波段精算追蹤程序執行完畢，資料安全回存本地庫。")
