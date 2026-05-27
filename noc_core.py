@@ -1,6 +1,6 @@
 # =============================================================================
-# NOC 戰情室核心引擎 (noc_core.py) v16.2 - 龍蝦養殖波段籌碼完全體
-# 優化：新增量比×換手率四象限戰術矩陣 (assess_volume_turnover_signal)
+# NOC 戰情室核心引擎 (noc_core.py) v16.4
+# 核心戰略：量價覆蓋 + 四象限矩陣 + K線形態防禦
 # =============================================================================
 
 import yfinance as yf
@@ -13,26 +13,22 @@ import math
 import datetime
 from typing import Dict, Any, Optional
 
-# 🛡️ 啟動靜音防護罩：強制拔除 yfinance 內建的錯誤廣播喇叭，維持戰情室絕對專注
+# 🛡️ 啟動靜音防護罩
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
 # =============================================================================
-# 🚀 模組 0: 籌碼矩陣判定引擎 (Chip Tactics Engine)
+# 🚀 模組 0: 籌碼矩陣判定引擎
 # =============================================================================
 def analyze_chip_tactics(turnover: float, volume_ratio: float, market_mode: str = "BEAR") -> str:
-    """
-    籌碼矩陣判定引擎 (雙模式自適應版)：
-    BULL 模式：對籌碼數據進行 1.3 倍敏感度放大，更容易發出點火與啟動訊號。
-    """
     t_val = turnover * 1.3 if market_mode == "BULL" else turnover
     v_val = volume_ratio * 1.3 if market_mode == "BULL" else volume_ratio
 
     if t_val > 10.0 and v_val > 5.0:
         return "🚀【極速發動】換手與量能極致爆發！主力籌碼全軍突擊，低檔可佈局，高檔提防動能竭盡！"
     elif 5.0 <= t_val <= 10.0 and 3.0 <= v_val <= 5.0:
-        return "🔥【加速起漲】法人大單瘋狂鎖籌！多頭動能確認 (Momentum Confirmed)，波段安全加碼點。"
+        return "🔥【加速起漲】法人大單瘋狂鎖籌！多頭動能確認，波段安全加碼點。"
     elif t_val > 5.0 and 2.0 <= v_val < 3.0:
         return "✅【啟動訊號】主力實彈溫和點火換手！籌碼結構洗淨，波段最佳右側核心底倉建倉點。"
     elif t_val > 5.0 and v_val < 2.0:
@@ -41,40 +37,29 @@ def analyze_chip_tactics(turnover: float, volume_ratio: float, market_mode: str 
         return "➖ 籌碼動態平穩"
 
 # =============================================================================
-# 🚀 模組 0.1: 進階籌碼矩陣判定引擎 (NOCChipMatrix) - 動態突破條件 + 股本分級
+# 🚀 模組 0.1: 進階籌碼矩陣判定器 (NOCChipMatrix)
 # =============================================================================
 class NOCChipMatrix:
-    """
-    華爾街級籌碼矩陣判定器，支援雙模式突破門檻及股本分級：
-    - BULL 模式：量比 ≥ 1.3倍 + 突破 N 日高點
-    - BEAR 模式：量比 ≥ 1.5倍 + 突破 N 日高點
-    - 股本分級動態調整換手率門檻（大型股 ≥ 1%，中型股 ≥ 2.5%，小型股 ≥ 5%）
-    """
     def analyze(self, df: pd.DataFrame, market_mode: str = "BEAR") -> str:
         try:
             latest = df.iloc[-1]
-            
-            # 1. 獲取主程式傳入的精算籌碼指標
             volume_ratio = latest.get('Volume_Ratio')
             turnover_rate = latest.get('Turnover_Rate', 0.0)
             shares_out = latest.get('Shares_Out', 0.0)
-            
-            # 🛡️ 防呆：如果沒有 Volume_Ratio，則手動計算 (除以昨天均量防稀釋)
+
             if volume_ratio is None or pd.isna(volume_ratio):
                 vma5_yesterday = df['Volume'].rolling(5).mean().shift(1).iloc[-1]
                 volume_ratio = latest['Volume'] / vma5_yesterday if vma5_yesterday else 0.0
 
-            # 2. 🌟 股本分級制度 (動態換手率門檻)
             if pd.isna(shares_out) or shares_out == 0:
-                turnover_threshold = 3.0 # 預設防呆門檻
+                turnover_threshold = 3.0
             elif shares_out >= 3_000_000_000:
-                turnover_threshold = 1.0 # 大型權值股 (>30億股)：換手 1% 即視為異常點火
+                turnover_threshold = 1.0
             elif shares_out >= 1_000_000_000:
-                turnover_threshold = 2.5 # 中型成長股 (10億~30億股)：換手 2.5% 達標
+                turnover_threshold = 2.5
             else:
-                turnover_threshold = 5.0 # 小型動能妖股 (<10億股)：需嚴格要求換手 5% 避免騙線
+                turnover_threshold = 5.0
 
-            # 3. 市場模式對應的量比與高點門檻
             if market_mode == "BULL":
                 volume_threshold = 1.3
                 high_lookback = 10
@@ -84,30 +69,21 @@ class NOCChipMatrix:
 
             recent_high = df['High'].rolling(high_lookback).max().iloc[-1]
 
-            # 4. 🎯 終極點火判定：量比達標 + 突破前高 + 換手率達標
             if (volume_ratio >= volume_threshold) and (latest['High'] >= recent_high) and (turnover_rate >= turnover_threshold):
                 return "🔥 主力點火 (籌碼突破)"
             else:
                 return "➖ 無點火訊號"
-                
         except Exception as e:
-            # 防爆盾：保留原始錯誤處理
             logger.error(f"籌碼矩陣分析異常: {e}")
             return "⚠️ 籌碼分析失敗"
 
 # =============================================================================
-# 🚀 模組 0.2: 量比 × 換手率 四象限戰術矩陣 (v16.2 新增)
+# 🚀 模組 0.2: 量比 × 換手率 四象限戰術矩陣 (v2.0 含K線形態)
 # =============================================================================
-def assess_volume_turnover_signal(vol_ratio: float, turnover: float, shares_out: float, price_position: float) -> str:
-    """
-    量比 × 換手率 四象限戰術矩陣 (根據股本分級動態門檻)
-    - vol_ratio: 量比 (今日量 / 5日均量)
-    - turnover: 換手率 (%)
-    - shares_out: 股本 (股數)
-    - price_position: 股價在60日區間的位置 (0~1)，>0.8 代表接近高檔
-    回傳：戰術訊號文字
-    """
-    # 股本分級門檻
+def assess_volume_turnover_signal(vol_ratio: float, turnover: float, shares_out: float,
+                                  price_position: float, candle_ratio: float = 0.0,
+                                  is_red: bool = True, close_vs_high: float = 1.0) -> str:
+    """四象限矩陣 + 爆量長上影/黑K出量防禦"""
     if shares_out >= 3_000_000_000:
         turnover_threshold = 1.0
     elif shares_out >= 1_000_000_000:
@@ -115,34 +91,38 @@ def assess_volume_turnover_signal(vol_ratio: float, turnover: float, shares_out:
     else:
         turnover_threshold = 5.0
 
-    # 強多信號 (起漲攻擊) - 量比 ≥1.5 且 換手率達門檻
+    # 強多信號：量比足且換手達標
     if vol_ratio >= 1.5 and turnover >= turnover_threshold:
+        # 防爆量長上影或收盤遠離高點
+        if candle_ratio > 0.5 or close_vs_high < 0.95:
+            return "🔴 爆量長上影 (假突破/出貨)"
         return "🟢 起漲攻擊區"
-    
-    # 死亡信號 (主力出貨) - 爆量(量比≥2) + 換手率 > 門檻1.6倍 + 股價位於高檔(>0.8)
+
+    # 死亡信號：爆量 + 高檔 + 換手過熱
     if vol_ratio >= 2.0 and turnover >= turnover_threshold * 1.6 and price_position > 0.8:
         return "🔴 主力出貨區"
-    
-    # 假突破陷阱 - 量比大(≥1.8) 但換手率極低 (<門檻一半)
+
+    # 假突破陷阱：量比大但換手極低
     if vol_ratio >= 1.8 and turnover < turnover_threshold * 0.5:
         return "⚠️ 量價背離陷阱"
-    
-    # 量縮低換手 (洗盤/人氣退潮)
+
+    # 量縮低換手
     if vol_ratio < 0.8 and turnover < turnover_threshold:
         return "➖ 量縮低換手 (洗盤/人氣退潮)"
-    
+
+    # 黑K出量賣壓
+    if not is_red and vol_ratio > 1.2 and turnover < turnover_threshold * 1.2:
+        return "⚠️ 黑K出量 (賣壓沉重)"
+
     return "➖ 中性觀望"
 
 # =============================================================================
-# 💾 輔助模組: 執行緒安全資料庫連線防爆盾
+# 💾 輔助模組
 # =============================================================================
 class MockConn:
     def close(self) -> None:
         pass
 
-# =============================================================================
-# 💾 模組 1: 執行緒安全資料庫管理員 (Database Manager)
-# =============================================================================
 class NOCDatabase:
     def __init__(self, db_path: str = "noc_state.json"):
         self.db_path = db_path
@@ -172,7 +152,7 @@ class NOCDatabase:
                 return False
 
 # =============================================================================
-# 🌡️ 模組 2: 大盤風向儀與趨勢濾網 (Macro & Trend Strategy)
+# 🌡️ 模組 2: 大盤風向儀與趨勢濾網
 # =============================================================================
 class NOCStrategy:
     def __init__(self, db: Optional[NOCDatabase] = None):
@@ -184,43 +164,29 @@ class NOCStrategy:
             twii = yf.Ticker("^TWII").history(period="6mo")
             if twii.empty:
                 return {"status": "🟡 黃燈", "desc": "無法取得台股加權指數資料，啟動震盪保護機制，請嚴控資金。"}
-
             twii['20MA'] = twii['Close'].rolling(20).mean()
             twii['60MA'] = twii['Close'].rolling(60).mean()
-
             td = twii.iloc[-1]
             y_td = twii.iloc[-2]
-
             if td['Close'] > td['20MA'] and td['20MA'] >= y_td['20MA']:
-                return {
-                    "status": "🟢 綠燈", 
-                    "desc": "大盤多頭格局順風。積極抱緊長線底倉，防守線隨波段墊高，允許兵力推升至上限。"
-                }
+                return {"status": "🟢 綠燈", "desc": "大盤多頭格局順風。積極抱緊長線底倉，防守線隨波段墊高，允許兵力推升至上限。"}
             elif td['Close'] < td['60MA']:
-                return {
-                    "status": "🔴 紅燈", 
-                    "desc": "大盤崩盤警告（跌破季線）。啟動防空 protocols，全面停止新標的建倉，嚴格保留現金。"
-                }
+                return {"status": "🔴 紅燈", "desc": "大盤崩盤警告（跌破季線）。啟動防空 protocols，全面停止新標的建倉，嚴格保留現金。"}
             else:
-                return {
-                    "status": "🟡 黃燈", 
-                    "desc": "大盤進入高密度震盪洗盤期。嚴禁動用新資金盲目重倉，嚴格看守防禦底線。"
-                }
+                return {"status": "🟡 黃燈", "desc": "大盤進入高密度震盪洗盤期。嚴禁動用新資金盲目重倉，嚴格看守防禦底線。"}
         except Exception as e:
             self.logger.error(f"❌ 大盤風向儀運算異常: {e}")
             return {"status": "🟡 黃燈", "desc": "總體經濟風向引擎異常，強制啟動系統震盪保護機制。"}
-    
+
     def get_trend_score(self, hist_df: pd.DataFrame, market_mode: str = "BEAR") -> float:
         if len(hist_df) < 60:
             return -1.0
-      
         if market_mode == "BULL":
             hist_df['10MA'] = hist_df['Close'].rolling(10).mean()
             hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
             current_price = hist_df['Close'].iloc[-1]
             ma10 = hist_df['10MA'].iloc[-1]
             ma20 = hist_df['20MA'].iloc[-1]
-        
             if current_price > ma10 and ma10 > ma20:
                 return 1.0
             else:
@@ -231,23 +197,19 @@ class NOCStrategy:
             current_price = hist_df['Close'].iloc[-1]
             ma20 = hist_df['20MA'].iloc[-1]
             ma60 = hist_df['60MA'].iloc[-1]
-        
-            # 嚴格多頭：股價站上20MA且20MA在60MA之上
             if current_price > ma20 and ma20 > ma60:
                 return 1.0
-            # 底部起漲潛力股：股價同時站上20MA與60MA（但20MA尚未金叉60MA）
             elif current_price > ma20 and current_price > ma60:
                 return 0.5
             else:
                 return -1.0
-    
+
     def get_fundamental_health(self, symbol: str) -> str:
         try:
             clean_symbol = symbol.replace(".TW", "").replace(".TWO", "")
             ticker = yf.Ticker(f"{clean_symbol}.TW")
             info = ticker.info
             revenue_growth = info.get("revenueGrowth")
-        
             if revenue_growth is not None:
                 yoy_pct = revenue_growth * 100
                 if revenue_growth < -0.15:
@@ -269,15 +231,13 @@ class NOCStrategy:
             twii['60MA'] = twii['Close'].rolling(60).mean()
             current_close = twii['Close'].iloc[-1]
             ma60 = twii['60MA'].iloc[-1]
-            if current_close < ma60:
-                return True
-            return False
+            return current_close < ma60
         except Exception as e:
             self.logger.error(f"❌ DEFCON 1 協議監測器異常: {e}")
             return False
 
 # =============================================================================
-# 🛡️ 模組 3: 移動防禦與雙軌兵力精算師 (Risk Manager)
+# 🛡️ 模組 3: 移動防禦與雙軌兵力精算師
 # =============================================================================
 class NOCRiskManager:
     def __init__(self, total_capital: float = 130000.0):
@@ -286,7 +246,6 @@ class NOCRiskManager:
     def calculate_atr(self, hist_df: pd.DataFrame, period: int = 14) -> float:
         if len(hist_df) < period + 1:
             return hist_df['Close'].iloc[-1] * 0.025
-            
         high_low = hist_df['High'] - hist_df['Low']
         high_close = np.abs(hist_df['High'] - hist_df['Close'].shift())
         low_close = np.abs(hist_df['Low'] - hist_df['Close'].shift())
@@ -294,24 +253,17 @@ class NOCRiskManager:
         true_range = ranges.max(axis=1)
         return true_range.rolling(period).mean().iloc[-1]
 
-    def get_position_and_defense(self, symbol: str, current_price: float, hist_df: pd.DataFrame = None, 
+    def get_position_and_defense(self, symbol: str, current_price: float, hist_df: pd.DataFrame = None,
                                  market_mode: str = "BEAR", is_yellow_light: bool = False) -> dict:
-        """
-        軍規級波段兵力精算 (雙模式自適應版) + 黃燈強制縮緊至 2.0 ATR
-        """
         try:
             if hist_df is None or hist_df.empty:
                 hist_df = yf.Ticker(symbol).history(period="6mo")
             atr = self.calculate_atr(hist_df, period=14)
-            
-            # 黃燈強制使用 2.0 倍 ATR，否則依市場模式
             if is_yellow_light:
                 atr_multiplier = 2.0
             else:
                 atr_multiplier = 1.8 if market_mode == "BULL" else 3.0
             trailing_stop = current_price - (atr * atr_multiplier)
-            
-            # 融合 20MA 防線（取較低者）
             if not hist_df.empty and len(hist_df) >= 20:
                 hist_df['20MA'] = hist_df['Close'].rolling(20).mean()
                 ma20 = hist_df['20MA'].iloc[-1]
@@ -322,37 +274,30 @@ class NOCRiskManager:
             else:
                 defense_line = trailing_stop
 
-            # 單筆風險控管 (總資金的 2%)
             max_risk_amount = self.total_capital * 0.02
             risk_per_share = current_price - defense_line
             if risk_per_share <= 0:
                 risk_per_share = current_price * 0.10
             max_shares = math.floor(max_risk_amount / risk_per_share)
-            
-            # 依 15% 天花板限制最終股數
             max_allocation_shares = math.floor((self.total_capital * 0.15) / current_price)
             total_shares = min(max_shares, max_allocation_shares)
-            
-            # 長線底倉與短線游擊各半（若總股數為奇數，核心多一股）
             core_shares = total_shares // 2
             tactical_shares = total_shares - core_shares
-            
             return {
                 "current_price": round(current_price, 2),
-                "defense_line": round(defense_line, 2), 
+                "defense_line": round(defense_line, 2),
                 "core_shares": int(core_shares),
                 "tactical_shares": int(tactical_shares),
                 "total_shares": int(total_shares),
                 "risk_per_share": round(risk_per_share, 2)
             }
-            
         except Exception as e:
             logger.error(f"❌ 執行部位與移動防禦精算時發生異常: {e}")
             fallback_stop = current_price * 0.90
             fallback_shares = math.floor((self.total_capital * 0.075) / current_price)
             return {
                 "current_price": round(current_price, 2),
-                "defense_line": round(fallback_stop, 2), 
+                "defense_line": round(fallback_stop, 2),
                 "core_shares": int(fallback_shares),
                 "tactical_shares": int(fallback_shares),
                 "total_shares": int(fallback_shares * 2),
@@ -360,7 +305,7 @@ class NOCRiskManager:
             }
 
 # =============================================================================
-# 🚀 模組 4: 戰略財務數據獲取引擎 (Data Fetcher Engine)
+# 🚀 模組 4: 戰略財務數據獲取引擎
 # =============================================================================
 class NOCDataFetcher:
     def __init__(self, token: str = ""):
@@ -373,12 +318,7 @@ class NOCDataFetcher:
             current_state = db.load_state()
             current_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             if symbol not in current_state:
-                current_state[symbol] = {
-                    "status": "NONE",
-                    "entry": 0.0,
-                    "trailing_stop": 0.0,
-                    "last_fetch": current_time_str
-                }
+                current_state[symbol] = {"status": "NONE", "entry": 0.0, "trailing_stop": 0.0, "last_fetch": current_time_str}
             else:
                 if isinstance(current_state[symbol], dict):
                     current_state[symbol]["last_fetch"] = current_time_str
@@ -388,27 +328,16 @@ class NOCDataFetcher:
             self.logger.error(f"❌ [DataFetcher] 執行多執行緒財務數據抓取時攔截到異常: {e}")
 
 # =============================================================================
-# 🧠 模組 5: 高品質訊號三重確認濾網 (v16.1 保留)
+# 🧠 模組 5: 高品質訊號三重確認濾網 (收盤突破)
 # =============================================================================
 def is_high_quality_signal(hist: pd.DataFrame, td: pd.Series, matrix_signal: str, market_mode: str) -> bool:
-    """
-    三重確認濾網：
-    1. 量價突破：今日高點突破 20 日內最高點 (排除突破當天)
-    2. 量比足夠：量比 >= 2.0
-    3. 籌碼強勢或趨勢強勢：籌碼訊號含「極速發動/加速起漲」 或 趨勢分數 > 0
-    """
-    # 計算前 20 日高點 (不含今天)
     recent_20_high = hist['High'].rolling(20).max().shift(1).iloc[-1]
     if pd.isna(recent_20_high):
-        recent_20_high = hist['High'].iloc[-2] # fallback
-
-    price_break = td['High'] > recent_20_high
-
+        recent_20_high = hist['High'].iloc[-2]
+    price_break = td['Close'] > recent_20_high
     vol_ratio = td.get('Volume_Ratio', 1.0)
     strong_volume = vol_ratio >= 2.0
-
     strong_chip = any(key in matrix_signal for key in ["極速發動", "加速起漲"])
     trend_score = td.get('Trend_Score', -1.0)
     good_trend = trend_score > 0
-
     return price_break and strong_volume and (strong_chip or good_trend)
