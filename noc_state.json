@@ -662,7 +662,7 @@
     "009816.TW": {
         "status": "REAL_HOLD",
         "entry": 13.99,
-        "trailing_stop": 14.003000020980835,
+        "trailing_stop": 14.003500032424927,
         "last_alert_hash": ""
     },
     "2377.TW": {
@@ -1356,6 +1356,66 @@
         "last_alert_hash": ""
     },
     "00878": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "6573": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2302": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2891": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2610": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2105": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "6573.TW": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2302.TW": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2891.TW": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2610.TW": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2105.TW": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
