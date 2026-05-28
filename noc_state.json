@@ -1150,5 +1150,215 @@
         "entry": 0.0,
         "trailing_stop": 0.0,
         "last_alert_hash": ""
+    },
+    "00878": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2409": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2377": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "009816": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2356": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "0050": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2324": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2353": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2352": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "3714": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "3163": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1301": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1326": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1476": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1513": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1536": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1605": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1609": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1802": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1795": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2317": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2303": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2330": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2344": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2379": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2408": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2606": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2382": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2449": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2637": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2886": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "3037": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2887": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "3019": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "3481": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
     }
 }
