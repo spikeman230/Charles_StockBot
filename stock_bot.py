@@ -1,6 +1,6 @@
 # =============================================================================
-# NOC 終極戰情室 v16.4 長短雙軌版 - 實戰強化最終版
-# 包含：白名單強制輸出、四象限矩陣+K線形態、去重移除、黃燈攔截
+# NOC 終極戰情室 v16.6 長短雙軌版
+# 核心功能：初升段即時偵測、過熱攔截、白名單強制輸出、四象限矩陣
 # =============================================================================
 
 import yfinance as yf
@@ -33,9 +33,12 @@ from pathlib import Path
 from noc_core import (
     NOCDatabase, NOCStrategy, NOCDataFetcher, NOCRiskManager,
     analyze_chip_tactics, NOCChipMatrix, is_high_quality_signal,
-    assess_volume_turnover_signal
+    assess_volume_turnover_signal, is_overheated, detect_initial_breakout
 )
 
+# =============================================================================
+# 初始化與組態
+# =============================================================================
 load_dotenv()
 
 LOG_FILE = "noc_system.log"
@@ -50,9 +53,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
-# =============================================================================
-# 環境變數與組態
-# =============================================================================
 TG_TOKEN = os.getenv("TG_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 EMAIL_USER = os.getenv("EMAIL_USER")
@@ -85,7 +85,7 @@ class Config:
 cfg = Config()
 
 # =============================================================================
-# 波段狀態管理 (保留 last_alert_hash 但不再使用)
+# 波段狀態管理
 # =============================================================================
 @dataclass
 class StockState:
@@ -119,7 +119,6 @@ class DataCacheManager:
         self._cache : Dict[str, CacheEntry] = {}
         self._ttl = datetime.timedelta(minutes=ttl_minutes)
         self._max = max_items
-
     def get(self, key: str) -> Optional[Any]:
         entry = self._cache.get(key)
         if entry is None:
@@ -128,7 +127,6 @@ class DataCacheManager:
             del self._cache[key]
             return None
         return entry.data
-
     def set(self, key: str, data: Any) -> None:
         if len(self._cache) >= self._max:
             evict_count = max(1, self._max // 10)
@@ -140,7 +138,7 @@ class DataCacheManager:
 DATA_CACHE = DataCacheManager(ttl_minutes=cfg.CACHE_TTL_MINUTES, max_items=cfg.CACHE_MAX_ITEMS)
 
 # =============================================================================
-# 戰略資產歸類
+# 戰略資產歸類與建倉計劃
 # =============================================================================
 _ETF_DIV_KEYS = ["高股息","優息","0056","00878","00919","00929","00915","00713","00939","00940","00936"]
 _ETF_MKT_KEYS = ["0050","006208","市值","00881","科技","半導體","5G","00891","00892","009816"]
@@ -175,6 +173,19 @@ def build_tactical_plan(symbol: str, close: float, hist: pd.DataFrame, trend_sco
         f" * 鐵律聲明：收盤價若有效跌破此防線，強制執行變現撤離，嚴禁逆勢加碼平攤！\n"
     )
     return plan
+
+def build_light_plan(symbol: str, close: float, hist: pd.DataFrame, manual_stop: float, market_mode: str) -> str:
+    risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
+    defense_data = risk_calculator.get_position_and_defense(symbol, close, hist, market_mode=market_mode, is_yellow_light=False)
+    stop_loss = defense_data["defense_line"]
+    if manual_stop > 0:
+        stop_loss = manual_stop
+    return (
+        f" 👉 【初升段試單指令】\n"
+        f" * 建議試單股數：{defense_data['total_shares']} 股 (總資金5-10%)\n"
+        f" * 移動防禦底線：{stop_loss:.2f}\n"
+        f" * 鐵律：若三日內未站穩，立即減碼。\n"
+    )
 
 # =============================================================================
 # 交易日感知
@@ -319,6 +330,9 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, pred
     except:
         pass
 
+# =============================================================================
+# 大盤風向與基本面輔助
+# =============================================================================
 def get_market_regime() -> Tuple[bool, str]:
     try:
         twii = yf.Ticker("^TWII").history(period="2mo")
@@ -444,6 +458,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
 
         hist = calculate_chip_signals(hist)
 
+        # 動態量能預估
         now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
         market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
         market_close = now.replace(hour=13, minute=30, second=0, microsecond=0)
@@ -467,10 +482,16 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         hist["Turnover_Rate"] = ((hist["Est_Volume"] / hist["Shares_Out"]) * 100).fillna(1.5)
         hist["Volume_Ratio"] = (hist["Est_Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
 
-        # K線特徵欄位
+        # K線特徵
         hist['Candle_Ratio'] = (hist['High'] - hist[['Open','Close']].max(axis=1)) / (hist['High'] - hist['Low'] + 1e-9)
         hist['Close_vs_High'] = hist['Close'] / hist['High']
         hist['Is_Red'] = hist['Close'] >= hist['Open']
+
+        # 乖離與漲幅（用於過熱攔截）
+        hist['Bias_20MA'] = (hist['Close'] - hist['20MA']) / hist['20MA'] * 100
+        hist['Bias_60MA'] = (hist['Close'] - hist['60MA']) / hist['60MA'] * 100
+        hist['Return_5D'] = hist['Close'].pct_change(5) * 100
+        hist['Return_10D'] = hist['Close'].pct_change(10) * 100
 
         hist["25MA_Rising"] = hist["25MA"] > hist["25MA"].shift(1)
         hist["Is_Red_Candle"] = hist["Close"] > hist["Open"]
@@ -565,7 +586,8 @@ def send_reports(subject: str, text_body: str, chart_files: list) -> None:
             msg.attach(MIMEText(text_body, "plain", "utf-8"))
             for chart in chart_files:
                 if Path(chart).exists():
-                    msg.attach(MIMEImage(open(chart, "rb").read(), name=Path(chart).name))
+                    with open(chart, "rb") as f:
+                        msg.attach(MIMEImage(f.read(), name=Path(chart).name))
             with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
                 server.login(EMAIL_USER, EMAIL_PASS)
                 server.send_message(msg)
@@ -580,7 +602,7 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v16.4 長短雙軌版 啟動。時間：{curr_time}")
+    logger.info(f"NOC 終極戰情室 v16.6 長短雙軌版 啟動。時間：{curr_time}")
 
     db = NOCDatabase()
     strategy = NOCStrategy(db)
@@ -797,11 +819,22 @@ if __name__ == "__main__":
             trigger_label = ""
             action_plan_text = ""
 
+            # 黃燈攔截非白名單分類
             if is_yellow_light and cat not in force_include_categories:
                 logger.debug(f"🟡 黃燈模式跳過 {sym} (分類: {cat})")
                 continue
 
-            # 四象限信號 (含K線形態)
+            # ------------------- 過熱攔截 -------------------
+            ma20_val = td['20MA'] if not pd.isna(td['20MA']) else 0
+            ma60_val = td['60MA'] if not pd.isna(td['60MA']) else 0
+            return_5d = td.get('Return_5D', 0)
+            return_10d = td.get('Return_10D', 0)
+            overheated, over_reason = is_overheated(close, ma20_val, ma60_val, return_5d, return_10d, price_position, vol_ratio)
+            if overheated:
+                logger.info(f"🛑 [過熱攔截] {sym} 原因: {over_reason}，強制封鎖推播。")
+                continue
+
+            # ------------------- 四象限信號 (含K線形態) -------------------
             quadrant_signal = assess_volume_turnover_signal(
                 vol_ratio=vol_ratio,
                 turnover=turnover,
@@ -811,18 +844,27 @@ if __name__ == "__main__":
                 is_red=td['Is_Red'],
                 close_vs_high=td['Close_vs_High']
             )
-
-            # 危險信號直接攔截
             danger_signals = ("🔴 主力出貨區", "⚠️ 量價背離陷阱", "🔴 爆量長上影 (假突破/出貨)", "⚠️ 黑K出量 (賣壓沉重)")
             if quadrant_signal in danger_signals:
                 logger.info(f"🛑 [四象限攔截] {sym} 信號為 {quadrant_signal}，強制封鎖推播。")
                 continue
 
-            # 狀態機觸發判斷
+            # ------------------- 狀態機觸發判斷（優先級：初升段突破 > 旱地拔蔥 > 狙擊金叉） -------------------
             if sym_state.status == "REAL_HOLD":
                 alert = f"💼 持股防禦區 | 📍 最新防線: {sym_state.trailing_stop:.1f}"
             elif sym_state.status == "NONE":
-                if td.get("Monster_Breakout", False):
+                # 1. 初升段突破（首次放量站上20MA或突破20日高點）
+                initial_break, break_type, _ = detect_initial_breakout(hist, td)
+                if initial_break and not is_yellow_light:
+                    trigger_label = break_type
+                    risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
+                    defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=local_market_mode, is_yellow_light=False)
+                    stop_price = defense_info["defense_line"]
+                    noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
+                    alert = "⚡【初升段起漲】放量突破關鍵價位，小注試單！"
+                    action_plan_text = build_light_plan(sym, close, hist, manual_stop_price, local_market_mode)
+                # 2. 旱地拔蔥
+                elif td.get("Monster_Breakout", False):
                     trigger_label = "🔥【旱地拔蔥】底部極端爆量，長紅突破季線！"
                     if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
                         alert = "🛡️【基本面攔截】營收 YoY 衰退，無情淘汰。"
@@ -845,6 +887,7 @@ if __name__ == "__main__":
                             noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
                             alert = "🐉【妖股起漲預警】資金強勢介入，無視基本面，強烈建議觀察試單！"
                             action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
+                # 3. 狙擊金叉
                 elif td.get("Sniper_Signal", False):
                     trigger_label = "🌟 長線多頭結構扭轉金叉"
                     if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
@@ -869,7 +912,7 @@ if __name__ == "__main__":
                             alert = f"🚀【長線波段佈局觸發】"
                             action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
 
-            # 建構輸出字串
+            # ------------------- 組裝推播訊息 -------------------
             s = f"🎯 {name} ({sym})\n"
             s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
             s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
@@ -893,6 +936,7 @@ if __name__ == "__main__":
 
             action_command = s
 
+            # 強制輸出分類活躍度門檻
             is_force_output = cat in force_include_categories
             if is_force_output:
                 is_active = (close > ma20) or (vol_ratio > 1.5)
@@ -903,7 +947,6 @@ if __name__ == "__main__":
             fatal_flaws = cfg.ACTION_BLACKLIST + ["攔截", "衰退", "警報", "無情淘汰", "拒絕追高", "黃燈強制攔截"]
             has_fatal_flaw = any(keyword in action_command for keyword in fatal_flaws)
 
-            # 推播決策 (已移除去重)
             if is_force_output:
                 if has_fatal_flaw:
                     logger.info(f"🛑 [強制分類攔截] {sym} 屬於強制輸出區，但觸發致命缺陷，強制封鎖推播。")
@@ -932,7 +975,7 @@ if __name__ == "__main__":
             msg_list.extend(cat_msg_list)
 
     # =========================================================================
-    # 戰區 3：ETF 績效 (週報)
+    # 戰區 3：ETF 績效競技場 (週報)
     # =========================================================================
     if curr_dt.weekday() == 4:
         etf_arena = {"💰高股息防禦組": [], "🚀市值與主題成長組": []}
@@ -967,7 +1010,7 @@ if __name__ == "__main__":
         logger.info("非週五，跳過 ETF 績效推播 (週報模式)")
 
     # =========================================================================
-    # 最終推播
+    # 最終儲存與推播
     # =========================================================================
     if not has_data:
         logger.info("無有效標的運算數據，終止行程。")
@@ -979,7 +1022,7 @@ if __name__ == "__main__":
         logger.info("🔇 [靜默模式] 今日無任何可行動警報（無建倉/停損/獲利巡航等重要事件），系統靜默退出。")
         sys.exit(0)
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.4】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.6】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
 
     for chart in generated_charts:
         if Path(chart).exists():
