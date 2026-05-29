@@ -644,7 +644,7 @@
     "0050.TW": {
         "status": "REAL_HOLD",
         "entry": 0.0,
-        "trailing_stop": 96.59750022888184,
+        "trailing_stop": 97.11000022888183,
         "last_alert_hash": ""
     },
     "2356.TW": {
@@ -656,13 +656,13 @@
     "00878.TW": {
         "status": "REAL_HOLD",
         "entry": 22.21,
-        "trailing_stop": 27.587556743621825,
+        "trailing_stop": 27.851695919036864,
         "last_alert_hash": ""
     },
     "009816.TW": {
         "status": "REAL_HOLD",
         "entry": 13.99,
-        "trailing_stop": 14.025,
+        "trailing_stop": 14.113500022888184,
         "last_alert_hash": ""
     },
     "2377.TW": {
@@ -696,9 +696,9 @@
         "last_alert_hash": ""
     },
     "2324.TW": {
-        "status": "HOLD",
-        "entry": 36.599998474121094,
-        "trailing_stop": 30.75,
+        "status": "REAL_HOLD",
+        "entry": 36.35,
+        "trailing_stop": 30.73750009536743,
         "last_alert_hash": ""
     },
     "3163.TWO": {
@@ -720,9 +720,9 @@
         "last_alert_hash": ""
     },
     "1326.TW": {
-        "status": "HOLD",
-        "entry": 48.900001525878906,
-        "trailing_stop": 46.26,
+        "status": "REAL_HOLD",
+        "entry": 49.5,
+        "trailing_stop": 46.80000019073486,
         "last_alert_hash": ""
     },
     "1476.TW": {
@@ -852,9 +852,9 @@
         "last_alert_hash": ""
     },
     "3231.TW": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 158.5,
+        "trailing_stop": 142.2,
         "last_alert_hash": ""
     },
     "3481.TW": {
