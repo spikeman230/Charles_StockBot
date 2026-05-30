@@ -154,42 +154,39 @@ def is_overheated(close: float, ma20: float, ma60: float,
 # 5. 初升段突破偵測（首次放量站上20MA或突破20日高點）
 # =============================================================================
 def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool, str, int]:
-    """
-    偵測初升段突破（首次突破關鍵價位）
-    回傳 (是否突破, 突破類型, 強度分數)
+     """
+    偵測初升段突破（首次放量站上20MA或突破20日高點）
+    新增：檢查過去 lookback 日內是否已出現過突破，若已出現則不再標記為首次
     """
     close = td['Close']
     ma20 = td['20MA']
     if pd.isna(ma20):
         return False, "", 0
 
-    prev_close = hist['Close'].iloc[-2]
-    prev_ma20 = hist['20MA'].iloc[-2]
-    was_below_ma20 = prev_close < prev_ma20
+    # 檢查過去 lookback 日內是否曾站上20MA
+    hist_slice = hist.iloc[-lookback-1:-1] # 不含當日
+    was_above_ma20 = (hist_slice['Close'] > hist_slice['20MA']).any()
+    first_above_ma20 = (close > ma20) and not was_above_ma20
 
-    # 首次站上20MA
-    first_above_ma20 = close > ma20 and was_below_ma20
-
-    # 20日高點突破（首次）
+    # 檢查過去 lookback 日內是否曾突破20日高點
     high_20 = hist['High'].rolling(20).max().shift(1).iloc[-1]
-    prev_high_20 = hist['High'].rolling(20).max().shift(2).iloc[-1]
-    first_break_high = close > high_20 and (hist['Close'].iloc[-2] <= prev_high_20 if not pd.isna(prev_high_20) else True)
+    # 計算過去20日內有無突破（每日的20日高點）
+    hist_high_20 = hist['High'].rolling(20).max().shift(1)
+    was_break_high = (hist_slice['Close'] > hist_high_20.iloc[-lookback-1:-1]).any()
+    first_break_high = (close > high_20) and not was_break_high
 
-    # 量比與換手門檻（初升段放寬）
+    # 量比與換手門檻（略）
     vol_ratio = td.get('Volume_Ratio', 1.0)
     turnover = td.get('Turnover_Rate', 0.0)
     shares_out = td.get('Shares_Out', 0)
-
     if shares_out >= 3_000_000_000:
         turn_th = 1.0
     elif shares_out >= 1_000_000_000:
         turn_th = 1.5
     else:
         turn_th = 3.0
-
     good_volume = vol_ratio >= 1.3 and turnover >= turn_th
 
-    # 乖離限制（避免已是高位）
     bias = (close - ma20) / ma20 * 100 if ma20 > 0 else 0
     if bias > 20:
         return False, "", 0
@@ -200,6 +197,63 @@ def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool, st
         else:
             return True, "🔥 放量站上20MA", 2
     return False, "", 0
+
+# ---------------------- 旱地拔蔥偵測 ----------------------
+def calculate_monster_breakout(hist: pd.DataFrame, td: pd.Series) -> bool:
+    """
+    旱地拔蔥：
+    1. 今日收盤首次站上60MA（昨日收盤 <= 昨日60MA）
+    2. 量比 >= 3.0
+    3. 漲幅 >= 4%
+    """
+    close = td['Close']
+    ma60 = td['60MA']
+    if pd.isna(ma60):
+        return False
+    # 首次站上60MA
+    prev_close = hist['Close'].iloc[-2]
+    prev_ma60 = hist['60MA'].iloc[-2] if len(hist) >= 2 else ma60
+    just_crossed = (close > ma60) and (prev_close <= prev_ma60)
+    if not just_crossed:
+        return False
+    vol_ratio = td.get('Volume_Ratio', 1.0)
+    if vol_ratio < 3.0:
+        return False
+    solid_green = (close >= hist['Close'].iloc[-2] * 1.04)
+    return solid_green
+
+# ---------------------- 狙擊金叉偵測 ----------------------
+def calculate_sniper_signal(hist: pd.DataFrame) -> bool:
+    """
+    狙擊金叉：
+    底部型態 (Is_Bottoming) + 突破 (Is_Breakout)
+    Is_Bottoming: 股價在5MA之下 + MACD柱狀體連續三天收斂且仍為負
+    Is_Breakout: 前一天收盤低於5MA，當日站上5MA + 量能 > 5日均量1.2倍
+    """
+    if len(hist) < 10:
+        return False
+    # 計算 MACD
+    hist['MACD'] = hist['Close'].ewm(span=12, adjust=False).mean() - hist['Close'].ewm(span=26, adjust=False).mean()
+    hist['MACD_Hist'] = hist['MACD'] - hist['MACD'].ewm(span=9, adjust=False).mean()
+    # 底部型態：股價低於5MA，MACD柱連續三天收斂且為負
+    hist['5MA'] = hist['Close'].rolling(5).mean()
+    hist['Is_Bottoming'] = (
+        (hist['Close'] < hist['5MA']) &
+        (hist['MACD_Hist'].shift(2) < hist['MACD_Hist'].shift(1)) &
+        (hist['MACD_Hist'].shift(1) < hist['MACD_Hist']) &
+        (hist['MACD_Hist'] < 0)
+    ).astype(int)
+    # 突破：前一日收盤低於5MA，今日站上5MA，且量能 > 5日均量1.2倍
+    hist['5VMA'] = hist['Volume'].rolling(5).mean()
+    hist['Is_Breakout'] = (
+        (hist['Close'].shift(1) < hist['5MA'].shift(1)) &
+        (hist['Close'] > hist['5MA']) &
+        (hist['Volume'] > hist['5VMA'] * 1.2)
+    )
+    # 狙擊信號：過去3天內有底部型態，且今日為突破
+    bottom_3d = hist['Is_Bottoming'].rolling(3).max().fillna(0).astype(bool)
+    sniper = bottom_3d.iloc[-1] and hist['Is_Breakout'].iloc[-1]
+    return bool(sniper)
 
 # =============================================================================
 # 6. 高品質訊號三重確認濾網 (收盤突破)
