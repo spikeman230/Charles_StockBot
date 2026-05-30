@@ -153,8 +153,7 @@ def is_overheated(close: float, ma20: float, ma60: float,
 # =============================================================================
 # 5. 初升段突破偵測（首次放量站上20MA或突破20日高點）
 # =============================================================================
-def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool, str, int]:
-     """
+"""
     偵測初升段突破（首次放量站上20MA或突破20日高點）
     新增：檢查過去 lookback 日內是否已出現過突破，若已出現則不再標記為首次
     """
@@ -164,13 +163,12 @@ def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool, st
         return False, "", 0
 
     # 檢查過去 lookback 日內是否曾站上20MA
-    hist_slice = hist.iloc[-lookback-1:-1] # 不含當日
+    hist_slice = hist.iloc[-lookback-1:-1]  # 不含當日
     was_above_ma20 = (hist_slice['Close'] > hist_slice['20MA']).any()
     first_above_ma20 = (close > ma20) and not was_above_ma20
 
     # 檢查過去 lookback 日內是否曾突破20日高點
     high_20 = hist['High'].rolling(20).max().shift(1).iloc[-1]
-    # 計算過去20日內有無突破（每日的20日高點）
     hist_high_20 = hist['High'].rolling(20).max().shift(1)
     was_break_high = (hist_slice['Close'] > hist_high_20.iloc[-lookback-1:-1]).any()
     first_break_high = (close > high_20) and not was_break_high
