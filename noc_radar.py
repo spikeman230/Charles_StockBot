@@ -1,15 +1,17 @@
 # =============================================================================
-# NOC 游擊隊雷達 (noc_radar.py) v14.5 - 長線波段戰備收斂版
+# NOC 游擊隊雷達 (noc_radar.py) v16.6 - 長線波段戰備收斂版
 # 核心戰術：
 # 1. 徹底廢除盤中跳動觸發，轉型為「每日收盤後執行」的戰備火種篩選器。
 # 2. 強制掛載 NOCStrategy 雙大腦 (Trend_Score 季線趨勢 + YoY 基本面)。
-# 3. 嚴禁任何自動化買入指令，僅產出高質量波段火種供總司令決策。
-# 4. 程式碼嚴格遵守不精簡、完整展開之軍規鐵律，保留所有防爆機制。
+# 3. 整合 v16.6 核心規則：四象限矩陣 + K線形態防禦、過熱攔截、初升段突破偵測。
+# 4. 嚴禁任何自動化買入指令，僅產出高質量波段火種供總司令決策。
+# 5. 程式碼嚴格遵守不精簡、完整展開之軍規鐵律，保留所有防爆機制。
 # =============================================================================
 
 import yfinance as yf
 import datetime
 import pandas as pd
+import numpy as np
 import os
 import json
 import time
@@ -17,8 +19,15 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 from dotenv import load_dotenv
 
-# 🌟 深度引入 NOC 核心防禦模組
-from noc_core import NOCStrategy, NOCDatabase
+# 🌟 深度引入 NOC 核心防禦模組 (v16.6)
+from noc_core import (
+    NOCStrategy, NOCDatabase,
+    assess_volume_turnover_signal,
+    is_overheated,
+    detect_initial_breakout,
+    is_high_quality_signal,
+    NOCChipMatrix
+)
 
 # =============================================================================
 # === 0. 初始化：載入環境變數 & 靜音防護罩 ===
@@ -75,70 +84,150 @@ class RadarConfig:
 cfg = RadarConfig()
 
 # =============================================================================
-# === 2. 核心掃描引擎 (掛載波段雙濾網) ===
+# === 2. 核心掃描引擎 (掛載 v16.6 完整濾網) ===
 # =============================================================================
 def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
     """
-    波段火種精煉器：
-    專注於日線級別 (Daily K) 的 60MA 季線斜率與基本面體質檢查。
+    波段火種精煉器 v16.6：
+    整合趨勢分數、基本面、量價四象限、過熱攔截、初升段突破偵測。
     """
     try:
-        # 1. 抓取長線波段所需之半年日 K 線資料 (不看分時短線)
+        # 1. 抓取長線波段所需之半年日 K 線資料
         stock = yf.Ticker(symbol)
-        hist = stock.history(period="6mo").dropna(subset=["Close"])
+        hist = stock.history(period="8mo").dropna(subset=["Close"])
         
-        # 標的防呆：若上市櫃時間不足 60 天，無法形成有效季線，直接剔除
         if len(hist) < 60:
             return None
             
-        # 2. 核心均線精算
+        # 2. 計算必要技術指標（與 stock_bot 保持一致）
         hist['20MA'] = hist['Close'].rolling(20).mean()
         hist['60MA'] = hist['Close'].rolling(60).mean()
+        hist['5VMA'] = hist['Volume'].rolling(5).mean()
         
-        current_close = hist['Close'].iloc[-1]
+        # 換手率與量比（需要股本資料）
+        info = stock.info
+        shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
+        if shares_out is None or pd.isna(shares_out):
+            shares_out = 0
+        hist['Turnover_Rate'] = ((hist['Volume'] / shares_out) * 100).fillna(1.5) if shares_out > 0 else 1.5
+        hist['Volume_Ratio'] = (hist['Volume'] / hist['5VMA'].shift(1)).fillna(1.0)
         
-        # 3. 🛡️ 第一道硬核濾網：趨勢得分 (Trend Score)
-        # 判定季線斜率是否向上，且現價不可距離季線過遠 (乖離 < 15%)
+        # K線特徵欄位
+        hist['Candle_Ratio'] = (hist['High'] - hist[['Open','Close']].max(axis=1)) / (hist['High'] - hist['Low'] + 1e-9)
+        hist['Close_vs_High'] = hist['Close'] / hist['High']
+        hist['Is_Red'] = hist['Close'] >= hist['Open']
+        
+        # 價格位置 (60日區間)
+        hist['High_60'] = hist['High'].rolling(60).max()
+        hist['Low_60'] = hist['Low'].rolling(60).min()
+        hist['Price_Position'] = (hist['Close'] - hist['Low_60']) / (hist['High_60'] - hist['Low_60'] + 1e-9)
+        
+        # 近期漲幅（用於過熱攔截）
+        hist['Return_5D'] = hist['Close'].pct_change(5) * 100
+        hist['Return_10D'] = hist['Close'].pct_change(10) * 100
+        
+        # 取得最新一筆資料
+        td = hist.iloc[-1]
+        close = td['Close']
+        ma20 = td['20MA']
+        ma60 = td['60MA']
+        
+        # ========== 第一階段：趨勢與基本面濾網（保留原雷達邏輯） ==========
         trend_score = strategy.get_trend_score(hist)
         if trend_score < 0:
-            # 趨勢不符 (下彎或過熱)，淘汰
             return None
             
-        # 4. 🛡️ 第二道硬核濾網：基本面護城河 (Fundamental Health)
         raw_id = symbol.replace(".TW", "").replace(".TWO", "")
         fund_health = strategy.get_fundamental_health(raw_id)
         if "衰退" in fund_health or "警報" in fund_health:
-            # 營收衰退，無情淘汰
             return None
-
-        # 5. 精算動能指標，做為觀察輔助 (RSI & 乖離率)
+        
+        # ========== 第二階段：過熱攔截（新增） ==========
+        recent_5d_return = td.get('Return_5D', 0)
+        recent_10d_return = td.get('Return_10D', 0)
+        price_position = td['Price_Position'] if not pd.isna(td['Price_Position']) else 0.5
+        vol_ratio = td['Volume_Ratio']
+        overheated, over_reason = is_overheated(
+            close=close,
+            ma20=ma20,
+            ma60=ma60,
+            recent_5d_return=recent_5d_return,
+            recent_10d_return=recent_10d_return,
+            price_position=price_position,
+            vol_ratio=vol_ratio
+        )
+        if overheated:
+            logger.debug(f"🔥 [過熱攔截] {symbol}: {over_reason}")
+            return None
+        
+        # ========== 第三階段：量價四象限與初升段突破偵測 ==========
+        turnover = td['Turnover_Rate']
+        shares_out_val = shares_out if shares_out else 0
+        candle_ratio = td['Candle_Ratio']
+        is_red = td['Is_Red']
+        close_vs_high = td['Close_vs_High']
+        
+        quadrant_signal = assess_volume_turnover_signal(
+            vol_ratio=vol_ratio,
+            turnover=turnover,
+            shares_out=shares_out_val,
+            price_position=price_position,
+            candle_ratio=candle_ratio,
+            is_red=is_red,
+            close_vs_high=close_vs_high
+        )
+        
+        # 危險信號直接淘汰
+        danger_signals = ("🔴 主力出貨區", "⚠️ 量價背離陷阱", "🔴 爆量長上影 (假突破/出貨)", "⚠️ 黑K出量 (賣壓沉重)")
+        if quadrant_signal in danger_signals:
+            logger.debug(f"🛑 [四象限攔截] {symbol}: {quadrant_signal}")
+            return None
+        
+        # 檢查是否為初升段突破（首次站上20MA或突破20日高點）
+        initial_break, break_type, break_score = detect_initial_breakout(hist, td)
+        
+        # 判定是否為值得關注的火種：必須符合「起漲攻擊區」或「初升段突破」
+        is_attack = (quadrant_signal == "🟢 起漲攻擊區") or initial_break
+        if not is_attack:
+            return None
+        
+        # 4. 輔助指標（RSI、乖離）
         delta = hist["Close"].diff()
         rs = delta.clip(lower=0).ewm(com=13, adjust=False).mean() / (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean().replace(0, 0.001)
         rsi = (100 - (100 / (1 + rs))).iloc[-1]
+        bias_20 = ((close - ma20) / ma20) * 100 if ma20 else 0
         
-        ma20_val = hist['20MA'].iloc[-1]
-        bias_20 = ((current_close - ma20_val) / ma20_val) * 100 if ma20_val else 0
-
-        # 6. 產出波段火種報告
+        # 5. 決定戰術說明
+        if initial_break:
+            tactics_desc = f"🔥 {break_type} | {quadrant_signal}"
+        else:
+            tactics_desc = f"🚀 中段加速 | {quadrant_signal}"
+        
+        # 產出火種報告
         return {
             "symbol": symbol,
-            "name": raw_id, # 暫存代碼，交由 stock_bot Trello 模組關聯中文名
-            "close": round(current_close, 2),
+            "name": raw_id,
+            "close": round(close, 2),
             "RSI": round(rsi, 2),
             "Bias20": round(bias_20, 2),
-            "tactics": "🔥 長線波段多頭 (符合季線上揚與營收健康)",
+            "Volume_Ratio": round(vol_ratio, 2),
+            "Turnover": round(turnover, 2),
+            "Quadrant": quadrant_signal,
+            "InitialBreak": break_type if initial_break else "",
+            "tactics": tactics_desc,
             "trello_tip": "系統雷達自動篩選，等待總司令確認建倉。"
         }
         
     except Exception as e:
         # 雷達單兵掃描失敗不影響整體陣列，靜默回報
+        logger.debug(f"掃描 {symbol} 時發生異常: {e}")
         return None
 
 # =============================================================================
 # === 3. 主控作戰執行緒 (Main Execution) ===
 # =============================================================================
 if __name__ == "__main__":
-    logger.info("⚡ NOC 游擊隊雷達 v14.5 (收盤波段戰備版) 啟動...")
+    logger.info("⚡ NOC 游擊隊雷達 v16.6 (收盤波段戰備版) 啟動...")
     start_time = time.time()
     
     # 初始化核心戰略模組
@@ -148,15 +237,14 @@ if __name__ == "__main__":
     macro = strategy.get_macro_status()
     if macro["status"] == "🔴 紅燈":
         logger.warning("🚨 大盤跌破季線，防空警報大響。系統拒絕掃描任何新火種，強制保護現金！")
-        # 清空目標檔，確保明日 stock_bot 不會有異常買進提示
         with open(cfg.TARGET_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f, ensure_ascii=False, indent=4)
         exit(0)
 
     found_targets = []
-    logger.info(f"📡 大盤風向正常 ({macro['status']})，開始對 {len(cfg.SCAN_LIST)} 檔標的進行『波段雙核濾網』深度掃描...")
+    logger.info(f"📡 大盤風向正常 ({macro['status']})，開始對 {len(cfg.SCAN_LIST)} 檔標的進行 v16.6 完整濾網深度掃描...")
 
-    # 啟動多執行緒高並行掃描 (具備防爆盾機制)
+    # 啟動多執行緒高並行掃描
     executor = ThreadPoolExecutor(max_workers=cfg.MAX_WORKERS)
     future_to_symbol = {executor.submit(scan_stock_for_wave, sym, strategy): sym for sym in cfg.SCAN_LIST}
     
@@ -167,13 +255,12 @@ if __name__ == "__main__":
                 result = future.result()
                 if result:
                     found_targets.append(result)
-                    logger.info(f"🎯 成功鎖定長線火種: {sym} | 現價: {result['close']} | RSI: {result['RSI']}")
+                    logger.info(f"🎯 成功鎖定長線火種: {sym} | 收盤: {result['close']} | 量比: {result['Volume_Ratio']} | 四象限: {result['Quadrant']}")
             except Exception:
                 pass
     except TimeoutError:
         logger.error("🚨 偵測到網路嚴重延遲！達到 5 分鐘斷頭死線，強制中止剩餘雷達掃描！")
     finally:
-        # 斬斷所有卡死的殭屍執行緒
         executor.shutdown(wait=False, cancel_futures=True)
                 
     elapsed = time.time() - start_time
@@ -182,11 +269,13 @@ if __name__ == "__main__":
     
     # === 戰果結算與檔案寫入 ===
     if not found_targets:
-        logger.info("📡 報告總司令，今日收盤後無任何標的通過『季線上揚 + 營收健康』之雙重嚴苛濾網。")
+        logger.info("📡 報告總司令，今日收盤後無任何標的通過 v16.6 完整濾網（含初升段、起漲攻擊區、不過熱等條件）。")
         with open(cfg.TARGET_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f, ensure_ascii=False, indent=4)
     else:
         logger.info(f"🎯 淬鍊完成！共發現 {len(found_targets)} 檔符合龍蝦養殖標準之高價值火種：")
+        for tgt in found_targets:
+            logger.info(f"   - {tgt['symbol']} ({tgt['name']}) 收盤 {tgt['close']} | {tgt['tactics']}")
         
         # 將清單格式化為 stock_bot 兼容之字典結構
         radar_dict = {}
