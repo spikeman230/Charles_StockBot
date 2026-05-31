@@ -1,6 +1,7 @@
 # =============================================================================
-# NOC 終極戰情室 v16.6 長短雙軌版
+# NOC 終極戰情室 v16.7 長短雙軌版
 # 核心功能：初升段即時偵測、過熱攔截、白名單強制輸出、四象限矩陣
+# 整合：旱地拔蔥、狙擊金叉（統一使用 noc_core 函數）
 # =============================================================================
 
 import yfinance as yf
@@ -33,7 +34,8 @@ from pathlib import Path
 from noc_core import (
     NOCDatabase, NOCStrategy, NOCDataFetcher, NOCRiskManager,
     analyze_chip_tactics, NOCChipMatrix, is_high_quality_signal,
-    assess_volume_turnover_signal, is_overheated, detect_initial_breakout
+    assess_volume_turnover_signal, is_overheated, detect_initial_breakout,
+    calculate_monster_breakout, calculate_sniper_signal
 )
 
 # =============================================================================
@@ -428,7 +430,7 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     return hist
 
 # =============================================================================
-# 核心數據抓取與技術指標
+# 核心數據抓取與技術指標（使用統一函數計算狙擊金叉與旱地拔蔥）
 # =============================================================================
 def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
     cached = DATA_CACHE.get(symbol)
@@ -517,15 +519,18 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         hist["STD20"] = hist["Close"].rolling(20).std()
         hist["BB_Width"] = (4 * hist["STD20"]) / hist["20MA"].replace(0, np.nan)
 
-        hist["Is_Bottoming"] = ((hist["Close"] < hist["5MA"]) & (hist["MACD_Hist"].shift(2) < hist["MACD_Hist"].shift(1)) & (hist["MACD_Hist"].shift(1) < hist["MACD_Hist"]) & (hist["MACD_Hist"] < 0)).astype(int)
-        hist["Is_Breakout"] = ((hist["Close"].shift(1) < hist["5MA"].shift(1)) & (hist["Close"] > hist["5MA"]) & (hist["Est_Volume"] > hist["5VMA"] * 1.2))
-        hist["Sniper_Signal"] = (hist["Is_Bottoming"].rolling(3).max().fillna(0).astype(bool) & hist["Is_Breakout"])
-        hist["Sniper_Memory_5D"] = hist["Sniper_Signal"].rolling(5).max().fillna(0)
+        # ========== 使用統一函數計算狙擊金叉與旱地拔蔥 ==========
+        # 注意：calculate_sniper_signal 會修改 hist 增加 '5MA', 'MACD', 'MACD_Hist', 'Is_Bottoming', 'Is_Breakout', '5VMA' 等欄位
+        # 但這些欄位多數已存在，重新計算不影響結果，且能確保與雷達一致
+        sniper_val = calculate_sniper_signal(hist)
+        hist['Sniper_Signal'] = sniper_val
+        # 保留原有的 Sniper_Memory_5D（向下相容）
+        hist['Sniper_Memory_5D'] = hist['Sniper_Signal'].rolling(5).max().fillna(0)
 
-        just_crossed_60ma = (hist["Close"] > hist["60MA"]) & (hist["Close"].shift(1) <= hist["60MA"].shift(1))
-        extreme_volume = hist["Volume_Ratio"] >= 3.0
-        solid_green = (hist["Close"] >= hist["Close"].shift(1) * 1.04)
-        hist["Monster_Breakout"] = (just_crossed_60ma & extreme_volume & solid_green)
+        # 旱地拔蔥：需要最新一筆資料
+        td_temp = hist.iloc[-1]
+        monster_val = calculate_monster_breakout(hist, td_temp)
+        hist['Monster_Breakout'] = monster_val
 
         hist["20_High"] = hist["High"].rolling(20).max().shift(1)
         hist["Shadow_Ratio"] = (hist["High"] - hist[["Open", "Close"]].max(axis=1)) / (hist["High"] - hist["Low"]).replace(0, 0.001)
@@ -602,7 +607,7 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v16.6 長短雙軌版 啟動。時間：{curr_time}")
+    logger.info(f"NOC 終極戰情室 v16.7 長短雙軌版 啟動。時間：{curr_time}")
 
     db = NOCDatabase()
     strategy = NOCStrategy(db)
@@ -889,7 +894,7 @@ if __name__ == "__main__":
                             action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
                 # 3. 狙擊金叉
                 elif td.get("Sniper_Signal", False):
-                    trigger_label = "🌟 長線多頭結構扭轉金叉"
+                    trigger_label = "🌟 狙擊金叉 (底部扭轉)"
                     if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
                         alert = "🛡️【基本面攔截】營收 YoY 衰退，無情淘汰。"
                     elif trend_score < 0:
@@ -1022,7 +1027,7 @@ if __name__ == "__main__":
         logger.info("🔇 [靜默模式] 今日無任何可行動警報（無建倉/停損/獲利巡航等重要事件），系統靜默退出。")
         sys.exit(0)
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.6】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.7】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
 
     for chart in generated_charts:
         if Path(chart).exists():
