@@ -702,3 +702,18 @@ def get_macro_status_from_db(db: NOCDatabase) -> dict:
                 return {"status": "🟡 黃燈", "desc": "震盪盤整"}
     except:
         return {"status": "🟡 黃燈", "desc": "資料庫讀取失敗"}
+# =============================================================================
+# 為相容舊版 stock_bot 與 noc_radar 提供以下函數
+# =============================================================================
+def get_stock_data_from_db(symbol: str, db: NOCDatabase, days: int = 200) -> Optional[pd.DataFrame]:
+    """從資料庫讀取基礎 K 線（不含指標計算），與舊版相容"""
+    return db.get_stock_dataframe(symbol, days)
+
+# 確保其他常用函數也可直接導入
+__all__ = [
+    'NOCDatabase', 'NOCStrategy', 'NOCRiskManager', 'NOCDataFetcher',
+    'NOCChipMatrix', 'analyze_chip_tactics', 'assess_volume_turnover_signal',
+    'is_overheated', 'detect_initial_breakout', 'calculate_monster_breakout',
+    'calculate_sniper_signal', 'is_high_quality_signal', 'get_stock_data',
+    'get_stock_data_from_db', 'calculate_all_indicators'
+]
