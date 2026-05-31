@@ -393,6 +393,62 @@ class NOCRiskManager:
         tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
         return tr.rolling(period).mean().iloc[-1]
 
+class NOCDataFetcher:
+    def __init__(self, token: str = ""):
+        self.token = token
+        self.logger = logging.getLogger(__name__)
+
+    def fetch_market_health_data(self, start_date: str, db: 'NOCDatabase'):
+        """從 yfinance 抓取加權指數歷史資料，並計算均線存入 market_health 表"""
+        try:
+            twii = yf.Ticker("^TWII").history(start=start_date)
+            if twii.empty:
+                self.logger.warning("無法下載加權指數資料")
+                return
+            twii['20MA'] = twii['Close'].rolling(20).mean()
+            twii['60MA'] = twii['Close'].rolling(60).mean()
+            # 外資期貨空單暫無源，設0
+            with sqlite3.connect(db.db_path) as conn:
+                for idx, row in twii.iterrows():
+                    date_str = idx.strftime("%Y-%m-%d")
+                    conn.execute('''
+                        INSERT OR REPLACE INTO market_health (date, twii_close, twii_20ma, twii_60ma, foreign_futures_net)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (date_str, row['Close'], row['20MA'], row['60MA'], 0))
+            self.logger.info(f"大盤歷史資料已更新至 {db.db_path}")
+        except Exception as e:
+            self.logger.error(f"大盤資料下載失敗: {e}")
+
+    def fetch_and_store_stock_data(self, symbol: str, start_date: str, db: 'NOCDatabase'):
+        """從 yfinance 抓取個股歷史日線並存入 stock_prices 表，同時取得股本"""
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(start=start_date)
+            if hist.empty:
+                self.logger.warning(f"{symbol} 無歷史資料")
+                return
+            # 取得股本並儲存
+            info = ticker.info
+            shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
+            if shares_out:
+                db.save_shares_out(symbol, shares_out)
+
+            with sqlite3.connect(db.db_path) as conn:
+                for idx, row in hist.iterrows():
+                    date_str = idx.strftime("%Y-%m-%d")
+                    conn.execute('''
+                        INSERT OR REPLACE INTO stock_prices (symbol, date, open, high, low, close, volume, adj_close)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (symbol, date_str, row['Open'], row['High'], row['Low'], row['Close'], int(row['Volume']), row['Close']))
+            self.logger.debug(f"{symbol} 歷史資料已儲存 (自 {start_date})")
+        except Exception as e:
+            self.logger.error(f"{symbol} 儲存失敗: {e}")
+
+    # 保留原有的 fetch_financial_statements（若有需要）
+    def fetch_financial_statements(self, symbol: str, db: 'NOCDatabase') -> None:
+        # 原有程式碼不變
+        pass    
+
     def get_position_and_defense(self, symbol: str, current_price: float, hist_df: pd.DataFrame = None,
                                  market_mode: str = "BEAR", is_yellow_light: bool = False) -> dict:
         try:
