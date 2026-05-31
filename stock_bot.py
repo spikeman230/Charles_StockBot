@@ -1,5 +1,5 @@
 # =============================================================================
-# NOC 終極戰情室 v16.7 長短雙軌版
+# 組裝推播訊息（v16.8 明確化）
 # 核心功能：初升段即時偵測、過熱攔截、白名單強制輸出、四象限矩陣
 # 整合：旱地拔蔥、狙擊金叉（統一使用 noc_core 函數）
 # =============================================================================
@@ -927,17 +927,32 @@ if __name__ == "__main__":
             s += f" 📊 財報透視: {fund_health}\n"
             s += f" 📐 量價四象限: {quadrant_signal}\n"
 
+            # ------------------- 組裝推播訊息（v16.8 明確化） -------------------
+            # 依據觸發的信號類型決定標題
             if trigger_label:
-                s += f" 🎯 條件觸發: {trigger_label}\n"
-                if is_yellow_light and (trend_score < 0 or (not is_lightning and ("衰退" in fund_health or "警報" in fund_health))):
-                    logger.info(f"🛑 [黃燈防禦攔截] {sym} 大盤黃燈期間未通過嚴格長線雙濾網，強制屏蔽推播。")
-                    continue
-                if action_plan_text:
-                    s += f"{action_plan_text}"
-                else:
-                    s += f" 👉 作戰指令: {alert}\n"
+                header = f"🎯 {name} ({sym}) —— {trigger_label}\\n"
             else:
-                s += f" 👉 作戰指令: {alert}\n"
+                header = f"🎯 {name} ({sym})\\n"
+
+            s = header
+            s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\\n"
+            s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\\n"
+
+            # 籌碼戰術與法人動向（保留）
+            matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
+            s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\\n"
+            s += f" 💰 法人動向: {chip_msg}\\n"
+            s += f" 📊 財報透視: {fund_health}\\n"
+
+            # 量價四象限僅作為輔助參考（縮短顯示，不佔主行）
+            if quadrant_signal != "➖ 中性觀望":
+                s += f" 📐 量價四象限: {quadrant_signal}\\n"
+
+            # 若有具體行動計劃（試單或長線佈局），直接附加
+            if action_plan_text:
+                s += f"{action_plan_text}\\n"
+            else:
+                s += f" 👉 作戰指令: {alert}\\n"
 
             action_command = s
 
