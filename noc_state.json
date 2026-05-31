@@ -1,5 +1,65 @@
 {
+    "3163": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "3231": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "3481": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "3714": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "6116": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "4904": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "6239": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "6269": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "6415": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
     "8150": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "8431": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -41,12 +101,6 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "8016": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
     "2357": {
         "status": "NONE",
         "entry": 0.0,
@@ -71,25 +125,25 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "1319": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
     "1102": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "1504": {
+    "1319": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
     "1402": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1504": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
@@ -180,15 +234,15 @@
         "last_alert_hash": ""
     },
     "1536.TW": {
-        "status": "HOLD",
-        "entry": 52.79999923706055,
-        "trailing_stop": 48.56,
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
     "1605.TW": {
-        "status": "HOLD",
-        "entry": 38.75,
-        "trailing_stop": 35.1,
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
     "1609.TW": {
@@ -264,9 +318,9 @@
         "last_alert_hash": ""
     },
     "2382.TW": {
-        "status": "HOLD",
-        "entry": 339.0,
-        "trailing_stop": 313.41,
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
     "2409.TW": {
@@ -330,9 +384,9 @@
         "last_alert_hash": ""
     },
     "3231.TW": {
-        "status": "HOLD",
-        "entry": 158.5,
-        "trailing_stop": 142.2,
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
     "3481.TW": {
@@ -425,12 +479,6 @@
         "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
-    "8016.TW": {
-        "status": "HOLD",
-        "entry": 306.0,
-        "trailing_stop": 277.25,
-        "last_alert_hash": ""
-    },
     "2610.TW": {
         "status": "NONE",
         "entry": 0.0,
@@ -480,282 +528,6 @@
         "last_alert_hash": ""
     },
     "6806.TW": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2356": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "0050": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "00878": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2454": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2324": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1326": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "6573": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1476": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "009816": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1301": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2408": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1605": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1513": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1536": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1795": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1609": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "1802": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2302": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2303": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2330": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2317": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2344": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2353": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2352": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2377": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2382": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2379": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2409": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2606": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2637": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2449": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2886": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "2887": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3049": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3037": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3163": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3019": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3231": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3481": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "3714": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "4904": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "6239": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "6116": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "6269": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "6415": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
-        "last_alert_hash": ""
-    },
-    "8431": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
