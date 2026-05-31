@@ -922,7 +922,7 @@ if __name__ == "__main__":
             s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
             s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
             matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
-            s += f" 量比: {vol_ratio:.2f}倍 | 換手: {turnover:.2f}% | 籌碼戰術: {matrix_signal}\n"
+            s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
             s += f" 💰 法人動向: {chip_msg}\n"
             s += f" 📊 財報透視: {fund_health}\n"
             s += f" 📐 量價四象限: {quadrant_signal}\n"
