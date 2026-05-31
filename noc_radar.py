@@ -13,8 +13,10 @@ import json
 import time
 import logging
 import re
+import requests  # 補上
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 from dotenv import load_dotenv
+from typing import Optional, Dict, Any, Tuple  # 補上 Optional
 
 from noc_core import (
     NOCStrategy, NOCDatabase,
