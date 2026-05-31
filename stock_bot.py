@@ -662,23 +662,173 @@ if __name__ == "__main__":
 
     # =========================================================================
     # 戰區 2：觀察區 (白名單: 長線觀測區, 短線觀測區)
-    # 注意：此區塊過長，但原程式碼保持不變，僅需確保使用的 get_stock_data 已修正。
-    # 由於篇幅限制，此處省略完整內容（可沿用原本 stock_bot_0601.py 中的戰區2）。
-    # 為避免遺漏，下方提供戰區2的簡化版本；實際使用時請將您原本的完整戰區2貼入。
+       # =========================================================================
+    # 戰區 2：觀察、雷達與重點觀測區 (雙腦分流) - 重構過濾器
     # =========================================================================
-    force_include_categories = ["長線觀測區", "短線觀測區"]
     for cat, stocks in STOCK_DICT.items():
-        if not stocks:
+        if not stocks: 
             continue
 
         cat_msg_list = []
         for sym, item in stocks.items():
-            # ... 此處放置完整戰區2邏輯（與原本相同，但使用修正後的 get_stock_data）...
-            # 由於長度限制，請您將原本 stock_bot_0601.py 中從「for sym, item in stocks.items():」到「if cat_msg_list:」的完整區塊複製到此處。
-            # 注意：不需修改內部邏輯，只需確保上方 get_stock_data 已正確。
-            pass  # 暫時佔位，實際使用時請複製原本戰區2完整程式碼
+            name = item.get("name", sym) if isinstance(item, dict) else item
+            tips = item.get("trello_tip", "") if isinstance(item, dict) else ""
+            
+            manual_stop_price = 0.0
+            stop_match = re.search(r"(?:死線|防線|停損)[:：]\s*([0-9.]+)", tips)
+            if stop_match:
+                manual_stop_price = float(stop_match.group(1))
+
+            hist = get_stock_data(sym, name)
+            if hist is None: 
+                continue
+            
+            raw_id = re.search(r"\d+", sym).group() if re.search(r"\d+", sym) else sym
+            td, has_data = hist.iloc[-1], True
+            close, rsi, ma5, ma20 = td["Close"], td["RSI"], td["5MA"], td["20MA"]
+            vma5, est_vol = td["5VMA"], td["Est_Volume"]
+            k, d = td["K"], td["D"]
+            
+            atr = td["ATR"] if not pd.isna(td["ATR"]) else 0
+            pos = td["Price_Position"] if not pd.isna(td["Price_Position"]) else 0.5
+            trust_streak = int(td["Trust_Streak"])
+            bias = ((close - ma20) / ma20) * 100 if ma20 else 0
+            pe = td["PE"]
+            yoy = td["YoY"]
+            
+            turnover = td["Turnover_Rate"]
+            vol_ratio = td["Volume_Ratio"]
+
+            # 分流大腦：短線看板使用 BULL 模式（列表名稱包含「短線」）
+            is_lightning = "短線" in cat
+            local_market_mode = "BULL" if is_lightning else market_mode
+
+            trend_score = strategy.get_trend_score(hist, market_mode=local_market_mode)
+            fund_health = strategy.get_fundamental_health(raw_id)
+
+            vol_status = "📈 出量" if est_vol > vma5 * 1.2 else ("📉 量縮" if est_vol < vma5 * 0.8 else "➖ 量平")
+            trend_status = "🔥 多頭" if close > ma5 > ma20 else ("🧊 空頭" if close < ma5 < ma20 else "🔄 盤整")
+
+            yoy_label = f"{yoy:.2f}%" if isinstance(yoy, float) else str(yoy)
+            pe_str = f"{pe:.1f}" if isinstance(pe, float) else str(pe)
+
+            chip_msg = td["Chip_Status"]
+            if trust_streak > 0: 
+                chip_msg += f" (連買 {trust_streak} 天)"
+            elif trust_streak < 0: 
+                chip_msg += f" (連賣 {abs(trust_streak)} 天)"
+
+            sym_state = noc_state.get(sym, StockState())
+            alert = "✅ 趨勢追蹤中，尚未觸發佈局點"
+            trigger_label = ""
+            action_plan_text = ""
+
+            # =========================================================
+            # 狀態機觸發判斷 (優先級：旱地拔蔥 > 狙擊金叉)
+            # =========================================================
+            if sym_state.status == "REAL_HOLD": 
+                alert = f"💼 持股防禦區 | 📍 最新防線: {sym_state.trailing_stop:.1f}"
+            elif sym_state.status == "NONE":
+                # 1. 最高優先級：旱地拔蔥 (Monster Breakout)
+                if td.get("Monster_Breakout", False):
+                    trigger_label = "🔥【旱地拔蔥】底部極端爆量，長紅突破季線！"
+                    # 對接長短線分流：短線看板無視基本面，長線看板嚴格攔截
+                    if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
+                        alert = "🛡️【基本面攔截】營收 YoY 衰退，無情淘汰。"
+                    elif trend_score < 0:
+                        alert = "🛡️【趨勢攔截】長線多頭條件未滿足，拒絕追高。"
+                    elif is_yellow_light:
+                        alert = "🟡【黃燈強制攔截】大盤震盪洗盤，強制攔截新倉。"
+                        action_plan_text = ""
+                    else:
+                        risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
+                        defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=local_market_mode, is_yellow_light=is_yellow_light)
+                        stop_price = defense_info["defense_line"]
+                        noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
+                        alert = "🐉【妖股起漲預警】資金強勢介入，無視基本面，強烈建議觀察試單！"
+                        action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
+                # 2. 次優先級：狙擊金叉 (Sniper_Signal)
+                elif td.get("Sniper_Signal", False):
+                    trigger_label = "🌟 長線多頭結構扭轉金叉"
+                    if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
+                        alert = "🛡️【基本面攔截】營收 YoY 衰退，無情淘汰。"
+                    elif trend_score < 0:
+                        alert = "🛡️【趨勢攔截】長線多頭條件未滿足，拒絕追高。"
+                    elif is_yellow_light:
+                        alert = "🟡【黃燈強制攔截】大盤進入震盪洗盤期，戰情室強制攔截，禁止盲目開新倉建倉。"
+                        action_plan_text = ""
+                    else:
+                        risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
+                        defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=local_market_mode, is_yellow_light=is_yellow_light)
+                        stop_price = defense_info["defense_line"]
+                        noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
+                        alert = f"🚀【長線波段佈局觸發】"
+                        action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
+
+            # 建構輸出字串
+            s = f"🎯 {name} ({sym})\n"
+            s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
+            s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
+            
+            # 籌碼分析：短線區使用 local_market_mode
+            matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
+            s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
+            s += f" 💰 法人動向: {chip_msg}\n"
+            s += f" 📊 財報透視: {fund_health}\n"
+            
+            if trigger_label:
+                s += f" 🎯 條件觸發: {trigger_label}\n"
+                if is_yellow_light and (trend_score < 0 or (not is_lightning and ("衰退" in fund_health or "警報" in fund_health))):
+                    logger.info(f"🛑 [黃燈防禦攔截] {sym} 大盤黃燈期間未通過嚴格長線雙濾網，強制屏蔽推播。")
+                    continue
+                if action_plan_text: 
+                    s += f"{action_plan_text}"
+                else: 
+                    s += f" 👉 作戰指令: {alert}\n"
+            else:
+                s += f" 👉 作戰指令: {alert}\n"
+            
+            # =========================================================
+            # 統一智慧推播過濾器 + 強制輸出分類白名單
+            # =========================================================
+            action_command = s
+
+            # 強制輸出分類（白名單）：無論有無技術/籌碼訊號，都強制推播（仍需檢查黑名單）
+            force_include_categories = ["長線觀測區", "短線觀測區"]
+            is_force_output = cat in force_include_categories   # 完全相等才強制輸出
+            
+            # 黑名單防禦力場（所有股票都必須檢查）
+            fatal_flaws = cfg.ACTION_BLACKLIST + ["攔截", "衰退", "警報", "無情淘汰", "拒絕追高"]
+            has_fatal_flaw = any(keyword in action_command for keyword in fatal_flaws)
+
+            # 決定是否推播
+            if is_force_output:
+                # 強制輸出分類：只要無致命缺陷就推播（不需要技術訊號）
+                if has_fatal_flaw:
+                    logger.info(f"🛑 [強制分類攔截] {sym} 屬於強制輸出區，但觸發致命缺陷，強制封鎖推播。")
+                else:
+                    if tips: 
+                        s += f" 💡 Trello 決策提示: {tips}\n"
+                    cat_msg_list.append(s + "\n")
+                    generated_charts.append(draw_chart_if_needed(hist, sym))
+                    has_actionable_alerts = True
+            else:
+                # 一般分類：僅當有技術訊號或主力點火時才考慮推播
+                has_valid_signal = bool(trigger_label) or "主力點火" in matrix_signal
+                if has_valid_signal:
+                    if has_fatal_flaw:
+                        logger.info(f"🛑 [過濾器攔截] {sym} 雖有訊號，但觸發致命缺陷，強制封鎖推播。")
+                    else:
+                        if tips: 
+                            s += f" 💡 Trello 決策提示: {tips}\n"
+                        cat_msg_list.append(s + "\n")
+                        generated_charts.append(draw_chart_if_needed(hist, sym))
+                        has_actionable_alerts = True
+                else:
+                    logger.debug(f"🔇 [靜默跳過] {sym} 無重要觸發訊號，不推播。")
+
         if cat_msg_list:
-            msg_list.append(f"━━━━━━━━━━━━━━\\n📂 【{cat}】\\n━━━━━━━━━━━━━━\\n")
+            msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
             msg_list.extend(cat_msg_list)
 
     # =========================================================================
