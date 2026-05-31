@@ -930,29 +930,29 @@ if __name__ == "__main__":
             # ------------------- 組裝推播訊息（v16.8 明確化） -------------------
             # 依據觸發的信號類型決定標題
             if trigger_label:
-                header = f"🎯 {name} ({sym}) —— {trigger_label}\\n"
+                header = f"🎯 {name} ({sym}) —— {trigger_label}\n"
             else:
-                header = f"🎯 {name} ({sym})\\n"
+                header = f"🎯 {name} ({sym})\n"
 
             s = header
-            s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\\n"
-            s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\\n"
+            s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
+            s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
 
             # 籌碼戰術與法人動向（保留）
             matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
-            s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\\n"
-            s += f" 💰 法人動向: {chip_msg}\\n"
-            s += f" 📊 財報透視: {fund_health}\\n"
+            s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
+            s += f" 💰 法人動向: {chip_msg}\n"
+            s += f" 📊 財報透視: {fund_health}\n"
 
             # 量價四象限僅作為輔助參考（縮短顯示，不佔主行）
             if quadrant_signal != "➖ 中性觀望":
-                s += f" 📐 量價四象限: {quadrant_signal}\\n"
+                s += f" 📐 量價四象限: {quadrant_signal}\n"
 
             # 若有具體行動計劃（試單或長線佈局），直接附加
             if action_plan_text:
-                s += f"{action_plan_text}\\n"
+                s += f"{action_plan_text}\n"
             else:
-                s += f" 👉 作戰指令: {alert}\\n"
+                s += f" 👉 作戰指令: {alert}\n"
 
             action_command = s
 
