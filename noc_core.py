@@ -244,6 +244,7 @@ class NOCDatabase:
 
     def _init_tables(self):
         with sqlite3.connect(self.db_path) as conn:
+            # market_health 表
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS market_health (
                     date TEXT PRIMARY KEY,
@@ -253,6 +254,7 @@ class NOCDatabase:
                     foreign_futures_net INTEGER
                 )
             ''')
+            # stock_prices 表，加入 adj_close 欄位
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS stock_prices (
                     symbol TEXT,
@@ -266,6 +268,13 @@ class NOCDatabase:
                     PRIMARY KEY (symbol, date)
                 )
             ''')
+            # 若舊資料庫沒有 adj_close 欄位，則新增
+            try:
+                conn.execute("ALTER TABLE stock_prices ADD COLUMN adj_close REAL")
+            except sqlite3.OperationalError:
+                pass  # 欄位已存在
+
+            # stock_info 表
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS stock_info (
                     symbol TEXT PRIMARY KEY,
@@ -273,6 +282,7 @@ class NOCDatabase:
                     last_update TEXT
                 )
             ''')
+            # fundamental_state 表
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS fundamental_state (
                     symbol TEXT PRIMARY KEY,
