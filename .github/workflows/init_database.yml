@@ -1,4 +1,5 @@
 name: NOC 戰情室初始建庫大補丸
+run: python init_db.py
 
 # 關鍵：無排程，純手動按鈕觸發 (這支程式通常建庫時只執行一次)
 on: 
