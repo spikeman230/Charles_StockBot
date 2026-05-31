@@ -41,25 +41,24 @@ SCAN_LIST = [
 ]
 
 if __name__ == "__main__":
-    print("?? 啟動 NOC 戰情室「建庫大補丸」歷史資料載入作業 (SQLite 版)...")
+    print("?? 開始執行 NOC 盤後戰情資料庫補給作業 (SQLite 增量版)...")
     db = NOCDatabase()
-    fetcher = NOCDataFetcher(token=FINMIND_TOKEN, db_path="noc_warroom.db")
-    
-    start_date = (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d")
-    
-    try:
-        print("1?? 正在下載大盤指數歷史資料 (近400天)...")
-        fetcher.fetch_market_health_data(start_date, db)
-        
-        target_stocks = list(set([s.split('.')[0] for s in SCAN_LIST if s.split('.')[0].isdigit()]))
-        print(f"?? 鎖定 {len(target_stocks)} 檔目標，準備進行 400 天歷史大補給！")
-        print("?? 預計耗時 15-25 分鐘，請耐心等候...")
+    fetcher = NOCDataFetcher(token=FINMIND_TOKEN)
 
-        for i, sym in enumerate(target_stocks, 1):
-            print(f"[{i}/{len(target_stocks)}] 正在抓取 {sym} 的歷史戰情數據...")
+    start_date = (datetime.datetime.now() - datetime.timedelta(days=3)).strftime("%Y-%m-%d")
+
+    try:
+        print("1?? 正在更新大盤指數與外資期貨空單數據...")
+        fetcher.fetch_market_health_data(start_date, db)
+
+        target_stocks = list(set([s for s in SCAN_LIST]))
+        print(f"?? 鎖定 {len(target_stocks)} 檔目標，準備開始日常補給！")
+
+        for sym in target_stocks:
             fetcher.fetch_and_store_stock_data(sym, start_date, db)
-            time.sleep(1.0)  # 避免 API 過載
-            
-        print("\\\\n? 歷史戰情資料庫 (noc_warroom.db) 初始建置與灌水完成！")
+            time.sleep(0.5)
+
+        print("\\\\n? 戰情資料庫補給完畢！雷達彈藥充足！")
     except Exception as e:
-        print(f"\\\\n?? 建庫過程發生致命錯誤: {e}")
+        print(f"\\\\n?? 補給過程發生錯誤: {e}")
+
