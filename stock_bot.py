@@ -917,16 +917,6 @@ if __name__ == "__main__":
                             alert = f"🚀【長線波段佈局觸發】"
                             action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
 
-            # ------------------- 組裝推播訊息 -------------------
-            s = f"🎯 {name} ({sym})\n"
-            s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
-            s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
-            matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
-            s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
-            s += f" 💰 法人動向: {chip_msg}\n"
-            s += f" 📊 財報透視: {fund_health}\n"
-            s += f" 📐 量價四象限: {quadrant_signal}\n"
-
             # ------------------- 組裝推播訊息（v16.8 明確化） -------------------
             # 依據觸發的信號類型決定標題
             if trigger_label:
