@@ -16,6 +16,7 @@ import datetime
 import sqlite3
 import os
 import re
+import requests
 from typing import Dict, Any, Optional, Tuple
 
 # 靜音防護
@@ -234,6 +235,92 @@ def is_high_quality_signal(hist: pd.DataFrame, td: pd.Series, matrix_signal: str
     good_trend = trend_score > 0
     return price_break and strong_volume and (strong_chip or good_trend)
 
+# =============================================================================
+# 基本面輔助函數（從 stock_bot 移植）
+# =============================================================================
+def get_revenue_yoy(symbol: str, token: str = "") -> str:
+    if not token:
+        return "N/A"
+    match = re.search(r"\\d+", symbol)
+    if not match:
+        return "N/A"
+    try:
+        url = "https://api.finmindtrade.com/api/v4/data"
+        params = {
+            "dataset": "TaiwanStockMonthRevenue",
+            "data_id": match.group(),
+            "start_date": (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d"),
+            "token": token
+        }
+        r = requests.get(url, params=params, timeout=10)
+        data = r.json()
+        if data.get("msg") == "success" and data.get("data"):
+            df = pd.DataFrame(data["data"])
+            latest = df.iloc[-1]
+            prev = df[(df["revenue_year"] == latest["revenue_year"] - 1) & (df["revenue_month"] == latest["revenue_month"])]
+            if not prev.empty and prev.iloc[-1]["revenue"] > 0:
+                return str(round((latest["revenue"] - prev.iloc[-1]["revenue"]) / prev.iloc[-1]["revenue"] * 100, 2)) + "%"
+    except:
+        pass
+    return "N/A"
+
+def get_pe_ratio(symbol: str) -> str:
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        pe = info.get("trailingPE") or info.get("forwardPE")
+        return str(round(pe, 2)) if pe else "N/A"
+    except:
+        return "N/A"
+
+def get_finmind_chip_data(symbol: str, start_date_str: str, token: str = "") -> pd.DataFrame:
+    if not token:
+        return pd.DataFrame()
+    match = re.search(r"\\d+", symbol)
+    if not match:
+        return pd.DataFrame()
+    try:
+        url = "https://api.finmindtrade.com/api/v4/data"
+        params = {
+            "dataset": "TaiwanStockInstitutionalInvestorsBuySell",
+            "data_id": match.group(),
+            "start_date": start_date_str,
+            "token": token
+        }
+        r = requests.get(url, params=params, timeout=10)
+        data = r.json()
+        if data.get("msg") == "success" and data.get("data"):
+            df = pd.DataFrame(data["data"])
+            df["net_buy"] = df["buy"] - df["sell"]
+            df["type"] = "Other"
+            df.loc[df["name"].str.contains("外資"), "type"] = "Foreign_Inv"
+            df.loc[df["name"].str.contains("投信"), "type"] = "Trust_Inv"
+            df.loc[df["name"].str.contains("自營商"), "type"] = "Dealer_Inv"
+            pivot_df = df.groupby(["date", "type"])["net_buy"].sum().unstack(fill_value=0).reset_index()
+            for col in ["Foreign_Inv", "Trust_Inv", "Dealer_Inv"]:
+                if col not in pivot_df.columns:
+                    pivot_df[col] = 0
+            pivot_df["Date"] = pd.to_datetime(pivot_df["date"]).dt.date
+            pivot_df.set_index("Date", inplace=True)
+            return pivot_df[["Foreign_Inv", "Trust_Inv", "Dealer_Inv"]]
+    except:
+        pass
+    return pd.DataFrame()
+
+def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
+    hist["Chip_Status"] = "➖ 中性/偏空"
+    hist["Trust_Streak"] = 0
+    if not {"Foreign_Inv", "Trust_Inv", "Dealer_Inv"}.issubset(hist.columns):
+        return hist
+    hist["Total_Institutional"] = hist["Foreign_Inv"] + hist["Trust_Inv"] + hist["Dealer_Inv"]
+    hist["Signal_CoBuy"] = (hist["Foreign_Inv"] > 0) & (hist["Trust_Inv"] > 0)
+    hist["Signal_Trust_Trend"] = ((hist["Trust_Inv"] > 0).astype(int).rolling(5).sum() >= 4) & (hist["Trust_Inv"] > 0)
+    trust_dir = np.sign(hist["Trust_Inv"])
+    hist["Trust_Streak"] = trust_dir.groupby((trust_dir != trust_dir.shift()).cumsum()).cumsum()
+    conds = [hist["Signal_CoBuy"], hist["Signal_Trust_Trend"], hist["Total_Institutional"] > 0]
+    hist["Chip_Status"] = np.select(conds, ["🤝 土洋齊買", "🏦 投信作帳", "📈 法人偏多"], default="➖ 中性/偏空")
+    return hist
+    
 # =============================================================================
 # 7. 本地 SQLite 資料庫支援
 # =============================================================================
@@ -681,6 +768,24 @@ def get_stock_data(symbol: str, db: Optional[NOCDatabase] = None, name: str = ""
 
     # 計算完整技術指標
     hist = calculate_all_indicators(hist)
+    # 補上籌碼信號、PE、YoY
+    token = os.getenv("FINMIND_TOKEN", "")
+    # 若有 FinMind token 且尚未有法人籌碼欄位，則抓取並合併
+    if token and 'Foreign_Inv' not in hist.columns:
+        try:
+            start_date = (datetime.datetime.now() - datetime.timedelta(days=200)).strftime("%Y-%m-%d")
+            chip_df = get_finmind_chip_data(symbol, start_date, token)
+            if not chip_df.empty:
+                hist = hist.merge(chip_df, left_index=True, right_index=True, how='left').ffill().fillna(0)
+        except:
+            pass
+    hist = calculate_chip_signals(hist)
+
+    # 補上 PE 與 YoY
+    if 'PE' not in hist.columns:
+        hist['PE'] = get_pe_ratio(symbol)
+    if 'YoY' not in hist.columns:
+        hist['YoY'] = get_revenue_yoy(symbol, token)   
 
     return hist
 
