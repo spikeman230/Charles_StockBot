@@ -1,5 +1,5 @@
 # =============================================================================
-# NOC 終極戰情室 v16.11 長短雙軌版 (完整修正)
+# 組裝推播訊息（v16.8 明確化）
 # 核心功能：初升段即時偵測、過熱攔截、白名單強制輸出、四象限矩陣
 # 整合：旱地拔蔥、狙擊金叉（統一使用 noc_core 函數）
 # =============================================================================
@@ -31,13 +31,11 @@ from dotenv import load_dotenv
 from typing import Optional, Dict, Tuple, Any
 from pathlib import Path
 
-# 從 noc_core 導入所有必要元件
 from noc_core import (
     NOCDatabase, NOCStrategy, NOCDataFetcher, NOCRiskManager,
     analyze_chip_tactics, NOCChipMatrix, is_high_quality_signal,
     assess_volume_turnover_signal, is_overheated, detect_initial_breakout,
-    calculate_monster_breakout, calculate_sniper_signal,
-    get_stock_data as noc_get_stock_data
+    calculate_monster_breakout, calculate_sniper_signal
 )
 
 # =============================================================================
@@ -432,17 +430,119 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     return hist
 
 # =============================================================================
-# 統一的數據獲取（使用 noc_core 完整版，並支援快取）
+# 核心數據抓取與技術指標（使用統一函數計算狙擊金叉與旱地拔蔥）
 # =============================================================================
 def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
     cached = DATA_CACHE.get(symbol)
     if cached is not None:
         return cached
-    db = NOCDatabase()
-    hist = noc_get_stock_data(symbol, db, name)
-    if hist is not None:
+    try:
+        match = re.search(r"\d+", symbol)
+        if match and FINMIND_TOKEN:
+            raw_id = match.group()
+            local_db = NOCDatabase()
+            local_fetcher = NOCDataFetcher(token=FINMIND_TOKEN)
+            local_fetcher.fetch_financial_statements(raw_id, local_db)
+
+        stock = yf.Ticker(symbol)
+        info = stock.info
+        shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
+        hist = stock.history(period="8mo").dropna(subset=["Close"])
+        if len(hist) < 60:
+            return None
+
+        hist["Shares_Out"] = shares_out if shares_out else np.nan
+        hist["Date_Key"] = hist.index.date
+        if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
+            chip_df = get_finmind_chip_data(symbol, (datetime.datetime.now() - datetime.timedelta(days=200)).strftime("%Y-%m-%d"))
+            if not chip_df.empty:
+                hist = hist.merge(chip_df, left_on="Date_Key", right_index=True, how="left").ffill().fillna(0)
+
+        hist = calculate_chip_signals(hist)
+
+        # 動態量能預估
+        now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+        market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
+        market_close = now.replace(hour=13, minute=30, second=0, microsecond=0)
+        total_trading_minutes = (market_close - market_open).total_seconds() / 60.0
+        if market_open < now < market_close:
+            elapsed_mins = max(1.0, (now - market_open).total_seconds() / 60.0)
+            vol_mult = total_trading_minutes / elapsed_mins
+        else:
+            vol_mult = 1.0
+        hist["Est_Volume"] = hist["Volume"].copy()
+        if len(hist) > 0:
+            hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = int(hist["Volume"].iloc[-1] * vol_mult)
+
+        hist["5MA"] = hist["Close"].rolling(5).mean()
+        hist["20MA"] = hist["Close"].rolling(20).mean()
+        hist["25MA"] = hist["Close"].rolling(25).mean()
+        hist["60MA"] = hist["Close"].rolling(60).mean()
+        hist["5VMA"] = hist["Est_Volume"].rolling(5).mean()
+        hist["60VMA"] = hist["Volume"].rolling(60).mean()
+
+        hist["Turnover_Rate"] = ((hist["Est_Volume"] / hist["Shares_Out"]) * 100).fillna(1.5)
+        hist["Volume_Ratio"] = (hist["Est_Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
+
+        # K線特徵
+        hist['Candle_Ratio'] = (hist['High'] - hist[['Open','Close']].max(axis=1)) / (hist['High'] - hist['Low'] + 1e-9)
+        hist['Close_vs_High'] = hist['Close'] / hist['High']
+        hist['Is_Red'] = hist['Close'] >= hist['Open']
+
+        # 乖離與漲幅（用於過熱攔截）
+        hist['Bias_20MA'] = (hist['Close'] - hist['20MA']) / hist['20MA'] * 100
+        hist['Bias_60MA'] = (hist['Close'] - hist['60MA']) / hist['60MA'] * 100
+        hist['Return_5D'] = hist['Close'].pct_change(5) * 100
+        hist['Return_10D'] = hist['Close'].pct_change(10) * 100
+
+        hist["25MA_Rising"] = hist["25MA"] > hist["25MA"].shift(1)
+        hist["Is_Red_Candle"] = hist["Close"] > hist["Open"]
+        hist["Lower_Shadow_Ratio"] = (hist[["Open", "Close"]].min(axis=1) - hist["Low"]) / (hist["High"] - hist["Low"]).replace(0, 0.001)
+
+        hist["Signal_2560"] = (hist["25MA"] > hist["25MA"].shift(3)) & (hist["5VMA"] > hist["60VMA"]) & (hist["Low"] <= hist["25MA"] * 1.015) & (hist["Close"] >= hist["25MA"] * 0.985) & (hist["Est_Volume"] < hist["5VMA"])
+        hist["High_60"] = hist["High"].rolling(window=60, min_periods=20).max()
+        hist["Low_60"] = hist["Low"].rolling(window=60, min_periods=20).min()
+        hist["Price_Position"] = (hist["Close"] - hist["Low_60"]) / (hist["High_60"] - hist["Low_60"]).replace(0, np.nan)
+
+        l9, h9 = hist["Low"].rolling(9).min(), hist["High"].rolling(9).max()
+        hist["K"] = ((hist["Close"] - l9) / (h9 - l9).replace(0, np.nan) * 100).ewm(com=2, adjust=False).mean()
+        hist["D"] = hist["K"].ewm(com=2, adjust=False).mean()
+
+        delta = hist["Close"].diff()
+        rs = delta.clip(lower=0).ewm(com=13, adjust=False).mean() / (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean().replace(0, np.nan)
+        hist["RSI"] = (100 - (100 / (1 + rs))).fillna(50)
+
+        hist["ATR"] = pd.concat([hist["High"] - hist["Low"], (hist["High"] - hist["Close"].shift(1)).abs(), (hist["Low"] - hist["Close"].shift(1)).abs()], axis=1).max(axis=1).rolling(14).mean()
+
+        hist["MACD"] = hist["Close"].ewm(span=12, adjust=False).mean() - hist["Close"].ewm(span=26, adjust=False).mean()
+        hist["MACD_Hist"] = hist["MACD"] - hist["MACD"].ewm(span=9, adjust=False).mean()
+        hist["STD20"] = hist["Close"].rolling(20).std()
+        hist["BB_Width"] = (4 * hist["STD20"]) / hist["20MA"].replace(0, np.nan)
+
+        # ========== 使用統一函數計算狙擊金叉與旱地拔蔥 ==========
+        # 注意：calculate_sniper_signal 會修改 hist 增加 '5MA', 'MACD', 'MACD_Hist', 'Is_Bottoming', 'Is_Breakout', '5VMA' 等欄位
+        # 但這些欄位多數已存在，重新計算不影響結果，且能確保與雷達一致
+        sniper_val = calculate_sniper_signal(hist)
+        hist['Sniper_Signal'] = sniper_val
+        # 保留原有的 Sniper_Memory_5D（向下相容）
+        hist['Sniper_Memory_5D'] = hist['Sniper_Signal'].rolling(5).max().fillna(0)
+
+        # 旱地拔蔥：需要最新一筆資料
+        td_temp = hist.iloc[-1]
+        monster_val = calculate_monster_breakout(hist, td_temp)
+        hist['Monster_Breakout'] = monster_val
+
+        hist["20_High"] = hist["High"].rolling(20).max().shift(1)
+        hist["Shadow_Ratio"] = (hist["High"] - hist[["Open", "Close"]].max(axis=1)) / (hist["High"] - hist["Low"]).replace(0, 0.001)
+
+        hist["PE"] = get_pe_ratio(symbol)
+        hist["YoY"] = get_revenue_yoy(symbol)
+
         DATA_CACHE.set(symbol, hist)
-    return hist
+        return hist
+    except Exception as e:
+        logger.error(f"❌ 標的 [{symbol}] 執行技術分析精算失敗: {e}")
+        return None
 
 # =============================================================================
 # 並行預載入
@@ -507,7 +607,7 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v16.11 長短雙軌版 啟動。時間：{curr_time}")
+    logger.info(f"NOC 終極戰情室 v16.7 長短雙軌版 啟動。時間：{curr_time}")
 
     db = NOCDatabase()
     strategy = NOCStrategy(db)
@@ -818,6 +918,7 @@ if __name__ == "__main__":
                             action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
 
             # ------------------- 組裝推播訊息（v16.8 明確化） -------------------
+            # 依據觸發的信號類型決定標題
             if trigger_label:
                 header = f"🎯 {name} ({sym}) —— {trigger_label}\n"
             else:
@@ -827,14 +928,17 @@ if __name__ == "__main__":
             s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
             s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
 
+            # 籌碼戰術與法人動向（保留）
             matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
             s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
             s += f" 💰 法人動向: {chip_msg}\n"
             s += f" 📊 財報透視: {fund_health}\n"
 
+            # 量價四象限僅作為輔助參考（縮短顯示，不佔主行）
             if quadrant_signal != "➖ 中性觀望":
                 s += f" 📐 量價四象限: {quadrant_signal}\n"
 
+            # 若有具體行動計劃（試單或長線佈局），直接附加
             if action_plan_text:
                 s += f"{action_plan_text}\n"
             else:
@@ -928,7 +1032,7 @@ if __name__ == "__main__":
         logger.info("🔇 [靜默模式] 今日無任何可行動警報（無建倉/停損/獲利巡航等重要事件），系統靜默退出。")
         sys.exit(0)
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.11】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.7】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
 
     for chart in generated_charts:
         if Path(chart).exists():
