@@ -1,5 +1,5 @@
 # =============================================================================
-# NOC 戰情室核心引擎 v16.10
+# NOC 戰情室核心引擎 v16.11
 # 功能：籌碼矩陣、四象限量價、K線形態防禦、過熱攔截、初升段突破偵測
 # 本地 SQLite 資料庫支援（stock_prices, market_health, stock_info, fundamental_state）
 # 完整的技術指標計算（與原 stock_bot 完全一致）
@@ -16,6 +16,7 @@ import datetime
 import sqlite3
 import os
 import re
+import requests
 from typing import Dict, Any, Optional, Tuple
 
 # 靜音防護
@@ -235,7 +236,47 @@ def is_high_quality_signal(hist: pd.DataFrame, td: pd.Series, matrix_signal: str
     return price_break and strong_volume and (strong_chip or good_trend)
 
 # =============================================================================
-# 7. 本地 SQLite 資料庫支援
+# 7. 基本面輔助函數（從 stock_bot 移植）
+# =============================================================================
+def get_revenue_yoy(symbol: str, token: str = "") -> str:
+    """營收年增率查詢（需 FinMind Token）"""
+    if not token:
+        return "N/A"
+    match = re.search(r"\d+", symbol)
+    if not match:
+        return "N/A"
+    try:
+        url = "https://api.finmindtrade.com/api/v4/data"
+        params = {
+            "dataset": "TaiwanStockMonthRevenue",
+            "data_id": match.group(),
+            "start_date": (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d"),
+            "token": token
+        }
+        r = requests.get(url, params=params, timeout=10)
+        data = r.json()
+        if data.get("msg") == "success" and data.get("data"):
+            df = pd.DataFrame(data["data"])
+            latest = df.iloc[-1]
+            prev = df[(df["revenue_year"] == latest["revenue_year"] - 1) & (df["revenue_month"] == latest["revenue_month"])]
+            if not prev.empty and prev.iloc[-1]["revenue"] > 0:
+                return str(round((latest["revenue"] - prev.iloc[-1]["revenue"]) / prev.iloc[-1]["revenue"] * 100, 2)) + "%"
+    except:
+        pass
+    return "N/A"
+
+def get_pe_ratio(symbol: str) -> str:
+    """本益比查詢（從 yfinance）"""
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        pe = info.get("trailingPE") or info.get("forwardPE")
+        return str(round(pe, 2)) if pe else "N/A"
+    except:
+        return "N/A"
+
+# =============================================================================
+# 8. 本地 SQLite 資料庫支援
 # =============================================================================
 class NOCDatabase:
     def __init__(self, db_path: str = "noc_warroom.db"):
@@ -351,7 +392,7 @@ class NOCDatabase:
             pass
 
 # =============================================================================
-# 8. 策略與風險管理類別
+# 9. 策略與風險管理類別
 # =============================================================================
 class NOCStrategy:
     def __init__(self, db: Optional[NOCDatabase] = None):
@@ -484,7 +525,7 @@ class NOCRiskManager:
             }
 
 # =============================================================================
-# 9. 數據獲取器 (NOCDataFetcher) - 支援資料庫寫入
+# 10. 數據獲取器 (NOCDataFetcher) - 支援資料庫寫入
 # =============================================================================
 class NOCDataFetcher:
     def __init__(self, token: str = ""):
@@ -534,18 +575,16 @@ class NOCDataFetcher:
             self.logger.error(f"{symbol} 儲存失敗: {e}")
 
     def fetch_financial_statements(self, symbol: str, db: NOCDatabase) -> None:
-        # 原有實作，可保留空或補上
         pass
 
 # =============================================================================
-# 10. 完整的技術指標計算函數 (從 stock_bot 移植)
+# 11. 完整的技術指標計算函數
 # =============================================================================
-def calculate_all_indicators(hist: pd.DataFrame) -> pd.DataFrame:
-    """給定基礎 OHLCV 與 Shares_Out，計算所有技術指標，回傳原地修改後的 DataFrame"""
+def calculate_all_indicators(hist: pd.DataFrame, symbol: str = "", token: str = "") -> pd.DataFrame:
+    """給定基礎 OHLCV 與 Shares_Out，計算所有技術指標"""
     if hist is None or hist.empty:
         return hist
 
-    # 確保必要欄位存在
     if 'Shares_Out' not in hist.columns:
         hist['Shares_Out'] = np.nan
 
@@ -617,7 +656,7 @@ def calculate_all_indicators(hist: pd.DataFrame) -> pd.DataFrame:
     hist["STD20"] = hist["Close"].rolling(20).std()
     hist["BB_Width"] = (4 * hist["STD20"]) / hist["20MA"].replace(0, np.nan)
 
-    # 底部型態與突破（狙擊金叉）
+    # 狙擊金叉
     hist["Is_Bottoming"] = ((hist["Close"] < hist["5MA"]) & (hist["MACD_Hist"].shift(2) < hist["MACD_Hist"].shift(1)) & (hist["MACD_Hist"].shift(1) < hist["MACD_Hist"]) & (hist["MACD_Hist"] < 0)).astype(int)
     hist["Is_Breakout"] = ((hist["Close"].shift(1) < hist["5MA"].shift(1)) & (hist["Close"] > hist["5MA"]) & (hist["Est_Volume"] > hist["5VMA"] * 1.2))
     hist["Sniper_Signal"] = (hist["Is_Bottoming"].rolling(3).max().fillna(0).astype(bool) & hist["Is_Breakout"])
@@ -632,25 +671,33 @@ def calculate_all_indicators(hist: pd.DataFrame) -> pd.DataFrame:
     hist["20_High"] = hist["High"].rolling(20).max().shift(1)
     hist["Shadow_Ratio"] = (hist["High"] - hist[["Open", "Close"]].max(axis=1)) / (hist["High"] - hist["Low"]).replace(0, 0.001)
 
+    # 基本資料（若提供 symbol 和 token）
+    if symbol:
+        hist['PE'] = get_pe_ratio(symbol)
+        hist['YoY'] = get_revenue_yoy(symbol, token)
+    else:
+        hist['PE'] = 'N/A'
+        hist['YoY'] = 'N/A'
+
     return hist
 
 # =============================================================================
-# 11. 統一的 get_stock_data 函數 (優先從資料庫讀取，補全指標)
+# 12. 統一的 get_stock_data 函數
 # =============================================================================
 def get_stock_data(symbol: str, db: Optional[NOCDatabase] = None, name: str = "") -> Optional[pd.DataFrame]:
     if db is None:
         db = NOCDatabase()
 
+    token = os.getenv("FINMIND_TOKEN", "")
+
     # 嘗試從資料庫讀取基礎 K 線
     hist = db.get_stock_dataframe(symbol, days=200)
     if hist is None or hist.empty:
-        # 即時下載
         try:
             stock = yf.Ticker(symbol)
             hist = stock.history(period="8mo").dropna(subset=["Close"])
             if len(hist) < 60:
                 return None
-            # 存入資料庫
             start_date = (datetime.datetime.now() - datetime.timedelta(days=240)).strftime("%Y-%m-%d")
             fetcher = NOCDataFetcher()
             fetcher.fetch_and_store_stock_data(symbol, start_date, db)
@@ -658,7 +705,6 @@ def get_stock_data(symbol: str, db: Optional[NOCDatabase] = None, name: str = ""
             logger.error(f"❌ 標的 [{symbol}] 即時下載失敗: {e}")
             return None
     else:
-        # 確保資料足夠
         if len(hist) < 60:
             return None
 
@@ -679,14 +725,17 @@ def get_stock_data(symbol: str, db: Optional[NOCDatabase] = None, name: str = ""
         except:
             hist['Shares_Out'] = np.nan
 
-    # 計算完整技術指標
-    hist = calculate_all_indicators(hist)
+    # 計算完整技術指標（傳入 symbol 和 token）
+    hist = calculate_all_indicators(hist, symbol, token)
 
     return hist
 
 # =============================================================================
-# 12. 輔助函數：從資料庫取得大盤狀態 (可選)
+# 13. 輔助函數（相容舊版）
 # =============================================================================
+def get_stock_data_from_db(symbol: str, db: NOCDatabase, days: int = 200) -> Optional[pd.DataFrame]:
+    return db.get_stock_dataframe(symbol, days)
+
 def get_macro_status_from_db(db: NOCDatabase) -> dict:
     try:
         with sqlite3.connect(db.db_path) as conn:
@@ -702,18 +751,15 @@ def get_macro_status_from_db(db: NOCDatabase) -> dict:
                 return {"status": "🟡 黃燈", "desc": "震盪盤整"}
     except:
         return {"status": "🟡 黃燈", "desc": "資料庫讀取失敗"}
-# =============================================================================
-# 為相容舊版 stock_bot 與 noc_radar 提供以下函數
-# =============================================================================
-def get_stock_data_from_db(symbol: str, db: NOCDatabase, days: int = 200) -> Optional[pd.DataFrame]:
-    """從資料庫讀取基礎 K 線（不含指標計算），與舊版相容"""
-    return db.get_stock_dataframe(symbol, days)
 
-# 確保其他常用函數也可直接導入
+# =============================================================================
+# 14. 模組導出列表
+# =============================================================================
 __all__ = [
     'NOCDatabase', 'NOCStrategy', 'NOCRiskManager', 'NOCDataFetcher',
     'NOCChipMatrix', 'analyze_chip_tactics', 'assess_volume_turnover_signal',
     'is_overheated', 'detect_initial_breakout', 'calculate_monster_breakout',
     'calculate_sniper_signal', 'is_high_quality_signal', 'get_stock_data',
-    'get_stock_data_from_db', 'calculate_all_indicators'
+    'get_stock_data_from_db', 'calculate_all_indicators',
+    'get_revenue_yoy', 'get_pe_ratio', 'get_macro_status_from_db'
 ]
