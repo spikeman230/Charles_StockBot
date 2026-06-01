@@ -1,6 +1,8 @@
 # =============================================================================
-# NOC 戰情室核心引擎 v16.6
+# NOC 戰情室核心引擎 v16.10
 # 功能：籌碼矩陣、四象限量價、K線形態防禦、過熱攔截、初升段突破偵測
+# 本地 SQLite 資料庫支援（stock_prices, market_health, stock_info, fundamental_state）
+# 完整的技術指標計算（與原 stock_bot 完全一致）
 # =============================================================================
 
 import yfinance as yf
@@ -11,6 +13,9 @@ import json
 import logging
 import math
 import datetime
+import sqlite3
+import os
+import re
 from typing import Dict, Any, Optional, Tuple
 
 # 靜音防護
@@ -37,7 +42,7 @@ def analyze_chip_tactics(turnover: float, volume_ratio: float, market_mode: str 
         return "➖ 籌碼動態平穩"
 
 # =============================================================================
-# 2. 進階籌碼矩陣 (NOCChipMatrix) – 股本分級 + 突破高點
+# 2. 進階籌碼矩陣 (NOCChipMatrix)
 # =============================================================================
 class NOCChipMatrix:
     def analyze(self, df: pd.DataFrame, market_mode: str = "BEAR") -> str:
@@ -51,7 +56,6 @@ class NOCChipMatrix:
                 vma5_yesterday = df['Volume'].rolling(5).mean().shift(1).iloc[-1]
                 volume_ratio = latest['Volume'] / vma5_yesterday if vma5_yesterday else 0.0
 
-            # 股本分級門檻
             if pd.isna(shares_out) or shares_out == 0:
                 turnover_threshold = 3.0
             elif shares_out >= 3_000_000_000:
@@ -84,11 +88,6 @@ class NOCChipMatrix:
 def assess_volume_turnover_signal(vol_ratio: float, turnover: float, shares_out: float,
                                   price_position: float, candle_ratio: float = 0.0,
                                   is_red: bool = True, close_vs_high: float = 1.0) -> str:
-    """
-    量比 × 換手率 四象限戰術矩陣 v2.0
-    - 強多信號但出現爆量長上影 → 假突破
-    - 黑K出量 → 賣壓沉重
-    """
     if shares_out >= 3_000_000_000:
         threshold = 1.0
     elif shares_out >= 1_000_000_000:
@@ -96,26 +95,20 @@ def assess_volume_turnover_signal(vol_ratio: float, turnover: float, shares_out:
     else:
         threshold = 5.0
 
-    # 強多信號：量比≥1.5 且換手達標
     if vol_ratio >= 1.5 and turnover >= threshold:
-        # 爆量長上影條件：收盤低於高點的96% 且 收黑K OR 上影線比例>0.5
         if (close_vs_high < 0.96 and not is_red) or candle_ratio > 0.5:
             return "🔴 爆量長上影 (假突破/出貨)"
         return "🟢 起漲攻擊區"
 
-    # 死亡信號：爆量 + 高檔 + 換手過熱
     if vol_ratio >= 2.0 and turnover >= threshold * 1.6 and price_position > 0.8:
         return "🔴 主力出貨區"
 
-    # 假突破陷阱：量比大但換手極低
     if vol_ratio >= 1.8 and turnover < threshold * 0.5:
         return "⚠️ 量價背離陷阱"
 
-    # 量縮低換手
     if vol_ratio < 0.8 and turnover < threshold:
         return "➖ 量縮低換手 (洗盤/人氣退潮)"
 
-    # 黑K出量賣壓
     if not is_red and vol_ratio > 1.2 and turnover < threshold * 1.2:
         return "⚠️ 黑K出量 (賣壓沉重)"
 
@@ -127,10 +120,6 @@ def assess_volume_turnover_signal(vol_ratio: float, turnover: float, shares_out:
 def is_overheated(close: float, ma20: float, ma60: float,
                   recent_5d_return: float, recent_10d_return: float,
                   price_position: float, vol_ratio: float) -> Tuple[bool, str]:
-    """
-    判斷股價是否已嚴重過熱，不應開新倉
-    回傳 (是否過熱, 過熱原因)
-    """
     reasons = []
     if ma20 > 0:
         bias20 = (close - ma20) / ma20 * 100
@@ -151,30 +140,23 @@ def is_overheated(close: float, ma20: float, ma60: float,
     return False, ""
 
 # =============================================================================
-# 5. 初升段突破偵測（首次放量站上20MA或突破20日高點）
+# 5. 初升段突破偵測
 # =============================================================================
-def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series, lookback: int = 20) -> Tuple[bool, str, int]: 
-    """
-    偵測初升段突破（首次放量站上20MA或突破20日高點）
-    新增：檢查過去 lookback 日內是否已出現過突破，若已出現則不再標記為首次
-    """
+def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series, lookback: int = 20) -> Tuple[bool, str, int]:
     close = td['Close']
     ma20 = td['20MA']
     if pd.isna(ma20):
         return False, "", 0
 
-    # 檢查過去 lookback 日內是否曾站上20MA
-    hist_slice = hist.iloc[-lookback-1:-1]  # 不含當日
+    hist_slice = hist.iloc[-lookback-1:-1]
     was_above_ma20 = (hist_slice['Close'] > hist_slice['20MA']).any()
     first_above_ma20 = (close > ma20) and not was_above_ma20
 
-    # 檢查過去 lookback 日內是否曾突破20日高點
     high_20 = hist['High'].rolling(20).max().shift(1).iloc[-1]
     hist_high_20 = hist['High'].rolling(20).max().shift(1)
     was_break_high = (hist_slice['Close'] > hist_high_20.iloc[-lookback-1:-1]).any()
     first_break_high = (close > high_20) and not was_break_high
 
-    # 量比與換手門檻（略）
     vol_ratio = td.get('Volume_Ratio', 1.0)
     turnover = td.get('Turnover_Rate', 0.0)
     shares_out = td.get('Shares_Out', 0)
@@ -199,17 +181,10 @@ def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series, lookback: int = 2
 
 # ---------------------- 旱地拔蔥偵測 ----------------------
 def calculate_monster_breakout(hist: pd.DataFrame, td: pd.Series) -> bool:
-    """
-    旱地拔蔥：
-    1. 今日收盤首次站上60MA（昨日收盤 <= 昨日60MA）
-    2. 量比 >= 3.0
-    3. 漲幅 >= 4%
-    """
     close = td['Close']
     ma60 = td['60MA']
     if pd.isna(ma60):
         return False
-    # 首次站上60MA
     prev_close = hist['Close'].iloc[-2]
     prev_ma60 = hist['60MA'].iloc[-2] if len(hist) >= 2 else ma60
     just_crossed = (close > ma60) and (prev_close <= prev_ma60)
@@ -223,18 +198,10 @@ def calculate_monster_breakout(hist: pd.DataFrame, td: pd.Series) -> bool:
 
 # ---------------------- 狙擊金叉偵測 ----------------------
 def calculate_sniper_signal(hist: pd.DataFrame) -> bool:
-    """
-    狙擊金叉：
-    底部型態 (Is_Bottoming) + 突破 (Is_Breakout)
-    Is_Bottoming: 股價在5MA之下 + MACD柱狀體連續三天收斂且仍為負
-    Is_Breakout: 前一天收盤低於5MA，當日站上5MA + 量能 > 5日均量1.2倍
-    """
     if len(hist) < 10:
         return False
-    # 計算 MACD
     hist['MACD'] = hist['Close'].ewm(span=12, adjust=False).mean() - hist['Close'].ewm(span=26, adjust=False).mean()
     hist['MACD_Hist'] = hist['MACD'] - hist['MACD'].ewm(span=9, adjust=False).mean()
-    # 底部型態：股價低於5MA，MACD柱連續三天收斂且為負
     hist['5MA'] = hist['Close'].rolling(5).mean()
     hist['Is_Bottoming'] = (
         (hist['Close'] < hist['5MA']) &
@@ -242,26 +209,24 @@ def calculate_sniper_signal(hist: pd.DataFrame) -> bool:
         (hist['MACD_Hist'].shift(1) < hist['MACD_Hist']) &
         (hist['MACD_Hist'] < 0)
     ).astype(int)
-    # 突破：前一日收盤低於5MA，今日站上5MA，且量能 > 5日均量1.2倍
     hist['5VMA'] = hist['Volume'].rolling(5).mean()
     hist['Is_Breakout'] = (
         (hist['Close'].shift(1) < hist['5MA'].shift(1)) &
         (hist['Close'] > hist['5MA']) &
         (hist['Volume'] > hist['5VMA'] * 1.2)
     )
-    # 狙擊信號：過去3天內有底部型態，且今日為突破
     bottom_3d = hist['Is_Bottoming'].rolling(3).max().fillna(0).astype(bool)
     sniper = bottom_3d.iloc[-1] and hist['Is_Breakout'].iloc[-1]
     return bool(sniper)
 
 # =============================================================================
-# 6. 高品質訊號三重確認濾網 (收盤突破)
+# 6. 高品質訊號三重確認濾網
 # =============================================================================
 def is_high_quality_signal(hist: pd.DataFrame, td: pd.Series, matrix_signal: str, market_mode: str) -> bool:
     recent_20_high = hist['High'].rolling(20).max().shift(1).iloc[-1]
     if pd.isna(recent_20_high):
         recent_20_high = hist['High'].iloc[-2]
-    price_break = td['Close'] > recent_20_high # 收盤突破
+    price_break = td['Close'] > recent_20_high
     vol_ratio = td.get('Volume_Ratio', 1.0)
     strong_volume = vol_ratio >= 2.0
     strong_chip = any(key in matrix_signal for key in ["極速發動", "加速起漲"])
@@ -270,40 +235,124 @@ def is_high_quality_signal(hist: pd.DataFrame, td: pd.Series, matrix_signal: str
     return price_break and strong_volume and (strong_chip or good_trend)
 
 # =============================================================================
-# 7. 輔助類別：資料庫、連線Mock、風險管理、策略、數據獲取
+# 7. 本地 SQLite 資料庫支援
 # =============================================================================
-class MockConn:
-    def close(self) -> None:
-        pass
-
 class NOCDatabase:
-    def __init__(self, db_path: str = "noc_state.json"):
+    def __init__(self, db_path: str = "noc_warroom.db"):
         self.db_path = db_path
         self._lock = threading.Lock()
-        self.conn = MockConn()
+        self._init_tables()
+
+    def _init_tables(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS market_health (
+                    date TEXT PRIMARY KEY,
+                    twii_close REAL,
+                    twii_20ma REAL,
+                    twii_60ma REAL,
+                    foreign_futures_net INTEGER
+                )
+            ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS stock_prices (
+                    symbol TEXT,
+                    date TEXT,
+                    open REAL,
+                    high REAL,
+                    low REAL,
+                    close REAL,
+                    volume INTEGER,
+                    adj_close REAL,
+                    PRIMARY KEY (symbol, date)
+                )
+            ''')
+            try:
+                conn.execute("ALTER TABLE stock_prices ADD COLUMN adj_close REAL")
+            except sqlite3.OperationalError:
+                pass
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS stock_info (
+                    symbol TEXT PRIMARY KEY,
+                    shares_out REAL,
+                    last_update TEXT
+                )
+            ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS fundamental_state (
+                    symbol TEXT PRIMARY KEY,
+                    status TEXT,
+                    entry REAL,
+                    trailing_stop REAL,
+                    last_fetch TEXT
+                )
+            ''')
 
     def load_state(self) -> dict:
-        with self._lock:
-            try:
-                with open(self.db_path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except (FileNotFoundError, json.JSONDecodeError):
-                logger.warning(f"⚠️ 找不到或無法解析狀態檔 {self.db_path}，初始化全新狀態資料結構。")
-                return {}
-            except Exception as e:
-                logger.error(f"❌ 讀取狀態資料庫時發生未知異常: {e}")
-                return {}
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                df = pd.read_sql_query("SELECT symbol, status, entry, trailing_stop, last_fetch FROM fundamental_state", conn)
+                if df.empty:
+                    return {}
+                return {row['symbol']: {"status": row['status'], "entry": row['entry'], "trailing_stop": row['trailing_stop'], "last_fetch": row['last_fetch']} for _, row in df.iterrows()}
+        except:
+            return {}
 
     def save_state(self, data: dict) -> bool:
-        with self._lock:
-            try:
-                with open(self.db_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=4)
-                return True
-            except Exception as e:
-                logger.error(f"❌ 寫入狀態資料庫時發生嚴重失敗: {e}")
-                return False
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                for sym, info in data.items():
+                    conn.execute('''
+                        INSERT OR REPLACE INTO fundamental_state (symbol, status, entry, trailing_stop, last_fetch)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (sym, info.get('status', 'NONE'), info.get('entry', 0.0), info.get('trailing_stop', 0.0), info.get('last_fetch', '')))
+            return True
+        except:
+            return False
 
+    def get_stock_dataframe(self, symbol: str, days: int = 200) -> Optional[pd.DataFrame]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                df = pd.read_sql_query('''
+                    SELECT date, open, high, low, close, volume
+                    FROM stock_prices
+                    WHERE symbol = ?
+                    ORDER BY date DESC
+                    LIMIT ?
+                ''', conn, params=(symbol, days))
+            if df.empty:
+                return None
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values('date')
+            df.set_index('date', inplace=True)
+            df.rename(columns={
+                'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'
+            }, inplace=True)
+            return df
+        except Exception as e:
+            logger.error(f"從資料庫讀取 {symbol} 失敗: {e}")
+            return None
+
+    def get_shares_out(self, symbol: str) -> float:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.execute("SELECT shares_out FROM stock_info WHERE symbol = ?", (symbol,))
+                row = cur.fetchone()
+                return row[0] if row else 0.0
+        except:
+            return 0.0
+
+    def save_shares_out(self, symbol: str, shares_out: float):
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("INSERT OR REPLACE INTO stock_info (symbol, shares_out, last_update) VALUES (?, ?, ?)",
+                             (symbol, shares_out, datetime.datetime.now().isoformat()))
+        except:
+            pass
+
+# =============================================================================
+# 8. 策略與風險管理類別
+# =============================================================================
 class NOCStrategy:
     def __init__(self, db: Optional[NOCDatabase] = None):
         self.logger = logging.getLogger(__name__)
@@ -434,22 +483,222 @@ class NOCRiskManager:
                 "risk_per_share": round(current_price - fallback_stop, 2)
             }
 
+# =============================================================================
+# 9. 數據獲取器 (NOCDataFetcher) - 支援資料庫寫入
+# =============================================================================
 class NOCDataFetcher:
     def __init__(self, token: str = ""):
         self.token = token
         self.logger = logging.getLogger(__name__)
 
-    def fetch_financial_statements(self, symbol: str, db: NOCDatabase) -> None:
+    def fetch_market_health_data(self, start_date: str, db: NOCDatabase):
         try:
-            self.logger.info(f"🚀 [DataFetcher] 啟動多執行緒安全線路，同步標的 {symbol} 的長線基本面數據...")
-            state = db.load_state()
-            now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            if symbol not in state:
-                state[symbol] = {"status": "NONE", "entry": 0.0, "trailing_stop": 0.0, "last_fetch": now_str}
-            else:
-                if isinstance(state[symbol], dict):
-                    state[symbol]["last_fetch"] = now_str
-            db.save_state(state)
-            self.logger.info(f"✅ [DataFetcher] 標的 {symbol} 的波段基本面狀態資料同步更新成功。")
+            twii = yf.Ticker("^TWII").history(start=start_date)
+            if twii.empty:
+                self.logger.warning("無法下載加權指數資料")
+                return
+            twii['20MA'] = twii['Close'].rolling(20).mean()
+            twii['60MA'] = twii['Close'].rolling(60).mean()
+            with sqlite3.connect(db.db_path) as conn:
+                for idx, row in twii.iterrows():
+                    date_str = idx.strftime("%Y-%m-%d")
+                    conn.execute('''
+                        INSERT OR REPLACE INTO market_health (date, twii_close, twii_20ma, twii_60ma, foreign_futures_net)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (date_str, row['Close'], row['20MA'], row['60MA'], 0))
+            self.logger.info(f"大盤歷史資料已更新至 {db.db_path}")
         except Exception as e:
-            self.logger.error(f"❌ [DataFetcher] 執行多執行緒財務數據抓取時攔截到異常: {e}")
+            self.logger.error(f"大盤資料下載失敗: {e}")
+
+    def fetch_and_store_stock_data(self, symbol: str, start_date: str, db: NOCDatabase):
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(start=start_date)
+            if hist.empty:
+                self.logger.warning(f"{symbol} 無歷史資料")
+                return
+            info = ticker.info
+            shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
+            if shares_out:
+                db.save_shares_out(symbol, shares_out)
+
+            with sqlite3.connect(db.db_path) as conn:
+                for idx, row in hist.iterrows():
+                    date_str = idx.strftime("%Y-%m-%d")
+                    conn.execute('''
+                        INSERT OR REPLACE INTO stock_prices (symbol, date, open, high, low, close, volume, adj_close)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (symbol, date_str, row['Open'], row['High'], row['Low'], row['Close'], int(row['Volume']), row['Close']))
+            self.logger.debug(f"{symbol} 歷史資料已儲存 (自 {start_date})")
+        except Exception as e:
+            self.logger.error(f"{symbol} 儲存失敗: {e}")
+
+    def fetch_financial_statements(self, symbol: str, db: NOCDatabase) -> None:
+        # 原有實作，可保留空或補上
+        pass
+
+# =============================================================================
+# 10. 完整的技術指標計算函數 (從 stock_bot 移植)
+# =============================================================================
+def calculate_all_indicators(hist: pd.DataFrame) -> pd.DataFrame:
+    """給定基礎 OHLCV 與 Shares_Out，計算所有技術指標，回傳原地修改後的 DataFrame"""
+    if hist is None or hist.empty:
+        return hist
+
+    # 確保必要欄位存在
+    if 'Shares_Out' not in hist.columns:
+        hist['Shares_Out'] = np.nan
+
+    # 動態量能預估
+    now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+    market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
+    market_close = now.replace(hour=13, minute=30, second=0, microsecond=0)
+    total_trading_minutes = (market_close - market_open).total_seconds() / 60.0
+    if market_open < now < market_close:
+        elapsed_mins = max(1.0, (now - market_open).total_seconds() / 60.0)
+        vol_mult = total_trading_minutes / elapsed_mins
+    else:
+        vol_mult = 1.0
+    hist["Est_Volume"] = hist["Volume"].copy()
+    if len(hist) > 0:
+        hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = int(hist["Volume"].iloc[-1] * vol_mult)
+
+    # 均線
+    hist["5MA"] = hist["Close"].rolling(5).mean()
+    hist["20MA"] = hist["Close"].rolling(20).mean()
+    hist["25MA"] = hist["Close"].rolling(25).mean()
+    hist["60MA"] = hist["Close"].rolling(60).mean()
+    hist["5VMA"] = hist["Est_Volume"].rolling(5).mean()
+    hist["60VMA"] = hist["Volume"].rolling(60).mean()
+
+    # 換手率與量比
+    hist["Turnover_Rate"] = ((hist["Est_Volume"] / hist["Shares_Out"]) * 100).fillna(1.5)
+    hist["Volume_Ratio"] = (hist["Est_Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
+
+    # K線特徵
+    hist['Candle_Ratio'] = (hist['High'] - hist[['Open','Close']].max(axis=1)) / (hist['High'] - hist['Low'] + 1e-9)
+    hist['Close_vs_High'] = hist['Close'] / hist['High']
+    hist['Is_Red'] = hist['Close'] >= hist['Open']
+
+    # 乖離與漲幅
+    hist['Bias_20MA'] = (hist['Close'] - hist['20MA']) / hist['20MA'] * 100
+    hist['Bias_60MA'] = (hist['Close'] - hist['60MA']) / hist['60MA'] * 100
+    hist['Return_5D'] = hist['Close'].pct_change(5) * 100
+    hist['Return_10D'] = hist['Close'].pct_change(10) * 100
+
+    # 其他
+    hist["25MA_Rising"] = hist["25MA"] > hist["25MA"].shift(1)
+    hist["Is_Red_Candle"] = hist["Close"] > hist["Open"]
+    hist["Lower_Shadow_Ratio"] = (hist[["Open", "Close"]].min(axis=1) - hist["Low"]) / (hist["High"] - hist["Low"]).replace(0, 0.001)
+
+    hist["Signal_2560"] = (hist["25MA"] > hist["25MA"].shift(3)) & (hist["5VMA"] > hist["60VMA"]) & (hist["Low"] <= hist["25MA"] * 1.015) & (hist["Close"] >= hist["25MA"] * 0.985) & (hist["Est_Volume"] < hist["5VMA"])
+    hist["High_60"] = hist["High"].rolling(window=60, min_periods=20).max()
+    hist["Low_60"] = hist["Low"].rolling(window=60, min_periods=20).min()
+    hist["Price_Position"] = (hist["Close"] - hist["Low_60"]) / (hist["High_60"] - hist["Low_60"]).replace(0, np.nan)
+
+    # KD
+    l9 = hist["Low"].rolling(9).min()
+    h9 = hist["High"].rolling(9).max()
+    hist["K"] = ((hist["Close"] - l9) / (h9 - l9).replace(0, np.nan) * 100).ewm(com=2, adjust=False).mean()
+    hist["D"] = hist["K"].ewm(com=2, adjust=False).mean()
+
+    # RSI
+    delta = hist["Close"].diff()
+    rs = delta.clip(lower=0).ewm(com=13, adjust=False).mean() / (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean().replace(0, np.nan)
+    hist["RSI"] = (100 - (100 / (1 + rs))).fillna(50)
+
+    # ATR
+    tr = pd.concat([hist["High"] - hist["Low"], (hist["High"] - hist["Close"].shift(1)).abs(), (hist["Low"] - hist["Close"].shift(1)).abs()], axis=1).max(axis=1)
+    hist["ATR"] = tr.rolling(14).mean()
+
+    # MACD
+    hist["MACD"] = hist["Close"].ewm(span=12, adjust=False).mean() - hist["Close"].ewm(span=26, adjust=False).mean()
+    hist["MACD_Hist"] = hist["MACD"] - hist["MACD"].ewm(span=9, adjust=False).mean()
+    hist["STD20"] = hist["Close"].rolling(20).std()
+    hist["BB_Width"] = (4 * hist["STD20"]) / hist["20MA"].replace(0, np.nan)
+
+    # 底部型態與突破（狙擊金叉）
+    hist["Is_Bottoming"] = ((hist["Close"] < hist["5MA"]) & (hist["MACD_Hist"].shift(2) < hist["MACD_Hist"].shift(1)) & (hist["MACD_Hist"].shift(1) < hist["MACD_Hist"]) & (hist["MACD_Hist"] < 0)).astype(int)
+    hist["Is_Breakout"] = ((hist["Close"].shift(1) < hist["5MA"].shift(1)) & (hist["Close"] > hist["5MA"]) & (hist["Est_Volume"] > hist["5VMA"] * 1.2))
+    hist["Sniper_Signal"] = (hist["Is_Bottoming"].rolling(3).max().fillna(0).astype(bool) & hist["Is_Breakout"])
+
+    # 旱地拔蔥
+    just_crossed_60ma = (hist["Close"] > hist["60MA"]) & (hist["Close"].shift(1) <= hist["60MA"].shift(1))
+    extreme_volume = hist["Volume_Ratio"] >= 3.0
+    solid_green = (hist["Close"] >= hist["Close"].shift(1) * 1.04)
+    hist["Monster_Breakout"] = (just_crossed_60ma & extreme_volume & solid_green)
+
+    # 其他
+    hist["20_High"] = hist["High"].rolling(20).max().shift(1)
+    hist["Shadow_Ratio"] = (hist["High"] - hist[["Open", "Close"]].max(axis=1)) / (hist["High"] - hist["Low"]).replace(0, 0.001)
+
+    return hist
+
+# =============================================================================
+# 11. 統一的 get_stock_data 函數 (優先從資料庫讀取，補全指標)
+# =============================================================================
+def get_stock_data(symbol: str, db: Optional[NOCDatabase] = None, name: str = "") -> Optional[pd.DataFrame]:
+    if db is None:
+        db = NOCDatabase()
+
+    # 嘗試從資料庫讀取基礎 K 線
+    hist = db.get_stock_dataframe(symbol, days=200)
+    if hist is None or hist.empty:
+        # 即時下載
+        try:
+            stock = yf.Ticker(symbol)
+            hist = stock.history(period="8mo").dropna(subset=["Close"])
+            if len(hist) < 60:
+                return None
+            # 存入資料庫
+            start_date = (datetime.datetime.now() - datetime.timedelta(days=240)).strftime("%Y-%m-%d")
+            fetcher = NOCDataFetcher()
+            fetcher.fetch_and_store_stock_data(symbol, start_date, db)
+        except Exception as e:
+            logger.error(f"❌ 標的 [{symbol}] 即時下載失敗: {e}")
+            return None
+    else:
+        # 確保資料足夠
+        if len(hist) < 60:
+            return None
+
+    # 補充股本
+    shares_out = db.get_shares_out(symbol)
+    if shares_out > 0:
+        hist['Shares_Out'] = shares_out
+    else:
+        try:
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
+            if shares_out:
+                hist['Shares_Out'] = shares_out
+                db.save_shares_out(symbol, shares_out)
+            else:
+                hist['Shares_Out'] = np.nan
+        except:
+            hist['Shares_Out'] = np.nan
+
+    # 計算完整技術指標
+    hist = calculate_all_indicators(hist)
+
+    return hist
+
+# =============================================================================
+# 12. 輔助函數：從資料庫取得大盤狀態 (可選)
+# =============================================================================
+def get_macro_status_from_db(db: NOCDatabase) -> dict:
+    try:
+        with sqlite3.connect(db.db_path) as conn:
+            df = pd.read_sql_query("SELECT date, twii_close, twii_20ma, twii_60ma FROM market_health ORDER BY date DESC LIMIT 1", conn)
+            if df.empty:
+                return {"status": "🟡 黃燈", "desc": "無大盤資料"}
+            row = df.iloc[-1]
+            if row['twii_close'] > row['twii_20ma']:
+                return {"status": "🟢 綠燈", "desc": "多頭格局"}
+            elif row['twii_close'] < row['twii_60ma']:
+                return {"status": "🔴 紅燈", "desc": "空頭格局"}
+            else:
+                return {"status": "🟡 黃燈", "desc": "震盪盤整"}
+    except:
+        return {"status": "🟡 黃燈", "desc": "資料庫讀取失敗"}
