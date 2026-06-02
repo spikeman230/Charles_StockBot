@@ -627,16 +627,15 @@ class NOCDataFetcher:
 # =============================================================================
 # 10. 完整的技術指標計算函數 (從 stock_bot 移植)
 # =============================================================================
-def calculate_all_indicators(hist: pd.DataFrame) -> pd.DataFrame:
-    """給定基礎 OHLCV 與 Shares_Out，計算所有技術指標，回傳原地修改後的 DataFrame"""
+def calculate_all_indicators(hist: pd.DataFrame, symbol: str = "", token: str = "") -> pd.DataFrame:
+    """給定基礎 OHLCV 與 Shares_Out，計算所有技術指標"""
     if hist is None or hist.empty:
         return hist
 
-    # 確保必要欄位存在
     if 'Shares_Out' not in hist.columns:
         hist['Shares_Out'] = np.nan
 
-    # 動態量能預估
+    # ========== 動態量能預估（僅用於換手率盤中估算，不影響量比） ==========
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
     market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
     market_close = now.replace(hour=13, minute=30, second=0, microsecond=0)
@@ -650,30 +649,34 @@ def calculate_all_indicators(hist: pd.DataFrame) -> pd.DataFrame:
     if len(hist) > 0:
         hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = int(hist["Volume"].iloc[-1] * vol_mult)
 
-    # 均線
+    # ========== 均線（使用實際收盤價） ==========
     hist["5MA"] = hist["Close"].rolling(5).mean()
     hist["20MA"] = hist["Close"].rolling(20).mean()
     hist["25MA"] = hist["Close"].rolling(25).mean()
     hist["60MA"] = hist["Close"].rolling(60).mean()
-    hist["5VMA"] = hist["Est_Volume"].rolling(5).mean()
+
+    # ========== 量能均線（使用實際成交量，而非 Est_Volume） ==========
+    hist["5VMA"] = hist["Volume"].rolling(5).mean()           # 修正：改用實際 Volume
     hist["60VMA"] = hist["Volume"].rolling(60).mean()
 
-    # 換手率與量比
+    # ========== 換手率（盤中使用 Est_Volume 估算，盤後等於實際） ==========
     hist["Turnover_Rate"] = ((hist["Est_Volume"] / hist["Shares_Out"]) * 100).fillna(1.5)
-    hist["Volume_Ratio"] = (hist["Est_Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
 
-    # K線特徵
+    # ========== 量比（使用實際成交量 / 昨日 5VMA） ==========
+    hist["Volume_Ratio"] = (hist["Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
+
+    # ========== K線特徵 ==========
     hist['Candle_Ratio'] = (hist['High'] - hist[['Open','Close']].max(axis=1)) / (hist['High'] - hist['Low'] + 1e-9)
     hist['Close_vs_High'] = hist['Close'] / hist['High']
     hist['Is_Red'] = hist['Close'] >= hist['Open']
 
-    # 乖離與漲幅
+    # ========== 乖離與漲幅 ==========
     hist['Bias_20MA'] = (hist['Close'] - hist['20MA']) / hist['20MA'] * 100
     hist['Bias_60MA'] = (hist['Close'] - hist['60MA']) / hist['60MA'] * 100
     hist['Return_5D'] = hist['Close'].pct_change(5) * 100
     hist['Return_10D'] = hist['Close'].pct_change(10) * 100
 
-    # 其他
+    # ========== 其他 ==========
     hist["25MA_Rising"] = hist["25MA"] > hist["25MA"].shift(1)
     hist["Is_Red_Candle"] = hist["Close"] > hist["Open"]
     hist["Lower_Shadow_Ratio"] = (hist[["Open", "Close"]].min(axis=1) - hist["Low"]) / (hist["High"] - hist["Low"]).replace(0, 0.001)
@@ -683,41 +686,49 @@ def calculate_all_indicators(hist: pd.DataFrame) -> pd.DataFrame:
     hist["Low_60"] = hist["Low"].rolling(window=60, min_periods=20).min()
     hist["Price_Position"] = (hist["Close"] - hist["Low_60"]) / (hist["High_60"] - hist["Low_60"]).replace(0, np.nan)
 
-    # KD
+    # ========== KD ==========
     l9 = hist["Low"].rolling(9).min()
     h9 = hist["High"].rolling(9).max()
     hist["K"] = ((hist["Close"] - l9) / (h9 - l9).replace(0, np.nan) * 100).ewm(com=2, adjust=False).mean()
     hist["D"] = hist["K"].ewm(com=2, adjust=False).mean()
 
-    # RSI
+    # ========== RSI ==========
     delta = hist["Close"].diff()
     rs = delta.clip(lower=0).ewm(com=13, adjust=False).mean() / (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean().replace(0, np.nan)
     hist["RSI"] = (100 - (100 / (1 + rs))).fillna(50)
 
-    # ATR
+    # ========== ATR ==========
     tr = pd.concat([hist["High"] - hist["Low"], (hist["High"] - hist["Close"].shift(1)).abs(), (hist["Low"] - hist["Close"].shift(1)).abs()], axis=1).max(axis=1)
     hist["ATR"] = tr.rolling(14).mean()
 
-    # MACD
+    # ========== MACD ==========
     hist["MACD"] = hist["Close"].ewm(span=12, adjust=False).mean() - hist["Close"].ewm(span=26, adjust=False).mean()
     hist["MACD_Hist"] = hist["MACD"] - hist["MACD"].ewm(span=9, adjust=False).mean()
     hist["STD20"] = hist["Close"].rolling(20).std()
     hist["BB_Width"] = (4 * hist["STD20"]) / hist["20MA"].replace(0, np.nan)
 
-    # 底部型態與突破（狙擊金叉）
+    # ========== 狙擊金叉 ==========
     hist["Is_Bottoming"] = ((hist["Close"] < hist["5MA"]) & (hist["MACD_Hist"].shift(2) < hist["MACD_Hist"].shift(1)) & (hist["MACD_Hist"].shift(1) < hist["MACD_Hist"]) & (hist["MACD_Hist"] < 0)).astype(int)
     hist["Is_Breakout"] = ((hist["Close"].shift(1) < hist["5MA"].shift(1)) & (hist["Close"] > hist["5MA"]) & (hist["Est_Volume"] > hist["5VMA"] * 1.2))
     hist["Sniper_Signal"] = (hist["Is_Bottoming"].rolling(3).max().fillna(0).astype(bool) & hist["Is_Breakout"])
 
-    # 旱地拔蔥
+    # ========== 旱地拔蔥 ==========
     just_crossed_60ma = (hist["Close"] > hist["60MA"]) & (hist["Close"].shift(1) <= hist["60MA"].shift(1))
     extreme_volume = hist["Volume_Ratio"] >= 3.0
     solid_green = (hist["Close"] >= hist["Close"].shift(1) * 1.04)
     hist["Monster_Breakout"] = (just_crossed_60ma & extreme_volume & solid_green)
 
-    # 其他
+    # ========== 其他 ==========
     hist["20_High"] = hist["High"].rolling(20).max().shift(1)
     hist["Shadow_Ratio"] = (hist["High"] - hist[["Open", "Close"]].max(axis=1)) / (hist["High"] - hist["Low"]).replace(0, 0.001)
+
+    # ========== 基本面資料（若有傳入 symbol 和 token） ==========
+    if symbol:
+        hist['PE'] = get_pe_ratio(symbol)
+        hist['YoY'] = get_revenue_yoy(symbol, token)
+    else:
+        hist['PE'] = 'N/A'
+        hist['YoY'] = 'N/A'
 
     return hist
 
