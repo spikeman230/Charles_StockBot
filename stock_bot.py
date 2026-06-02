@@ -664,7 +664,7 @@ if __name__ == "__main__":
                 momentum_data = json.load(f)
             if momentum_data:
                 # 將飆股清單放入「短線觀測區」（白名單強制輸出）
-                STOCK_DICT["? 短線飆股區 (Momentum)"] = momentum_data
+                STOCK_DICT["⚡短線飆股區 (Momentum)"] = momentum_data
                 logger.info(f"? 已載入 {len(momentum_data)} 檔短線飆股至追蹤區")
         except Exception as e:
             logger.error(f"讀取短線飆股清單失敗: {e}")
@@ -774,9 +774,9 @@ if __name__ == "__main__":
                 has_actionable_alerts = True
 
     # =========================================================================
-    # 戰區 2：觀察區 (白名單: 長線觀測區, 短線觀測區)
+    # 戰區 2：觀察區 (白名單: 長線觀測區, 短線觀測區, ⚡ 短線飆股區 (Momentum)"])
     # =========================================================================
-    force_include_categories = ["長線觀測區", "短線觀測區"]
+    force_include_categories = ["長線觀測區", "短線觀測區", "⚡ 短線飆股區 (Momentum)"]
     for cat, stocks in STOCK_DICT.items():
         if not stocks:
             continue
