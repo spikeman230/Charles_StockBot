@@ -4,7 +4,7 @@ name: NOC 短線飆股搜尋器
 on:
   workflow_dispatch:          # 手動按鈕觸發
   schedule:
-    - cron: '30 6 * * 1-5'   # 週一至週五 UTC 06:30 (台灣 14:30)
+    - cron: '30 9 * * 1-5'   # 週一至週五 UTC 09:30 (台灣 17:30)
 
 # 權限：若需要將結果 commit 回倉庫，請開啟 contents: write
 # 此處僅產生 artifacts，不主動 commit
