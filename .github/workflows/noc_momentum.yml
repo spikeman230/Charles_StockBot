@@ -1,0 +1,54 @@
+name: NOC 短線飆股搜尋器
+
+# 觸發條件：手動執行 + 每日台股收盤後 (台灣時間 14:30 = UTC 06:30)
+on:
+  workflow_dispatch:          # 手動按鈕觸發
+  schedule:
+    - cron: '30 6 * * 1-5'   # 週一至週五 UTC 06:30 (台灣 14:30)
+
+# 權限：若需要將結果 commit 回倉庫，請開啟 contents: write
+# 此處僅產生 artifacts，不主動 commit
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  momentum-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout 程式碼
+        uses: actions/checkout@v4
+
+      - name: 設定 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 安裝依賴套件
+        run: |
+          python -m pip install --upgrade pip
+          pip install yfinance pandas numpy python-dotenv
+          # 若專案有 requirements.txt 則一併安裝
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: 執行短線飆股搜尋器
+        env:
+          # 若程式碼中有使用 FinMind Token，可從 Secrets 讀取
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+        run: python noc_momentum.py
+
+      - name: 上傳掃描結果 (Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: momentum_targets
+          path: momentum_targets.json
+          retention-days: 7
+
+      # (可選) 如果需要將結果 commit 回倉庫，請取消以下註解
+      - name: Commit 結果回倉庫
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -f momentum_targets.json
+          git diff-index --quiet HEAD || git commit -m "🤖 更新短線飆股清單"
+          git push
