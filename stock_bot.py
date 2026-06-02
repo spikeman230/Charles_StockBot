@@ -655,7 +655,20 @@ if __name__ == "__main__":
                     STOCK_DICT[label] = json.load(f)
             except Exception as e:
                 logger.error(f"讀取 {fname} 失敗: {e}")
-
+    
+    # 整合短線飆股搜尋器結果 (Momentum)
+    MOMENTUM_FILE = "momentum_targets.json"
+    if Path(MOMENTUM_FILE).exists():
+        try:
+            with open(MOMENTUM_FILE, "r", encoding="utf-8") as f:
+                momentum_data = json.load(f)
+            if momentum_data:
+                # 將飆股清單放入「短線觀測區」（白名單強制輸出）
+                STOCK_DICT["? 短線飆股區 (Momentum)"] = momentum_data
+                logger.info(f"? 已載入 {len(momentum_data)} 檔短線飆股至追蹤區")
+        except Exception as e:
+            logger.error(f"讀取短線飆股清單失敗: {e}")
+    
     all_symbols = {sym: data["name"] for sym, data in MY_PORTFOLIO.items()}
     for stocks in STOCK_DICT.values():
         for sym, item in stocks.items():
