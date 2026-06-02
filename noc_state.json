@@ -56,19 +56,19 @@
     "1326.TW": {
         "status": "REAL_HOLD",
         "entry": 49.5,
-        "trailing_stop": 47.072500228881836,
+        "trailing_stop": 47.12250022888183,
         "last_alert_hash": ""
     },
     "2324.TW": {
         "status": "REAL_HOLD",
         "entry": 36.35,
-        "trailing_stop": 32.01750001907349,
+        "trailing_stop": 32.06249990463257,
         "last_alert_hash": ""
     },
     "2356.TW": {
         "status": "REAL_HOLD",
         "entry": 52.8,
-        "trailing_stop": 57.63500003814697,
+        "trailing_stop": 57.814999961853026,
         "last_alert_hash": ""
     },
     "2454.TW": {
@@ -80,7 +80,7 @@
     "00878.TW": {
         "status": "REAL_HOLD",
         "entry": 22.21,
-        "trailing_stop": 28.175737285614012,
+        "trailing_stop": 28.479789066314698,
         "last_alert_hash": ""
     },
     "009816.TW": {
