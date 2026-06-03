@@ -50,7 +50,7 @@
     "0050.TW": {
         "status": "REAL_HOLD",
         "entry": 0.0,
-        "trailing_stop": 98.85750045776368,
+        "trailing_stop": 98.86000022888183,
         "last_alert_hash": ""
     },
     "1326.TW": {
@@ -80,13 +80,13 @@
     "00878.TW": {
         "status": "REAL_HOLD",
         "entry": 22.21,
-        "trailing_stop": 28.83073139190674,
+        "trailing_stop": 28.833731269836427,
         "last_alert_hash": ""
     },
     "009816.TW": {
         "status": "REAL_HOLD",
         "entry": 13.99,
-        "trailing_stop": 14.382499933242798,
+        "trailing_stop": 14.38299994468689,
         "last_alert_hash": ""
     },
     "2382.TW": {
@@ -879,6 +879,60 @@
         "status": "HOLD",
         "entry": 7.53000020980835,
         "trailing_stop": 7.06,
+        "last_alert_hash": ""
+    },
+    "2371.TW": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "1514.TW": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "3008.TW": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2890.TW": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "3376.TW": {
+        "status": "HOLD",
+        "entry": 226.5,
+        "trailing_stop": 204.32,
+        "last_alert_hash": ""
+    },
+    "1519.TW": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2014.TW": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "2834.TW": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "6005.TW": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
         "last_alert_hash": ""
     }
 }
