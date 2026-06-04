@@ -736,9 +736,25 @@ if __name__ == "__main__":
             else:
                 final_stop = max(sym_state.trailing_stop, calculated_stop)
 
-            if isinstance(yoy, (int, float)) and yoy < 0:
-                pnl_alert = "💀【護城河瓦解】營收 YoY 衰退，明日開盤即刻清倉！"
+            # ----- 營收判斷（修正版）-----
+            fund_health = strategy.get_fundamental_health(raw_id)   # 累計營收描述（yfinance）
+            is_accumulated_recession = "衰退" in fund_health
+
+            # ----- 營收判斷（修正版）-----
+            fund_health = strategy.get_fundamental_health(raw_id)   # 累計營收描述（yfinance）
+            is_accumulated_recession = "衰退" in fund_health
+
+            # 優先判斷：累計衰退 或 單月大幅衰退（< -10%）→ 清倉
+            if is_accumulated_recession:
+                pnl_alert = "💀【護城河瓦解】累計營收衰退，明日開盤即刻清倉！"
                 noc_state[sym] = StockState(status="NONE")
+            elif isinstance(yoy_single, (int, float)) and yoy_single < -10:
+                pnl_alert = f"💀【營收急遽衰退】單月年增率 {yoy_single:.1f}%，明日開盤清倉！"
+                noc_state[sym] = StockState(status="NONE")
+            # 單月小幅衰退（0 ~ -10%）→ 僅警示，不強制清倉
+            elif isinstance(yoy_single, (int, float)) and yoy_single < 0:
+                pnl_alert = f"⚠️【營運動能轉弱】單月年增率 {yoy_single:.1f}%，減碼觀察，不加碼。"
+                # 不改變 noc_state
             elif roi_pct <= -15.0 or curr_price < ma60 or curr_price < final_stop:
                 pnl_alert = f"🩸【戰術撤離】跌破防守底線 ({final_stop:.2f})，無條件停損變現！"
                 noc_state[sym] = StockState(status="NONE")
@@ -755,7 +771,8 @@ if __name__ == "__main__":
                 pnl_alert = f"🔍【中立觀察】價格震盪，監控防禦底線 ({final_stop:.2f})。"
                 noc_state[sym].trailing_stop = final_stop
 
-            silent_keywords = ["中立觀察", "長線鎖籌", "洗盤耐受區", "獲利巡航"]
+            # 靜默模式：僅過濾「中立觀察」、「長線鎖籌」、「洗盤耐受區」（不過濾獲利巡航）
+            silent_keywords = ["中立觀察", "長線鎖籌", "洗盤耐受區"]
             is_silent = any(kw in pnl_alert for kw in silent_keywords)
             if is_silent and cfg.SILENT_MODE:
                 logger.info(f"🔇 [靜默模式] 庫藏股 {sym} 指令為 '{pnl_alert}'，符合靜默關鍵字，不進行推播與繪圖。")
@@ -767,8 +784,13 @@ if __name__ == "__main__":
                 matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=market_mode)
                 inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
                 inv_str += f" 💰 法人籌碼: {chip_msg}\n"
-                fund_msg = strategy.get_fundamental_health(raw_id)
-                inv_str += f" 📊 財報: {fund_msg}\n"
+                inv_str += f" 📊 累計財報: {fund_health}\n"
+                # 新增單月營收顯示（安全處理）
+                if isinstance(yoy_single, (int, float)):
+                    yoy_display = f"{yoy_single:.1f}%"
+                else:
+                    yoy_display = str(yoy_single)
+                inv_str += f" 📈 單月YoY: {yoy_display}\n"
                 inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\n\n"
                 msg_list.append(inv_str)
                 has_actionable_alerts = True
@@ -931,7 +953,6 @@ if __name__ == "__main__":
                             action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
 
             # ------------------- 組裝推播訊息（v16.8 明確化） -------------------
-            # 依據觸發的信號類型決定標題
             if trigger_label:
                 header = f"🎯 {name} ({sym}) —— {trigger_label}\n"
             else:
@@ -941,17 +962,18 @@ if __name__ == "__main__":
             s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
             s += f" 趨勢: {trend_status} | 估值 PE: {pe_str} | 營收 YoY: {yoy_label}\n"
 
-            # 籌碼戰術與法人動向（保留）
             matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
             s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
             s += f" 💰 法人動向: {chip_msg}\n"
             s += f" 📊 財報透視: {fund_health}\n"
 
-            # 量價四象限僅作為輔助參考（縮短顯示，不佔主行）
-            if quadrant_signal != "➖ 中性觀望":
-                s += f" 📐 量價四象限: {quadrant_signal}\n"
+            # 安全顯示單月營收年增率
+            if isinstance(yoy, (int, float)):
+                yoy_display = f"{yoy:.1f}%"
+            else:
+                yoy_display = str(yoy)
+            s += f" 📈 單月YoY: {yoy_display} | 累計描述: {fund_health}\n"
 
-            # 若有具體行動計劃（試單或長線佈局），直接附加
             if action_plan_text:
                 s += f"{action_plan_text}\n"
             else:
