@@ -735,7 +735,7 @@ if __name__ == "__main__":
             if trello_stop > 0:
                 final_stop = max(trello_stop, sym_state.trailing_stop, calculated_stop)
             else:
-            final_stop = max(sym_state.trailing_stop, calculated_stop)
+                final_stop = max(sym_state.trailing_stop, calculated_stop)
 
             # ----- 營收判斷（修正版）-----
             fund_health = strategy.get_fundamental_health(raw_id)   # 累計營收描述（yfinance）
