@@ -695,13 +695,13 @@ if __name__ == "__main__":
     # 戰區 1：庫藏股 (白名單強制輸出)
     # =========================================================================
     if MY_PORTFOLIO:
-        msg_list.append("━━━━━━━━━━━━━━\n💼 【庫藏股 (長線鎖籌動態防禦動態)】\n━━━━━━━━━━━━━━\n")
+        msg_list.append("━━━━━━━━━━━━━━\\n💼 【庫藏股 (長線鎖籌動態防禦動態)】\\n━━━━━━━━━━━━━━\\n")
         for sym, data in MY_PORTFOLIO.items():
             hist = get_stock_data(sym, data["name"])
             if hist is None:
                 continue
 
-            raw_id = re.search(r"\d+", sym).group() if re.search(r"\d+", sym) else sym
+            raw_id = re.search(r"\\d+", sym).group() if re.search(r"\\d+", sym) else sym
             td, has_data = hist.iloc[-1], True
             curr_price, atr = td["Close"], td["ATR"] if not pd.isna(td.get("ATR", float("nan"))) else 0
             buy_price = data["buy_price"]
@@ -717,12 +717,13 @@ if __name__ == "__main__":
             ma60 = td["60MA"]
             turnover = td["Turnover_Rate"]
             vol_ratio = td["Volume_Ratio"]
-            yoy = td["YoY"]
+            # ---------- 定義 yoy_single ----------
+            yoy_single = td["YoY"]          # 單月營收年增率（FinMind）
 
             if is_yellow_light:
                 current_atr_multiplier = 2.0
             else:
-                current_atr_multiplier = 1.8 if market_mode == "BULL" else 3.0
+            current_atr_multiplier = 1.8 if market_mode == "BULL" else 3.0
             calculated_stop = curr_price - (atr * current_atr_multiplier)
             calculated_stop = min(calculated_stop, ma20) if not pd.isna(ma20) else calculated_stop
 
@@ -734,11 +735,7 @@ if __name__ == "__main__":
             if trello_stop > 0:
                 final_stop = max(trello_stop, sym_state.trailing_stop, calculated_stop)
             else:
-                final_stop = max(sym_state.trailing_stop, calculated_stop)
-
-            # ----- 營收判斷（修正版）-----
-            fund_health = strategy.get_fundamental_health(raw_id)   # 累計營收描述（yfinance）
-            is_accumulated_recession = "衰退" in fund_health
+            final_stop = max(sym_state.trailing_stop, calculated_stop)
 
             # ----- 營收判斷（修正版）-----
             fund_health = strategy.get_fundamental_health(raw_id)   # 累計營收描述（yfinance）
@@ -778,20 +775,20 @@ if __name__ == "__main__":
                 logger.info(f"🔇 [靜默模式] 庫藏股 {sym} 指令為 '{pnl_alert}'，符合靜默關鍵字，不進行推播與繪圖。")
             else:
                 generated_charts.append(draw_chart_if_needed(hist, sym))
-                inv_str = f"{etf_icon} {data['name']} ({sym})\n"
-                inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
+                inv_str = f"{etf_icon} {data['name']} ({sym})\\n"
+                inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\\n"
                 chip_msg = td["Chip_Status"]
                 matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=market_mode)
-                inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
-                inv_str += f" 💰 法人籌碼: {chip_msg}\n"
-                inv_str += f" 📊 累計財報: {fund_health}\n"
-                # 新增單月營收顯示（安全處理）
+                inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\\n"
+                inv_str += f" 💰 法人籌碼: {chip_msg}\\n"
+                inv_str += f" 📊 累計財報: {fund_health}\\n"
+                # 顯示單月營收（安全處理）
                 if isinstance(yoy_single, (int, float)):
                     yoy_display = f"{yoy_single:.1f}%"
                 else:
-                    yoy_display = str(yoy_single)
-                inv_str += f" 📈 單月YoY: {yoy_display}\n"
-                inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\n\n"
+                yoy_display = str(yoy_single)
+                inv_str += f" 📈 單月YoY: {yoy_display}\\n"
+                inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\\n\\n"
                 msg_list.append(inv_str)
                 has_actionable_alerts = True
 
