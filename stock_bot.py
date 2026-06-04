@@ -786,7 +786,7 @@ if __name__ == "__main__":
                 if isinstance(yoy_single, (int, float)):
                     yoy_display = f"{yoy_single:.1f}%"
                 else:
-                yoy_display = str(yoy_single)
+                    yoy_display = str(yoy_single)
                 inv_str += f" 📈 單月YoY: {yoy_display}\\n"
                 inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\\n\\n"
                 msg_list.append(inv_str)
