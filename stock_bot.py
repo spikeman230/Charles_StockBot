@@ -736,9 +736,22 @@ if __name__ == "__main__":
             else:
                 final_stop = max(sym_state.trailing_stop, calculated_stop)
 
-            if isinstance(yoy, (int, float)) and yoy < 0:
-                pnl_alert = "💀【護城河瓦解】營收 YoY 衰退，明日開盤即刻清倉！"
+            # 取得單月營收年增率（FinMind）與累計營收描述（yfinance）
+            yoy_single = td["YoY"]          # 單月年增率
+            fund_health = strategy.get_fundamental_health(raw_id)
+            is_accumulated_recession = "衰退" in fund_health   # 累計營收是否衰退
+
+            # ----- 營收判斷：優先以累計衰退為主，單月大幅衰退為輔 -----
+            if is_accumulated_recession:
+                pnl_alert = "💀【護城河瓦解】累計營收衰退，明日開盤即刻清倉！"
                 noc_state[sym] = StockState(status="NONE")
+            elif isinstance(yoy_single, (int, float)) and yoy_single < -10:
+                pnl_alert = f"💀【營收急遽衰退】單月年增率 {yoy_single:.1f}%，明日開盤清倉！"
+                noc_state[sym] = StockState(status="NONE")
+            elif isinstance(yoy_single, (int, float)) and yoy_single < 0:
+                # 單月小幅衰退：僅警示，不強制清倉，但會影響後續操作（不加碼）
+                pnl_alert = f"⚠️【營運動能轉弱】單月年增率 {yoy_single:.1f}%，減碼觀察，不加碼。"
+                # 注意：不改變 noc_state，僅顯示警示
             elif roi_pct <= -15.0 or curr_price < ma60 or curr_price < final_stop:
                 pnl_alert = f"🩸【戰術撤離】跌破防守底線 ({final_stop:.2f})，無條件停損變現！"
                 noc_state[sym] = StockState(status="NONE")
@@ -754,24 +767,6 @@ if __name__ == "__main__":
             else:
                 pnl_alert = f"🔍【中立觀察】價格震盪，監控防禦底線 ({final_stop:.2f})。"
                 noc_state[sym].trailing_stop = final_stop
-
-            silent_keywords = ["中立觀察", "長線鎖籌", "洗盤耐受區", "獲利巡航"]
-            is_silent = any(kw in pnl_alert for kw in silent_keywords)
-            if is_silent and cfg.SILENT_MODE:
-                logger.info(f"🔇 [靜默模式] 庫藏股 {sym} 指令為 '{pnl_alert}'，符合靜默關鍵字，不進行推播與繪圖。")
-            else:
-                generated_charts.append(draw_chart_if_needed(hist, sym))
-                inv_str = f"{etf_icon} {data['name']} ({sym})\n"
-                inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
-                chip_msg = td["Chip_Status"]
-                matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=market_mode)
-                inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
-                inv_str += f" 💰 法人籌碼: {chip_msg}\n"
-                fund_msg = strategy.get_fundamental_health(raw_id)
-                inv_str += f" 📊 財報: {fund_msg}\n"
-                inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\n\n"
-                msg_list.append(inv_str)
-                has_actionable_alerts = True
 
     # =========================================================================
     # 戰區 2：觀察區 (白名單: 長線觀測區, 短線觀測區, ⚡ 短線飆股區 (Momentum)"])
@@ -946,6 +941,16 @@ if __name__ == "__main__":
             s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
             s += f" 💰 法人動向: {chip_msg}\n"
             s += f" 📊 財報透視: {fund_health}\n"
+
+            # ========== 新增：顯示單月營收年增率（數值） ==========
+            # yoy 為 td["YoY"] 的原始數值（浮點數），例如 -3.5
+            s += f" 📈 單月YoY: {yoy:.1f}% | 累計描述: {fund_health}\\n"
+            # ====================================================
+
+            if action_plan_text:
+                s += f"{action_plan_text}\\n"
+            else:
+                s += f" 👉 作戰指令: {alert}\\n"
 
             # 量價四象限僅作為輔助參考（縮短顯示，不佔主行）
             if quadrant_signal != "➖ 中性觀望":
