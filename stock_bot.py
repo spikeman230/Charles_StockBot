@@ -695,13 +695,13 @@ if __name__ == "__main__":
     # 戰區 1：庫藏股 (白名單強制輸出)
     # =========================================================================
     if MY_PORTFOLIO:
-        msg_list.append("━━━━━━━━━━━━━━\\n💼 【庫藏股 (長線鎖籌動態防禦動態)】\\n━━━━━━━━━━━━━━\\n")
+        msg_list.append("━━━━━━━━━━━━━━\n💼 【庫藏股 (長線鎖籌動態防禦動態)】\n━━━━━━━━━━━━━━\n")
         for sym, data in MY_PORTFOLIO.items():
             hist = get_stock_data(sym, data["name"])
             if hist is None:
                 continue
 
-            raw_id = re.search(r"\\d+", sym).group() if re.search(r"\\d+", sym) else sym
+            raw_id = re.search(r"\d+", sym).group() if re.search(r"\d+", sym) else sym
             td, has_data = hist.iloc[-1], True
             curr_price, atr = td["Close"], td["ATR"] if not pd.isna(td.get("ATR", float("nan"))) else 0
             buy_price = data["buy_price"]
