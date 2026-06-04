@@ -949,7 +949,7 @@ if __name__ == "__main__":
                 yoy_display = f"{yoy:.1f}%"
             else:
                 yoy_display = str(yoy)
-            s += f" 📈 單月YoY: {yoy_display} | 累計描述: {fund_health}\\n"
+            s += f" 📈 單月YoY: {yoy_display} | 累計描述: {fund_health}\n"
             # ====================================================
 
             if action_plan_text:
