@@ -882,9 +882,9 @@
         "last_alert_hash": ""
     },
     "2371.TW": {
-        "status": "HOLD",
-        "entry": 32.29999923706055,
-        "trailing_stop": 29.73,
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
         "last_alert_hash": ""
     },
     "1514.TW": {
