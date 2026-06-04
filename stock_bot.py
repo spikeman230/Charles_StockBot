@@ -775,20 +775,20 @@ if __name__ == "__main__":
                 logger.info(f"🔇 [靜默模式] 庫藏股 {sym} 指令為 '{pnl_alert}'，符合靜默關鍵字，不進行推播與繪圖。")
             else:
                 generated_charts.append(draw_chart_if_needed(hist, sym))
-                inv_str = f"{etf_icon} {data['name']} ({sym})\\n"
-                inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\\n"
+                inv_str = f"{etf_icon} {data['name']} ({sym})\n"
+                inv_str += f" 現價: {curr_price:.2f} | 成本: {buy_price:.2f}\n"
                 chip_msg = td["Chip_Status"]
                 matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=market_mode)
-                inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\\n"
-                inv_str += f" 💰 法人籌碼: {chip_msg}\\n"
-                inv_str += f" 📊 累計財報: {fund_health}\\n"
+                inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
+                inv_str += f" 💰 法人籌碼: {chip_msg}\n"
+                inv_str += f" 📊 累計財報: {fund_health}\n"
                 # 顯示單月營收（安全處理）
                 if isinstance(yoy_single, (int, float)):
                     yoy_display = f"{yoy_single:.1f}%"
                 else:
                     yoy_display = str(yoy_single)
                 inv_str += f" 📈 單月YoY: {yoy_display}\\n"
-                inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\\n\\n"
+                inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\n\n"
                 msg_list.append(inv_str)
                 has_actionable_alerts = True
 
