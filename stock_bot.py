@@ -944,13 +944,18 @@ if __name__ == "__main__":
 
             # ========== 新增：顯示單月營收年增率（數值） ==========
             # yoy 為 td["YoY"] 的原始數值（浮點數），例如 -3.5
-            s += f" 📈 單月YoY: {yoy:.1f}% | 累計描述: {fund_health}\\n"
+            # 顯示單月營收年增率，處理非數值情況
+            if isinstance(yoy, (int, float)):
+                yoy_display = f"{yoy:.1f}%"
+            else:
+                yoy_display = str(yoy)
+            s += f" 📈 單月YoY: {yoy_display} | 累計描述: {fund_health}\\n"
             # ====================================================
 
             if action_plan_text:
-                s += f"{action_plan_text}\\n"
+                s += f"{action_plan_text}\n"
             else:
-                s += f" 👉 作戰指令: {alert}\\n"
+                s += f" 👉 作戰指令: {alert}\n"
 
             # 量價四象限僅作為輔助參考（縮短顯示，不佔主行）
             if quadrant_signal != "➖ 中性觀望":
