@@ -723,7 +723,7 @@ if __name__ == "__main__":
             if is_yellow_light:
                 current_atr_multiplier = 2.0
             else:
-            current_atr_multiplier = 1.8 if market_mode == "BULL" else 3.0
+                current_atr_multiplier = 1.8 if market_mode == "BULL" else 3.0
             calculated_stop = curr_price - (atr * current_atr_multiplier)
             calculated_stop = min(calculated_stop, ma20) if not pd.isna(ma20) else calculated_stop
 
