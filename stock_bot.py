@@ -1,7 +1,13 @@
+
+charles5529 <charles5529@gmail.com>
+下午11:47 (0 分鐘前)
+寄給 我
+
 # =============================================================================
-# 組裝推播訊息（v16.8 明確化）
+# NOC 終極戰情室 v16.12 長短雙軌版（含除錯模式）
 # 核心功能：初升段即時偵測、過熱攔截、白名單強制輸出、四象限矩陣
 # 整合：旱地拔蔥、狙擊金叉（統一使用 noc_core 函數）
+# 除錯模式：DEBUG_FORCE_PUSH = True 時，忽略過熱/四象限/黃燈/攻擊信號，強制推播所有股票
 # =============================================================================
 
 import yfinance as yf
@@ -37,6 +43,11 @@ from noc_core import (
     assess_volume_turnover_signal, is_overheated, detect_initial_breakout,
     calculate_monster_breakout, calculate_sniper_signal
 )
+
+# =============================================================================
+# 除錯模式開關 (True = 強制推播所有觀察股，忽略過熱/大盤/信號過濾)
+# =============================================================================
+DEBUG_FORCE_PUSH = True # 除錯完成後改為 False
 
 # =============================================================================
 # 初始化與組態
@@ -193,6 +204,9 @@ def build_light_plan(symbol: str, close: float, hist: pd.DataFrame, manual_stop:
 # 交易日感知
 # =============================================================================
 def is_trading_day(curr_date: datetime.date) -> bool:
+    # 除錯模式下強制為交易日
+    if DEBUG_FORCE_PUSH:
+        return True
     if curr_date.weekday() >= 5:
         return False
     try:
@@ -207,7 +221,7 @@ def is_trading_day(curr_date: datetime.date) -> bool:
         return True
 
 # =============================================================================
-# Trello 整合
+# Trello 整合（修正：過濾無效卡片與 NOC 狀態卡）
 # =============================================================================
 def _trello_params(**extra) -> dict:
     return {"key": TRELLO_KEY, "token": TRELLO_TOKEN, **extra}
@@ -247,20 +261,24 @@ def update_trello_system_status(status_msg: str, color: str = "🟢") -> None:
 def update_trello_system_status_bg(status_msg: str, color: str = "🟢") -> None:
     threading.Thread(target=update_trello_system_status, args=(status_msg, color), daemon=True).start()
 
-def _parse_card_to_stock(card: dict) -> Tuple[str, dict]:
+def _parse_card_to_stock(card: dict) -> Optional[Tuple[str, dict]]:
     raw_name = card["name"].strip()
     ticker_match = re.match(r"^[A-Za-z0-9.]+", raw_name)
-    symbol = ticker_match.group() if ticker_match else raw_name
+    if not ticker_match:
+        return None
+    symbol = ticker_match.group()
     name_part = raw_name[len(symbol):].strip() if ticker_match else raw_name
     name = re.sub(r"\(.*?\)", "", name_part).strip() or symbol
     title_tip_match = re.search(r"\((.*?)\)", name_part)
     trello_tip = title_tip_match.group(1) if title_tip_match else card.get("desc", "").strip()
     return symbol, {"name": name, "trello_tip": trello_tip}
 
-def _parse_card_to_portfolio(card: dict) -> Tuple[str, dict]:
+def _parse_card_to_portfolio(card: dict) -> Optional[Tuple[str, dict]]:
     raw_name = card["name"].strip()
     ticker_match = re.match(r"^[A-Za-z0-9.]+", raw_name)
-    symbol = ticker_match.group() if ticker_match else raw_name
+    if not ticker_match:
+        return None
+    symbol = ticker_match.group()
     name_part = raw_name[len(symbol):].strip() if ticker_match else raw_name
     name = re.sub(r"\(.*?\)", "", name_part).strip() or symbol
     desc = card.get("desc", "")
@@ -287,18 +305,26 @@ def fetch_trello_deployment() -> Tuple[Optional[dict], Optional[dict]]:
         trello_dict, my_portfolio = {}, {}
         for lst in lists_data:
             list_name = lst["name"]
-            # 跳過名稱包含「美股」的列表（區分台股與美股）
+            # 跳過美股相關列表（避免混亂）
             if "美股" in list_name:
                 continue
             is_portfolio_list = "庫存" in list_name or "庫藏" in list_name
             for card in lst.get("cards", []):
-                if "NOC 系統狀態" in card["name"]:
+                card_name = card["name"]
+                # 跳過任何包含 "NOC" 的卡片（系統狀態卡）
+                if "NOC" in card_name:
                     continue
                 if is_portfolio_list:
-                    sym, info = _parse_card_to_portfolio(card)
+                    parsed = _parse_card_to_portfolio(card)
+                    if parsed is None:
+                        continue
+                    sym, info = parsed
                     my_portfolio[sym] = info
                 else:
-                    sym, info = _parse_card_to_stock(card)
+                    parsed = _parse_card_to_stock(card)
+                    if parsed is None:
+                        continue
+                    sym, info = parsed
                     trello_dict.setdefault(list_name, {})[sym] = info
         return trello_dict, my_portfolio
     except Exception as e:
@@ -523,14 +549,10 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         hist["BB_Width"] = (4 * hist["STD20"]) / hist["20MA"].replace(0, np.nan)
 
         # ========== 使用統一函數計算狙擊金叉與旱地拔蔥 ==========
-        # 注意：calculate_sniper_signal 會修改 hist 增加 '5MA', 'MACD', 'MACD_Hist', 'Is_Bottoming', 'Is_Breakout', '5VMA' 等欄位
-        # 但這些欄位多數已存在，重新計算不影響結果，且能確保與雷達一致
         sniper_val = calculate_sniper_signal(hist)
         hist['Sniper_Signal'] = sniper_val
-        # 保留原有的 Sniper_Memory_5D（向下相容）
         hist['Sniper_Memory_5D'] = hist['Sniper_Signal'].rolling(5).max().fillna(0)
 
-        # 旱地拔蔥：需要最新一筆資料
         td_temp = hist.iloc[-1]
         monster_val = calculate_monster_breakout(hist, td_temp)
         hist['Monster_Breakout'] = monster_val
@@ -610,7 +632,7 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v16.7 長短雙軌版 啟動。時間：{curr_time}")
+    logger.info(f"NOC 終極戰情室 v16.12 長短雙軌版（除錯模式={'ON' if DEBUG_FORCE_PUSH else 'OFF'}）啟動。時間：{curr_time}")
 
     db = NOCDatabase()
     strategy = NOCStrategy(db)
@@ -621,7 +643,8 @@ if __name__ == "__main__":
     macro_info = strategy.get_macro_status()
     is_yellow_light = False
 
-    if macro_info["status"] == "🔴 紅燈":
+    # 除錯模式：忽略大盤紅燈
+    if not DEBUG_FORCE_PUSH and macro_info["status"] == "🔴 紅燈":
         logger.warning("🚨🚨🚨 觸發戰略級拔插頭熔斷協議！大盤環境進入極度危險空頭階段。")
         update_trello_system_status_bg("⚠️ 觸發空頭防禦協議 (全面停止建倉)", "🔴")
         send_reports(
@@ -666,9 +689,8 @@ if __name__ == "__main__":
             with open(MOMENTUM_FILE, "r", encoding="utf-8") as f:
                 momentum_data = json.load(f)
             if momentum_data:
-                # 將飆股清單放入「短線觀測區」（白名單強制輸出）
                 STOCK_DICT["⚡短線飆股區 (Momentum)"] = momentum_data
-                logger.info(f"? 已載入 {len(momentum_data)} 檔短線飆股至追蹤區")
+                logger.info(f"✅ 已載入 {len(momentum_data)} 檔短線飆股至追蹤區")
         except Exception as e:
             logger.error(f"讀取短線飆股清單失敗: {e}")
     
@@ -720,8 +742,7 @@ if __name__ == "__main__":
             ma60 = td["60MA"]
             turnover = td["Turnover_Rate"]
             vol_ratio = td["Volume_Ratio"]
-            # ---------- 定義 yoy_single ----------
-            yoy_single = td["YoY"]          # 單月營收年增率（FinMind）
+            yoy_single = td["YoY"]
 
             if is_yellow_light:
                 current_atr_multiplier = 2.0
@@ -740,21 +761,17 @@ if __name__ == "__main__":
             else:
                 final_stop = max(sym_state.trailing_stop, calculated_stop)
 
-            # ----- 營收判斷（修正版）-----
-            fund_health = strategy.get_fundamental_health(raw_id)   # 累計營收描述（yfinance）
+            fund_health = strategy.get_fundamental_health(raw_id)
             is_accumulated_recession = "衰退" in fund_health
 
-            # 優先判斷：累計衰退 或 單月大幅衰退（< -10%）→ 清倉
             if is_accumulated_recession:
                 pnl_alert = "💀【護城河瓦解】累計營收衰退，明日開盤即刻清倉！"
                 noc_state[sym] = StockState(status="NONE")
             elif isinstance(yoy_single, (int, float)) and yoy_single < -10:
                 pnl_alert = f"💀【營收急遽衰退】單月年增率 {yoy_single:.1f}%，明日開盤清倉！"
                 noc_state[sym] = StockState(status="NONE")
-            # 單月小幅衰退（0 ~ -10%）→ 僅警示，不強制清倉
             elif isinstance(yoy_single, (int, float)) and yoy_single < 0:
                 pnl_alert = f"⚠️【營運動能轉弱】單月年增率 {yoy_single:.1f}%，減碼觀察，不加碼。"
-                # 不改變 noc_state
             elif roi_pct <= -15.0 or curr_price < ma60 or curr_price < final_stop:
                 pnl_alert = f"🩸【戰術撤離】跌破防守底線 ({final_stop:.2f})，無條件停損變現！"
                 noc_state[sym] = StockState(status="NONE")
@@ -771,7 +788,6 @@ if __name__ == "__main__":
                 pnl_alert = f"🔍【中立觀察】價格震盪，監控防禦底線 ({final_stop:.2f})。"
                 noc_state[sym].trailing_stop = final_stop
 
-            # 靜默模式：僅過濾「中立觀察」、「長線鎖籌」、「洗盤耐受區」（不過濾獲利巡航）
             silent_keywords = ["中立觀察", "長線鎖籌", "洗盤耐受區"]
             is_silent = any(kw in pnl_alert for kw in silent_keywords)
             if is_silent and cfg.SILENT_MODE:
@@ -785,18 +801,14 @@ if __name__ == "__main__":
                 inv_str += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}倍 | 籌碼戰術: {matrix_signal}\n"
                 inv_str += f" 💰 法人籌碼: {chip_msg}\n"
                 inv_str += f" 📊 累計財報: {fund_health}\n"
-                # 顯示單月營收（安全處理）
-                if isinstance(yoy_single, (int, float)):
-                    yoy_display = f"{yoy_single:.1f}%"
-                else:
-                    yoy_display = str(yoy_single)
-                inv_str += f" 📈 單月YoY: {yoy_display}\\n"
+                yoy_display = f"{yoy_single:.1f}%" if isinstance(yoy_single, (int, float)) else str(yoy_single)
+                inv_str += f" 📈 單月YoY: {yoy_display}\n"
                 inv_str += f" 損益: {roi_pct:+.2f}% | 👉 作戰指令: {pnl_alert}\n\n"
                 msg_list.append(inv_str)
                 has_actionable_alerts = True
 
     # =========================================================================
-    # 戰區 2：觀察區 (白名單: 長線觀測區, 短線觀測區, ⚡ 短線飆股區 (Momentum)"])
+    # 戰區 2：觀察區 (白名單: 長線觀測區, 短線觀測區, ⚡ 短線飆股區 (Momentum))
     # =========================================================================
     force_include_categories = ["長線觀測區", "短線觀測區", "⚡ 短線飆股區 (Momentum)"]
     for cat, stocks in STOCK_DICT.items():
@@ -859,22 +871,24 @@ if __name__ == "__main__":
             trigger_label = ""
             action_plan_text = ""
 
-            # 黃燈攔截非白名單分類
-            if is_yellow_light and cat not in force_include_categories:
-                logger.debug(f"🟡 黃燈模式跳過 {sym} (分類: {cat})")
-                continue
+            # 黃燈攔截非白名單（除錯模式跳過）
+            if not DEBUG_FORCE_PUSH:
+                if is_yellow_light and cat not in force_include_categories:
+                    logger.debug(f"🟡 黃燈模式跳過 {sym} (分類: {cat})")
+                    continue
 
-            # ------------------- 過熱攔截 -------------------
-            ma20_val = td['20MA'] if not pd.isna(td['20MA']) else 0
-            ma60_val = td['60MA'] if not pd.isna(td['60MA']) else 0
-            return_5d = td.get('Return_5D', 0)
-            return_10d = td.get('Return_10D', 0)
-            overheated, over_reason = is_overheated(close, ma20_val, ma60_val, return_5d, return_10d, price_position, vol_ratio)
-            if overheated:
-                logger.info(f"🛑 [過熱攔截] {sym} 原因: {over_reason}，強制封鎖推播。")
-                continue
+            # 過熱攔截（除錯模式跳過）
+            if not DEBUG_FORCE_PUSH:
+                ma20_val = td['20MA'] if not pd.isna(td['20MA']) else 0
+                ma60_val = td['60MA'] if not pd.isna(td['60MA']) else 0
+                return_5d = td.get('Return_5D', 0)
+                return_10d = td.get('Return_10D', 0)
+                overheated, over_reason = is_overheated(close, ma20_val, ma60_val, return_5d, return_10d, price_position, vol_ratio)
+                if overheated:
+                    logger.info(f"🛑 [過熱攔截] {sym} 原因: {over_reason}，強制封鎖推播。")
+                    continue
 
-            # ------------------- 四象限信號 (含K線形態) -------------------
+            # 四象限信號（除錯模式跳過危險檢查）
             quadrant_signal = assess_volume_turnover_signal(
                 vol_ratio=vol_ratio,
                 turnover=turnover,
@@ -885,15 +899,15 @@ if __name__ == "__main__":
                 close_vs_high=td['Close_vs_High']
             )
             danger_signals = ("🔴 主力出貨區", "⚠️ 量價背離陷阱", "🔴 爆量長上影 (假突破/出貨)", "⚠️ 黑K出量 (賣壓沉重)")
-            if quadrant_signal in danger_signals:
-                logger.info(f"🛑 [四象限攔截] {sym} 信號為 {quadrant_signal}，強制封鎖推播。")
-                continue
+            if not DEBUG_FORCE_PUSH:
+                if quadrant_signal in danger_signals:
+                    logger.info(f"🛑 [四象限攔截] {sym} 信號為 {quadrant_signal}，強制封鎖推播。")
+                    continue
 
-            # ------------------- 狀態機觸發判斷（優先級：初升段突破 > 旱地拔蔥 > 狙擊金叉） -------------------
+            # 狀態機觸發判斷（優先級：初升段突破 > 旱地拔蔥 > 狙擊金叉）
             if sym_state.status == "REAL_HOLD":
                 alert = f"💼 持股防禦區 | 📍 最新防線: {sym_state.trailing_stop:.1f}"
             elif sym_state.status == "NONE":
-                # 1. 初升段突破（首次放量站上20MA或突破20日高點）
                 initial_break, break_type, _ = detect_initial_breakout(hist, td)
                 if initial_break and not is_yellow_light:
                     trigger_label = break_type
@@ -903,7 +917,6 @@ if __name__ == "__main__":
                     noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
                     alert = "⚡【初升段起漲】放量突破關鍵價位，小注試單！"
                     action_plan_text = build_light_plan(sym, close, hist, manual_stop_price, local_market_mode)
-                # 2. 旱地拔蔥
                 elif td.get("Monster_Breakout", False):
                     trigger_label = "🔥【旱地拔蔥】底部極端爆量，長紅突破季線！"
                     if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
@@ -927,7 +940,6 @@ if __name__ == "__main__":
                             noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
                             alert = "🐉【妖股起漲預警】資金強勢介入，無視基本面，強烈建議觀察試單！"
                             action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
-                # 3. 狙擊金叉
                 elif td.get("Sniper_Signal", False):
                     trigger_label = "🌟 狙擊金叉 (底部扭轉)"
                     if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
@@ -952,7 +964,7 @@ if __name__ == "__main__":
                             alert = f"🚀【長線波段佈局觸發】"
                             action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
 
-            # ------------------- 組裝推播訊息（v16.8 明確化） -------------------
+            # ------------------- 組裝推播訊息（明確化） -------------------
             if trigger_label:
                 header = f"🎯 {name} ({sym}) —— {trigger_label}\n"
             else:
@@ -968,20 +980,16 @@ if __name__ == "__main__":
             s += f" 📊 財報透視: {fund_health}\n"
 
             # 安全顯示單月營收年增率
-            if isinstance(yoy, (int, float)):
-                yoy_display = f"{yoy:.1f}%"
-            else:
-                yoy_display = str(yoy)
-            s += f" 📈 單月YoY: {yoy_display} | 累計描述: {fund_health} \n"
+            yoy_display = f"{yoy:.1f}%" if isinstance(yoy, (int, float)) else str(yoy)
+            s += f" 📈 單月YoY: {yoy_display} | 累計描述: {fund_health}\n"
 
             if action_plan_text:
-                s += f"{action_plan_text} \n"
+                s += f"{action_plan_text}\n"
             else:
-                s += f" 👉 作戰指令: {alert} \n"
+                s += f" 👉 作戰指令: {alert}\n"
 
             action_command = s
 
-            # 強制輸出分類活躍度門檻
             is_force_output = cat in force_include_categories
             if is_force_output:
                 is_active = (close > ma20) or (vol_ratio > 1.5)
@@ -992,20 +1000,17 @@ if __name__ == "__main__":
             fatal_flaws = cfg.ACTION_BLACKLIST + ["攔截", "衰退", "警報", "無情淘汰", "拒絕追高", "黃燈強制攔截"]
             has_fatal_flaw = any(keyword in action_command for keyword in fatal_flaws)
 
-            if is_force_output:
-                if has_fatal_flaw:
-                    logger.info(f"🛑 [強制分類攔截] {sym} 屬於強制輸出區，但觸發致命缺陷，強制封鎖推播。")
-                else:
-                    if tips:
-                        s += f" 💡 Trello 決策提示: {tips}\n"
-                    cat_msg_list.append(s + "\n")
-                    generated_charts.append(draw_chart_if_needed(hist, sym))
-                    has_actionable_alerts = True
+            # 除錯模式：跳過所有過濾，直接推播
+            if DEBUG_FORCE_PUSH:
+                if tips:
+                    s += f" 💡 Trello 決策提示: {tips}\n"
+                cat_msg_list.append(s + "\n")
+                generated_charts.append(draw_chart_if_needed(hist, sym))
+                has_actionable_alerts = True
             else:
-                has_valid_signal = bool(trigger_label) or "主力點火" in matrix_signal
-                if has_valid_signal:
+                if is_force_output:
                     if has_fatal_flaw:
-                        logger.info(f"🛑 [過濾器攔截] {sym} 雖有訊號，但觸發致命缺陷，強制封鎖推播。")
+                        logger.info(f"🛑 [強制分類攔截] {sym} 屬於強制輸出區，但觸發致命缺陷，強制封鎖推播。")
                     else:
                         if tips:
                             s += f" 💡 Trello 決策提示: {tips}\n"
@@ -1013,7 +1018,18 @@ if __name__ == "__main__":
                         generated_charts.append(draw_chart_if_needed(hist, sym))
                         has_actionable_alerts = True
                 else:
-                    logger.debug(f"🔇 [靜默跳過] {sym} 無重要觸發訊號，不推播。")
+                    has_valid_signal = bool(trigger_label) or "主力點火" in matrix_signal
+                    if has_valid_signal:
+                        if has_fatal_flaw:
+                            logger.info(f"🛑 [過濾器攔截] {sym} 雖有訊號，但觸發致命缺陷，強制封鎖推播。")
+                        else:
+                            if tips:
+                                s += f" 💡 Trello 決策提示: {tips}\n"
+                            cat_msg_list.append(s + "\n")
+                            generated_charts.append(draw_chart_if_needed(hist, sym))
+                            has_actionable_alerts = True
+                    else:
+                        logger.debug(f"🔇 [靜默跳過] {sym} 無重要觸發訊號，不推播。")
 
         if cat_msg_list:
             msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
@@ -1067,7 +1083,7 @@ if __name__ == "__main__":
         logger.info("🔇 [靜默模式] 今日無任何可行動警報（無建倉/停損/獲利巡航等重要事件），系統靜默退出。")
         sys.exit(0)
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.7】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.12】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
 
     for chart in generated_charts:
         if Path(chart).exists():
