@@ -3,7 +3,7 @@ name: NOC 美股雷達自動掃描
 on:
   workflow_dispatch:                     # 手動觸發
   schedule:
-    - cron: '21 21 * * *'               # 每天 UTC 21:00 = 台灣時間早上 5:00
+    - cron: '21 21 * * 1-5'               # 每天 UTC 21:00 = 台灣時間早上 5:00
 
 permissions:
   contents: write                       # 若需要 commit 結果回倉庫，請啟用此權限
