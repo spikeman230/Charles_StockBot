@@ -3,7 +3,7 @@ name: NOC 美股戰情室日報
 on:
   workflow_dispatch:                     # 手動觸發
   schedule:
-    - cron: '0 23 * * *'               # 每天 UTC 23:00 = 台灣時間早上 7:00
+    - cron: '0 23 * * 1-5'               # 每天 UTC 23:00 = 台灣時間早上 7:00
 
 permissions:
   contents: write                       # 如需 commit 報告或狀態檔，請啟用
