@@ -1,5 +1,5 @@
 # =============================================================================
-# NOC 美股戰情室 v1.0 長短雙軌版
+# NOC 美股戰情室 v1.0 長短雙軌版（除錯模式：強制推播）
 # 適用市場：美股 (NYSE/NASDAQ)
 # 核心功能：初升段即時偵測、過熱攔截、白名單強制輸出、四象限矩陣
 # 整合：旱地拔蔥、狙擊金叉
@@ -39,6 +39,11 @@ from noc_core_us import (
     assess_volume_turnover_signal, is_overheated, detect_initial_breakout,
     calculate_monster_breakout, calculate_sniper_signal, is_high_quality_signal
 )
+
+# =============================================================================
+# 除錯模式開關 (True = 強制推播所有雷達股票，忽略過熱/大盤/信號過濾)
+# =============================================================================
+DEBUG_FORCE_PUSH = True # 除錯完成後改為 False
 
 # =============================================================================
 # 初始化與組態
@@ -204,6 +209,7 @@ class NOCRiskManager_US:
                 "total_shares": int(fallback_shares * 2),
                 "risk_per_share": round(current_price - fallback_stop, 2)
             }
+
 # =============================================================================
 # Trello 整合（共用台股 Trello 面板，新增美股專區）
 # =============================================================================
@@ -335,9 +341,11 @@ def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, pred
         pass
 
 # =============================================================================
-# 交易日感知（美股）
+# 交易日感知（美股）- 除錯模式直接返回 True
 # =============================================================================
 def is_trading_day_ny() -> bool:
+    if DEBUG_FORCE_PUSH:
+        return True
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-4)))
     if now.weekday() >= 5:
         return False
@@ -389,6 +397,7 @@ def build_light_plan(symbol: str, close: float, hist: pd.DataFrame, manual_stop:
         f" * 防線：{stop_loss:.2f}\n"
         f" * 三日未站穩即減碼\n"
     )
+
 # =============================================================================
 # 並行預載入
 # =============================================================================
@@ -460,7 +469,8 @@ if __name__ == "__main__":
     macro_info = strategy.get_macro_status("SPY")
     is_yellow_light = False
 
-    if macro_info["status"] == "🔴 紅燈":
+    # 除錯模式：忽略大盤紅燈
+    if not DEBUG_FORCE_PUSH and macro_info["status"] == "🔴 紅燈":
         logger.warning("🚨 美股大盤空頭，停止建倉！")
         update_trello_system_status_bg("空頭防禦 (停止建倉)", "🔴")
         send_reports(f"NOC 美股防空警報 {curr_date}", f"大盤：{macro_info['status']} - {macro_info['desc']}\n停止新倉！", [])
@@ -470,12 +480,8 @@ if __name__ == "__main__":
         is_yellow_light = True
         update_trello_system_status_bg("黃燈防禦", "🟡")
 
-    #if not is_trading_day_ny():
-        #logger.info("美股休市，靜默休眠")
-        #update_trello_system_status_bg("休市靜默", "🔴")
-        #if curr_dt.hour <= 10:
-            #send_reports(f"NOC 美股休市 {curr_date}", "美股休市，系統休眠", [])
-        # 不退出，仍可測試
+    # 休市提醒已註解（且除錯模式強制交易日）
+    # if not is_trading_day_ny(): ...
 
     if not is_yellow_light:
         update_trello_system_status_bg("交易日追蹤中", "🟢")
@@ -539,7 +545,6 @@ if __name__ == "__main__":
             vol_ratio = td["Volume_Ratio"]
             yoy = td.get("YoY", "N/A")
 
-            # 停損計算（簡化）
             atr = td["ATR"] if not pd.isna(td.get("ATR", 0)) else curr_price * 0.02
             calculated_stop = curr_price - (atr * 2.0)
             calculated_stop = min(calculated_stop, ma20) if not pd.isna(ma20) else calculated_stop
@@ -603,7 +608,6 @@ if __name__ == "__main__":
             bias = ((close - ma20) / ma20) * 100 if ma20 else 0
             trend_status = "🔥 多頭" if close > ma5 > ma20 else ("🧊 空頭" if close < ma5 < ma20 else "🔄 盤整")
 
-            # 基本面
             fund_health = strategy.get_fundamental_health(sym)
 
             if sym not in noc_state:
@@ -614,54 +618,75 @@ if __name__ == "__main__":
             trigger_label = ""
             action_plan_text = ""
 
-            # 黃燈攔截非白名單
-            if is_yellow_light and cat not in force_include_categories:
-                continue
+            # 黃燈攔截非白名單（除錯模式跳過）
+            if not DEBUG_FORCE_PUSH:
+                if is_yellow_light and cat not in force_include_categories:
+                    continue
 
-            # 過熱攔截
-            ma20_val = td['20MA'] if not pd.isna(td['20MA']) else 0
-            ma60_val = td['60MA'] if not pd.isna(td['60MA']) else 0
-            return_5d = td.get('Return_5D', 0)
-            return_10d = td.get('Return_10D', 0)
-            overheated, over_reason = is_overheated(close, ma20_val, ma60_val, return_5d, return_10d, price_position, vol_ratio)
-            if overheated:
-                logger.info(f"🛑 [過熱攔截] {sym}: {over_reason}")
-                continue
+            # 過熱攔截（除錯模式跳過）
+            if not DEBUG_FORCE_PUSH:
+                ma20_val = td['20MA'] if not pd.isna(td['20MA']) else 0
+                ma60_val = td['60MA'] if not pd.isna(td['60MA']) else 0
+                return_5d = td.get('Return_5D', 0)
+                return_10d = td.get('Return_10D', 0)
+                overheated, over_reason = is_overheated(close, ma20_val, ma60_val, return_5d, return_10d, price_position, vol_ratio)
+                if overheated:
+                    logger.info(f"🛑 [過熱攔截] {sym}: {over_reason}")
+                    continue
 
-            # 四象限信號
-            market_cap = td.get('Market_Cap', 0)
+            # 四象限信號（除錯模式跳過危險檢查）
             quadrant_signal = assess_volume_turnover_signal(
                 vol_ratio=vol_ratio,
                 turnover=turnover,
-                market_cap=market_cap,
+                market_cap=td.get('Market_Cap', 0),
                 price_position=price_position,
                 candle_ratio=td['Candle_Ratio'],
                 is_red=td['Is_Red'],
                 close_vs_high=td['Close_vs_High']
             )
             danger = ("🔴 主力出貨區", "⚠️ 量價背離陷阱", "🔴 爆量長上影", "⚠️ 黑K出量")
-            if quadrant_signal in danger:
-                continue
+            if not DEBUG_FORCE_PUSH:
+                if quadrant_signal in danger:
+                    continue
 
-            # 狀態機觸發
+            # 狀態機觸發（除錯模式下強制給出觸發標籤，以便顯示）
             if sym_state.status == "NONE":
                 initial_break, break_type, _ = detect_initial_breakout(hist, td)
-                if initial_break and not is_yellow_light:
-                    trigger_label = break_type
+                if DEBUG_FORCE_PUSH:
+                    # 強制賦予一個標籤，以便在訊息中顯示
+                    if initial_break:
+                        trigger_label = break_type
+                    elif td.get("Monster_Breakout", False):
+                        trigger_label = "🔥【旱地拔蔥】"
+                    elif td.get("Sniper_Signal", False):
+                        trigger_label = "🌟【狙擊金叉】"
+                    else:
+                        trigger_label = "🔍 除錯模式測試"
+                    # 簡單建一個防線
                     risk_calculator = NOCRiskManager_US(total_capital=cfg.TOTAL_CAPITAL_USD)
                     defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=market_mode, is_yellow_light=False)
                     stop_price = defense_info["defense_line"]
                     noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
-                    alert = "⚡【初升段起漲】小注試單！"
+                    alert = "🔧 除錯模式強制推播"
                     action_plan_text = build_light_plan(sym, close, hist, 0, market_mode)
-                elif td.get("Monster_Breakout", False):
-                    trigger_label = "🔥【旱地拔蔥】"
-                    alert = "🐉 爆量突破季線"
-                    action_plan_text = build_tactical_plan(sym, close, hist, 1, fund_health, 0, market_mode)
-                elif td.get("Sniper_Signal", False):
-                    trigger_label = "🌟【狙擊金叉】"
-                    alert = "🚀 底部扭轉"
-                    action_plan_text = build_tactical_plan(sym, close, hist, 1, fund_health, 0, market_mode)
+                else:
+                    # 原本的邏輯
+                    if initial_break and not is_yellow_light:
+                        trigger_label = break_type
+                        risk_calculator = NOCRiskManager_US(total_capital=cfg.TOTAL_CAPITAL_USD)
+                        defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=market_mode, is_yellow_light=False)
+                        stop_price = defense_info["defense_line"]
+                        noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
+                        alert = "⚡【初升段起漲】小注試單！"
+                        action_plan_text = build_light_plan(sym, close, hist, 0, market_mode)
+                    elif td.get("Monster_Breakout", False):
+                        trigger_label = "🔥【旱地拔蔥】"
+                        alert = "🐉 爆量突破季線"
+                        action_plan_text = build_tactical_plan(sym, close, hist, 1, fund_health, 0, market_mode)
+                    elif td.get("Sniper_Signal", False):
+                        trigger_label = "🌟【狙擊金叉】"
+                        alert = "🚀 底部扭轉"
+                        action_plan_text = build_tactical_plan(sym, close, hist, 1, fund_health, 0, market_mode)
 
             # 組裝訊息
             s = f"🎯 {name} ({sym})"
@@ -679,21 +704,29 @@ if __name__ == "__main__":
             else:
                 s += f" 👉 指令: {alert}\n"
 
-            is_force_output = cat in force_include_categories
-            if is_force_output:
+            # 不論是否白名單，在除錯模式下全部強制推播
+            if DEBUG_FORCE_PUSH:
                 if tips:
                     s += f" 💡 提示: {tips}\n"
                 cat_msg_list.append(s)
                 generated_charts.append(draw_chart_if_needed(hist, sym))
                 has_actionable_alerts = True
             else:
-                has_valid_signal = bool(trigger_label)
-                if has_valid_signal:
+                is_force_output = cat in force_include_categories
+                if is_force_output:
                     if tips:
                         s += f" 💡 提示: {tips}\n"
                     cat_msg_list.append(s)
                     generated_charts.append(draw_chart_if_needed(hist, sym))
                     has_actionable_alerts = True
+                else:
+                    has_valid_signal = bool(trigger_label)
+                    if has_valid_signal:
+                        if tips:
+                            s += f" 💡 提示: {tips}\n"
+                        cat_msg_list.append(s)
+                        generated_charts.append(draw_chart_if_needed(hist, sym))
+                        has_actionable_alerts = True
 
         if cat_msg_list:
             msg_list.append(f"━━━━━━━━━━━━━━\n📂 【{cat}】\n━━━━━━━━━━━━━━\n")
@@ -702,7 +735,6 @@ if __name__ == "__main__":
     # =========================================================================
     # 戰區 3：簡易績效追蹤（可選）
     # =========================================================================
-    # 每週五推播主要 ETF 表現
     if curr_dt.weekday() == 4:
         etf_list = ["SPY", "QQQ", "IWM", "AAPL", "MSFT", "NVDA"]
         etf_msg = "━━━━━━━━━━━━━━\n🏆 美股主要標的週報\n━━━━━━━━━━━━━━\n"
