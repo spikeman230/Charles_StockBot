@@ -470,9 +470,9 @@ if __name__ == "__main__":
         is_yellow_light = True
         update_trello_system_status_bg("黃燈防禦", "🟡")
 
-    if not is_trading_day_ny():
-        logger.info("美股休市，靜默休眠")
-        update_trello_system_status_bg("休市靜默", "🔴")
+    #if not is_trading_day_ny():
+        #logger.info("美股休市，靜默休眠")
+        #update_trello_system_status_bg("休市靜默", "🔴")
         #if curr_dt.hour <= 10:
             #send_reports(f"NOC 美股休市 {curr_date}", "美股休市，系統休眠", [])
         # 不退出，仍可測試
