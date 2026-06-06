@@ -287,6 +287,9 @@ def fetch_trello_deployment() -> Tuple[Optional[dict], Optional[dict]]:
         trello_dict, my_portfolio = {}, {}
         for lst in lists_data:
             list_name = lst["name"]
+            # 跳過名稱包含「美股」的列表（區分台股與美股）
+            if "美股" in list_name:
+                continue
             is_portfolio_list = "庫存" in list_name or "庫藏" in list_name
             for card in lst.get("cards", []):
                 if "NOC 系統狀態" in card["name"]:
