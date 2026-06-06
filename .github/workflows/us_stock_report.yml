@@ -1,0 +1,58 @@
+name: NOC 美股戰情室日報
+
+on:
+  workflow_dispatch:                     # 手動觸發
+  schedule:
+    - cron: '0 23 * * *'               # 每天 UTC 23:00 = 台灣時間早上 7:00
+
+permissions:
+  contents: write                       # 如需 commit 報告或狀態檔，請啟用
+
+jobs:
+  stock-bot-us:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 檢出程式碼
+        uses: actions/checkout@v4
+
+      - name: 設定 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 安裝依賴套件
+        run: |
+          python -m pip install --upgrade pip
+          pip install yfinance pandas numpy python-dotenv requests mplfinance
+          # 若有 requirements.txt 則一併安裝
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: 執行美股戰情室
+        env:
+          # 若戰情室有使用 Telegram、Email、Trello 等，需設定對應 Secrets
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
+          TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
+          TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID }}
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}   # 美股若有需要
+        run: python stock_bot_us.py
+
+      - name: 上傳執行日誌（選用）
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock_bot_us_log
+          path: noc_us_system.log
+          retention-days: 7
+
+      # (可選) 若有狀態檔需要 commit 回倉庫
+      - name: Commit 狀態檔回倉庫（若有變更）
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -f noc_us_state.json
+          git diff --cached --quiet || git commit -m "🤖 更新美股戰情室狀態檔"
+          git push
