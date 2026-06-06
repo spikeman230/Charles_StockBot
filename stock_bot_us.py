@@ -74,7 +74,7 @@ TRELLO_BOARD_ID = os.getenv("TRELLO_BOARD_ID")
 class Config:
     TOTAL_CAPITAL_USD : float = float(os.getenv("TOTAL_CAPITAL_USD", "50000"))
     RISK_PER_TRADE : float = float(os.getenv("RISK_PER_TRADE", "0.02"))
-    ATR_MULTIPLIER : float = float(os.getenv("ATR_MULTIPLIER", "2.5")) # 美股波動較小
+    ATR_MULTIPLIER : float = float(os.getenv("ATR_MULTIPLIER", "2.5"))
     SILENT_MODE : bool = os.getenv("SILENT_MODE", "false").lower() == "true"
     CACHE_TTL_MINUTES : int = int(os.getenv("CACHE_TTL_MINUTES", "30"))
     CACHE_MAX_ITEMS : int = int(os.getenv("CACHE_MAX_ITEMS", "200"))
@@ -289,13 +289,12 @@ def fetch_trello_deployment() -> Tuple[Optional[dict], Optional[dict]]:
         response.raise_for_status()
         lists_data = response.json()
         trello_dict, my_portfolio = {}, {}
-        # 定義美股相關列表名稱（請在 Trello 中手動新增）
         us_watch_categories = ["美股長線觀測區", "美股短線觀測區", "美股庫藏股"]
         for lst in lists_data:
             list_name = lst["name"]
             is_portfolio_list = "庫存" in list_name or "庫藏" in list_name
             if list_name not in us_watch_categories and "美股" not in list_name:
-                continue # 只處理美股專區
+                continue
             for card in lst.get("cards", []):
                 if "NOC" in card["name"]:
                     continue
@@ -469,7 +468,6 @@ if __name__ == "__main__":
     macro_info = strategy.get_macro_status("SPY")
     is_yellow_light = False
 
-    # 除錯模式：忽略大盤紅燈
     if not DEBUG_FORCE_PUSH and macro_info["status"] == "🔴 紅燈":
         logger.warning("🚨 美股大盤空頭，停止建倉！")
         update_trello_system_status_bg("空頭防禦 (停止建倉)", "🔴")
@@ -480,9 +478,6 @@ if __name__ == "__main__":
         is_yellow_light = True
         update_trello_system_status_bg("黃燈防禦", "🟡")
 
-    # 休市提醒已註解（且除錯模式強制交易日）
-    # if not is_trading_day_ny(): ...
-
     if not is_yellow_light:
         update_trello_system_status_bg("交易日追蹤中", "🟢")
 
@@ -490,7 +485,6 @@ if __name__ == "__main__":
     STOCK_DICT = TRELLO_DICT if TRELLO_DICT else {}
     MY_PORTFOLIO = TRELLO_PORTFOLIO if TRELLO_PORTFOLIO else {}
 
-    # 讀取雷達自動火種檔案（若有）
     if Path(cfg.RADAR_FILE).exists():
         try:
             with open(cfg.RADAR_FILE, "r", encoding="utf-8") as f:
@@ -505,7 +499,6 @@ if __name__ == "__main__":
 
     preload_all_stocks(all_symbols)
 
-    # 大盤模式固定為 BULL（美股多頭），可依 SPY 月線判斷
     market_mode = "BULL" if macro_info["status"] == "🟢 綠燈" else "BEAR"
     logger.info(f"市場模式 => {market_mode}")
 
@@ -602,8 +595,18 @@ if __name__ == "__main__":
             vol_ratio = td["Volume_Ratio"]
             turnover = td["Turnover_Rate"]
             price_position = td["Price_Position"] if not pd.isna(td["Price_Position"]) else 0.5
-            pe = td.get("PE", "N/A")
-            yoy = td.get("YoY", "N/A")
+            pe_raw = td.get("PE", "N/A")
+            yoy_raw = td.get("YoY", "N/A")
+
+            # 格式化 PE 和 YoY 為兩位小數（如果是數字）
+            if isinstance(pe_raw, (int, float)):
+                pe_str = f"{pe_raw:.2f}"
+            else:
+                pe_str = str(pe_raw)
+            if isinstance(yoy_raw, (int, float)):
+                yoy_str = f"{yoy_raw:.2f}"
+            else:
+                yoy_str = str(yoy_raw)
 
             bias = ((close - ma20) / ma20) * 100 if ma20 else 0
             trend_status = "🔥 多頭" if close > ma5 > ma20 else ("🧊 空頭" if close < ma5 < ma20 else "🔄 盤整")
@@ -618,12 +621,10 @@ if __name__ == "__main__":
             trigger_label = ""
             action_plan_text = ""
 
-            # 黃燈攔截非白名單（除錯模式跳過）
             if not DEBUG_FORCE_PUSH:
                 if is_yellow_light and cat not in force_include_categories:
                     continue
 
-            # 過熱攔截（除錯模式跳過）
             if not DEBUG_FORCE_PUSH:
                 ma20_val = td['20MA'] if not pd.isna(td['20MA']) else 0
                 ma60_val = td['60MA'] if not pd.isna(td['60MA']) else 0
@@ -634,7 +635,6 @@ if __name__ == "__main__":
                     logger.info(f"🛑 [過熱攔截] {sym}: {over_reason}")
                     continue
 
-            # 四象限信號（除錯模式跳過危險檢查）
             quadrant_signal = assess_volume_turnover_signal(
                 vol_ratio=vol_ratio,
                 turnover=turnover,
@@ -649,11 +649,9 @@ if __name__ == "__main__":
                 if quadrant_signal in danger:
                     continue
 
-            # 狀態機觸發（除錯模式下強制給出觸發標籤，以便顯示）
             if sym_state.status == "NONE":
                 initial_break, break_type, _ = detect_initial_breakout(hist, td)
                 if DEBUG_FORCE_PUSH:
-                    # 強制賦予一個標籤，以便在訊息中顯示
                     if initial_break:
                         trigger_label = break_type
                     elif td.get("Monster_Breakout", False):
@@ -662,7 +660,6 @@ if __name__ == "__main__":
                         trigger_label = "🌟【狙擊金叉】"
                     else:
                         trigger_label = "🔍 除錯模式測試"
-                    # 簡單建一個防線
                     risk_calculator = NOCRiskManager_US(total_capital=cfg.TOTAL_CAPITAL_USD)
                     defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=market_mode, is_yellow_light=False)
                     stop_price = defense_info["defense_line"]
@@ -670,7 +667,6 @@ if __name__ == "__main__":
                     alert = "🔧 除錯模式強制推播"
                     action_plan_text = build_light_plan(sym, close, hist, 0, market_mode)
                 else:
-                    # 原本的邏輯
                     if initial_break and not is_yellow_light:
                         trigger_label = break_type
                         risk_calculator = NOCRiskManager_US(total_capital=cfg.TOTAL_CAPITAL_USD)
@@ -694,7 +690,7 @@ if __name__ == "__main__":
                 s += f" —— {trigger_label}"
             s += "\n"
             s += f" 現價: {close:.2f} | RSI: {rsi:.1f} | 乖離: {bias:+.1f}%\n"
-            s += f" 趨勢: {trend_status} | PE: {pe} | YoY: {yoy}\n"
+            s += f" 趨勢: {trend_status} | PE: {pe_str} | YoY: {yoy_str}\n"
             s += f" 換手: {turnover:.2f}% | 量比: {vol_ratio:.2f}\n"
             s += f" 📊 財報: {fund_health}\n"
             s += f" 📐 量價四象限: {quadrant_signal}\n"
@@ -704,7 +700,6 @@ if __name__ == "__main__":
             else:
                 s += f" 👉 指令: {alert}\n"
 
-            # 不論是否白名單，在除錯模式下全部強制推播
             if DEBUG_FORCE_PUSH:
                 if tips:
                     s += f" 💡 提示: {tips}\n"
