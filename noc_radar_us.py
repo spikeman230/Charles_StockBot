@@ -1,0 +1,208 @@
+# =============================================================================
+# NOC 美股游擊隊雷達 (noc_radar_us.py) v1.0
+# 整合：初升段突破、起漲攻擊區、旱地拔蔥、狙擊金叉
+# 採用與 stock_bot_us 完全相同的數據預處理（基於 noc_core_us）
+# =============================================================================
+
+import yfinance as yf
+import datetime
+import pandas as pd
+import numpy as np
+import os
+import json
+import time
+import logging
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
+from dotenv import load_dotenv
+from typing import Optional, Dict, Any, Tuple
+
+from noc_core_us import (
+    NOCStrategy_US,
+    assess_volume_turnover_signal,
+    is_overheated,
+    detect_initial_breakout,
+    calculate_monster_breakout,
+    calculate_sniper_signal,
+    get_stock_data,
+    calculate_all_indicators
+)
+
+load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+
+# =============================================================================
+# 美股掃描池 (可自由增減)
+# =============================================================================
+class RadarConfig_US:
+    MAX_WORKERS : int = int(os.environ.get("MAX_WORKERS", "5"))
+    TARGET_FILE : str = "radar_us_targets.json"
+    # 預設掃描標的：大型股、熱門ETF、AI相關等
+    SCAN_LIST : list = [
+        "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AVGO", "ADBE", "CRM",
+        "NFLX", "AMD", "INTC", "QCOM", "TXN", "MU", "AMAT", "LRCX", "KLAC", "SNPS",
+        "CDNS", "INTU", "NOW", "UBER", "PYPL", "DIS", "COST", "WMT", "HD", "MCD",
+        "NKE", "SBUX", "KO", "PEP", "PG", "JNJ", "UNH", "JPM", "BAC", "WFC",
+        "C", "GS", "MS", "V", "MA", "AXP", "BLK", "SPGI", "BRK.B", "LLY",
+        "TMO", "ABT", "MDT", "ISRG", "SYK", "UNP", "UPS", "FDX", "CAT", "DE",
+        "BA", "RTX", "LMT", "GE", "HON", "MMM", "CVX", "XOM", "COP", "SLB",
+        "NEE", "DUK", "SO", "D", "PLTR", "SNOW", "CRWD", "ZS", "NET", "DDOG",
+        "PANW", "FTNT", "ADSK", "WDAY", "TEAM", "ROKU", "SNAP", "PINS", "RBLX",
+        "SPY", "QQQ", "IWM", "DIA", "TLT", "GLD", "USO"
+    ]
+
+cfg = RadarConfig_US()
+
+# =============================================================================
+# 輔助函數：獲取股票數據（使用 noc_core_us.get_stock_data）
+# =============================================================================
+def get_stock_data_for_radar(symbol: str) -> Optional[pd.DataFrame]:
+    """直接使用 noc_core_us 的 get_stock_data 獲取完整技術指標"""
+    try:
+        hist = get_stock_data(symbol)
+        return hist
+    except Exception as e:
+        logger.debug(f"獲取 {symbol} 數據失敗: {e}")
+        return None
+
+# =============================================================================
+# 雷達掃描函數 (與台股邏輯一致)
+# =============================================================================
+def scan_stock_for_wave(symbol: str, strategy: NOCStrategy_US) -> dict:
+    try:
+        hist = get_stock_data_for_radar(symbol)
+        if hist is None or hist.empty or len(hist) < 60:
+            return None
+
+        td = hist.iloc[-1]
+        close = td['Close']
+        ma20 = td['20MA']
+        ma60 = td['60MA']
+        vol_ratio = td['Volume_Ratio']
+        turnover = td['Turnover_Rate']
+        price_position = td['Price_Position'] if not pd.isna(td.get('Price_Position', 0.5)) else 0.5
+
+        # 趨勢與基本面（美股版使用 SPY 大盤）
+        # 此處僅檢查大盤非紅燈（由呼叫端已檢查），個股可不額外過濾趨勢，簡化
+        # 但為了與台股一致，仍保留 get_trend_score (需在 NOCStrategy_US 中實作)
+        # 若 NOCStrategy_US 沒有 get_trend_score，此處可略過或簡單用季線向上判斷
+        trend_score = 1.0 # 預設，或從 strategy 取得
+        if hasattr(strategy, 'get_trend_score'):
+            trend_score = strategy.get_trend_score(hist)
+            if trend_score < 0:
+                return None
+
+        # 基本面簡化（美股不強制營收衰退過濾，但可選）
+        raw_id = symbol
+        fund_health = strategy.get_fundamental_health(raw_id)
+        if "衰退" in fund_health:
+            # 若營收嚴重衰退則跳過
+            return None
+
+        # 過熱攔截 (使用美股參數)
+        recent_5d_return = td.get('Return_5D', 0)
+        recent_10d_return = td.get('Return_10D', 0)
+        overheated, over_reason = is_overheated(
+            close=close, ma20=ma20, ma60=ma60,
+            recent_5d_return=recent_5d_return,
+            recent_10d_return=recent_10d_return,
+            price_position=price_position, vol_ratio=vol_ratio
+        )
+        if overheated:
+            logger.debug(f"🔥 [過熱攔截] {symbol}: {over_reason}")
+            return None
+
+        # 四象限信號 (美股版)
+        market_cap = td.get('Market_Cap', 0)
+        quadrant_signal = assess_volume_turnover_signal(
+            vol_ratio=vol_ratio,
+            turnover=turnover,
+            market_cap=market_cap,
+            price_position=price_position,
+            candle_ratio=td['Candle_Ratio'],
+            is_red=td['Is_Red'],
+            close_vs_high=td['Close_vs_High']
+        )
+        danger = ("🔴 主力出貨區", "⚠️ 量價背離陷阱", "🔴 爆量長上影 (假突破/出貨)", "⚠️ 黑K出量 (賣壓沉重)")
+        if quadrant_signal in danger:
+            return None
+
+        # 核心攻擊信號
+        initial_break, break_type, _ = detect_initial_breakout(hist, td, lookback=20)
+        monster = td.get('Monster_Breakout', False)
+        sniper = td.get('Sniper_Signal', False)
+
+        is_valid = initial_break or monster or sniper or (quadrant_signal == "🟢 起漲攻擊區")
+        if not is_valid:
+            return None
+
+        # 戰術描述
+        if monster:
+            tactics_desc = f"🔥 旱地拔蔥 (爆量長紅突破季線)"
+        elif sniper:
+            tactics_desc = f"🌟 狙擊金叉 (底部扭轉)"
+        elif initial_break:
+            tactics_desc = f"🔥 {break_type}"
+        else:
+            tactics_desc = f"🚀 中段加速 | {quadrant_signal}"
+
+        # 輔助指標
+        rsi = td.get('RSI', 50)
+        bias_20 = ((close - ma20) / ma20) * 100 if ma20 else 0
+
+        return {
+            "symbol": symbol,
+            "name": raw_id,
+            "close": round(close, 2),
+            "RSI": round(rsi, 2),
+            "Bias20": round(bias_20, 2),
+            "Volume_Ratio": round(vol_ratio, 2),
+            "Turnover": round(turnover, 2),
+            "Quadrant": quadrant_signal,
+            "Signal": tactics_desc,
+            "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+        }
+    except Exception as e:
+        logger.debug(f"掃描 {symbol} 異常: {e}")
+        return None
+
+# =============================================================================
+# 主程式
+# =============================================================================
+if __name__ == "__main__":
+    logger.info("⚡ NOC 美股游擊隊雷達 v1.0 (與美股戰情室同源數據) 啟動...")
+    start_time = time.time()
+
+    strategy = NOCStrategy_US()
+    macro = strategy.get_macro_status("SPY")
+    if macro["status"] == "🔴 紅燈":
+        logger.warning("🚨 美股大盤空頭，停止掃描")
+        with open(cfg.TARGET_FILE, "w", encoding="utf-8") as f:
+            json.dump({}, f)
+        exit(0)
+
+    logger.info(f"📡 大盤{macro['status']}，開始掃描 {len(cfg.SCAN_LIST)} 檔美股")
+
+    found = []
+    with ThreadPoolExecutor(max_workers=cfg.MAX_WORKERS) as ex:
+        futures = {ex.submit(scan_stock_for_wave, sym, strategy): sym for sym in cfg.SCAN_LIST}
+        for future in as_completed(futures, timeout=300):
+            r = future.result()
+            if r:
+                found.append(r)
+                logger.info(f"🎯 火種: {r['symbol']} 收{r['close']} | {r['Signal']}")
+
+    logger.info(f"掃描完成，耗時 {time.time()-start_time:.1f} 秒，共 {len(found)} 檔")
+
+    radar_dict = {t["symbol"]: {"name": t["name"], "tactics": t["Signal"], "trello_tip": t["trello_tip"]} for t in found}
+    with open(cfg.TARGET_FILE, "w", encoding="utf-8") as f:
+        json.dump(radar_dict, f, ensure_ascii=False, indent=4)
+
+    logger.info(f"✅ 美股火種已寫入 {cfg.TARGET_FILE}")
