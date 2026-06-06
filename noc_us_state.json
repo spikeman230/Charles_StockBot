@@ -142,5 +142,11 @@
         "entry": 99.47000122070312,
         "trailing_stop": 79.82,
         "last_alert_hash": ""
+    },
+    "NVDA": {
+        "status": "HOLD",
+        "entry": 205.10000610351562,
+        "trailing_stop": 183.56,
+        "last_alert_hash": ""
     }
 }
