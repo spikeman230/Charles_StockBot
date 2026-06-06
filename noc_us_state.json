@@ -1,146 +1,146 @@
 {
     "PYPL": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 41.290000915527344,
+        "trailing_stop": 38.31,
         "last_alert_hash": ""
     },
     "PEP": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 141.9199981689453,
+        "trailing_stop": 134.2,
         "last_alert_hash": ""
     },
     "WFC": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 81.94000244140625,
+        "trailing_stop": 76.44,
         "last_alert_hash": ""
     },
     "V": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 323.57000732421875,
+        "trailing_stop": 305.75,
         "last_alert_hash": ""
     },
     "MA": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 491.0799865722656,
+        "trailing_stop": 462.72,
         "last_alert_hash": ""
     },
     "BLK": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 995.5999755859375,
+        "trailing_stop": 930.4,
         "last_alert_hash": ""
     },
     "AXP": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 310.6600036621094,
+        "trailing_stop": 293.39,
         "last_alert_hash": ""
     },
     "SPGI": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 424.44000244140625,
+        "trailing_stop": 397.06,
         "last_alert_hash": ""
     },
     "TMO": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 472.79998779296875,
+        "trailing_stop": 436.55,
         "last_alert_hash": ""
     },
     "MDT": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 81.66999816894531,
+        "trailing_stop": 76.77,
         "last_alert_hash": ""
     },
     "FDX": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 331.0,
+        "trailing_stop": 307.58,
         "last_alert_hash": ""
     },
     "CAT": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 904.280029296875,
+        "trailing_stop": 829.17,
         "last_alert_hash": ""
     },
     "DE": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 583.4400024414062,
+        "trailing_stop": 539.12,
         "last_alert_hash": ""
     },
     "RTX": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 180.99000549316406,
+        "trailing_stop": 170.81,
         "last_alert_hash": ""
     },
     "BA": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 215.4499969482422,
+        "trailing_stop": 198.04,
         "last_alert_hash": ""
     },
     "HON": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 213.97000122070312,
+        "trailing_stop": 196.81,
         "last_alert_hash": ""
     },
     "MMM": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 153.75999450683594,
+        "trailing_stop": 144.91,
         "last_alert_hash": ""
     },
     "CVX": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 187.30999755859375,
+        "trailing_stop": 176.13,
         "last_alert_hash": ""
     },
     "XOM": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 149.9199981689453,
+        "trailing_stop": 139.49,
         "last_alert_hash": ""
     },
     "COP": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 117.13999938964844,
+        "trailing_stop": 109.64,
         "last_alert_hash": ""
     },
     "NEE": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 85.83999633789062,
+        "trailing_stop": 80.12,
         "last_alert_hash": ""
     },
     "DUK": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 124.22000122070312,
+        "trailing_stop": 119.09,
         "last_alert_hash": ""
     },
     "ADSK": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 229.9600067138672,
+        "trailing_stop": 203.0,
         "last_alert_hash": ""
     },
     "TEAM": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 99.47000122070312,
+        "trailing_stop": 79.82,
         "last_alert_hash": ""
     }
 }
