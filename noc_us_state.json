@@ -148,5 +148,11 @@
         "entry": 205.10000610351562,
         "trailing_stop": 183.56,
         "last_alert_hash": ""
+    },
+    "PINS": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
     }
 }
