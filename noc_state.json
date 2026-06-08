@@ -80,7 +80,7 @@
     "00878.TW": {
         "status": "REAL_HOLD",
         "entry": 22.21,
-        "trailing_stop": 29.400286429268974,
+        "trailing_stop": 29.41028665815081,
         "last_alert_hash": ""
     },
     "009816.TW": {
@@ -930,6 +930,12 @@
         "last_alert_hash": ""
     },
     "6005.TW": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "6472.TW": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
