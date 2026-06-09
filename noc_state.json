@@ -50,7 +50,7 @@
     "0050.TW": {
         "status": "REAL_HOLD",
         "entry": 0.0,
-        "trailing_stop": 96.62571291242327,
+        "trailing_stop": 97.16142567225864,
         "last_alert_hash": ""
     },
     "1326.TW": {
@@ -80,7 +80,7 @@
     "00878.TW": {
         "status": "REAL_HOLD",
         "entry": 22.21,
-        "trailing_stop": 29.41028665815081,
+        "trailing_stop": 29.76132345199585,
         "last_alert_hash": ""
     },
     "009816.TW": {
