@@ -970,5 +970,11 @@
         "entry": 0.0,
         "trailing_stop": 0.0,
         "last_alert_hash": ""
+    },
+    "5522.TW": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
     }
 }
