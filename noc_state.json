@@ -84,9 +84,9 @@
         "last_alert_hash": ""
     },
     "009816.TW": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "REAL_HOLD",
+        "entry": 13.99,
+        "trailing_stop": 13.505714416503906,
         "last_alert_hash": ""
     },
     "2382.TW": {
