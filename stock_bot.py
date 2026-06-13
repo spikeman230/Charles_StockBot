@@ -1,5 +1,5 @@
 # =============================================================================
-# NOC 終極戰情室 v16.12 長短雙軌版（含除錯模式）
+# NOC 終極戰情室 v16.12 長短雙軌版（SQLite 狀態儲存）
 # 核心功能：初升段即時偵測、過熱攔截、白名單強制輸出、四象限矩陣
 # 整合：旱地拔蔥、狙擊金叉（統一使用 noc_core 函數）
 # 除錯模式：DEBUG_FORCE_PUSH = True 時，忽略過熱/四象限/黃燈/攻擊信號，強制推播所有股票
@@ -23,6 +23,7 @@ import time
 import random
 import threading
 import hashlib
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
 from email.mime.multipart import MIMEMultipart
@@ -81,7 +82,7 @@ class Config:
     CACHE_TTL_MINUTES : int = int(os.getenv("CACHE_TTL_MINUTES", "30"))
     CACHE_MAX_ITEMS : int = int(os.getenv("CACHE_MAX_ITEMS", "200"))
     MAX_WORKERS : int = int(os.getenv("MAX_WORKERS", "6"))
-    STATE_FILE : str = "noc_state.json"
+    # 移除 STATE_FILE，改用資料庫
     LOG_FILE_CSV : str = "noc_trading_log.csv"
     RADAR_FILE : str = "radar_targets.json"
     LIGHTNING_FILE : str = "lightning_targets.json"
@@ -93,7 +94,7 @@ class Config:
 cfg = Config()
 
 # =============================================================================
-# 波段狀態管理
+# 波段狀態管理（資料庫版本）
 # =============================================================================
 @dataclass
 class StockState:
@@ -113,6 +114,56 @@ class StockState:
             trailing_stop = float(d.get("trailing_stop", 0.0)),
             last_alert_hash = d.get("last_alert_hash", "")
         )
+
+# =============================================================================
+# SQLite 狀態管理（獨立於 noc_core 的表格，用於儲存持股狀態與去重 hash）
+# =============================================================================
+def init_state_db(db_path: str = "noc_warroom.db"):
+    """確保狀態表存在"""
+    with sqlite3.connect(db_path) as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS stock_state (
+                symbol TEXT PRIMARY KEY,
+                status TEXT,
+                entry REAL,
+                trailing_stop REAL,
+                last_alert_hash TEXT
+            )
+        ''')
+
+def load_state_from_db(db_path: str = "noc_warroom.db") -> Dict[str, StockState]:
+    """從 SQLite 讀取所有持股狀態"""
+    init_state_db(db_path)
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.execute("SELECT symbol, status, entry, trailing_stop, last_alert_hash FROM stock_state")
+            rows = cursor.fetchall()
+            state = {}
+            for row in rows:
+                sym, status, entry, trailing_stop, last_hash = row
+                state[sym] = StockState(
+                    status=status,
+                    entry=entry,
+                    trailing_stop=trailing_stop,
+                    last_alert_hash=last_hash if last_hash else ""
+                )
+            return state
+    except Exception as e:
+        logger.error(f"讀取狀態資料庫失敗: {e}")
+        return {}
+
+def save_state_to_db(state: Dict[str, StockState], db_path: str = "noc_warroom.db") -> None:
+    """將持股狀態寫入 SQLite"""
+    init_state_db(db_path)
+    try:
+        with sqlite3.connect(db_path) as conn:
+            for sym, s in state.items():
+                conn.execute('''
+                    INSERT OR REPLACE INTO stock_state (symbol, status, entry, trailing_stop, last_alert_hash)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (sym, s.status, s.entry, s.trailing_stop, s.last_alert_hash))
+    except Exception as e:
+        logger.error(f"寫入狀態資料庫失敗: {e}")
 
 # =============================================================================
 # 快取管理器
@@ -199,7 +250,6 @@ def build_light_plan(symbol: str, close: float, hist: pd.DataFrame, manual_stop:
 # 交易日感知
 # =============================================================================
 def is_trading_day(curr_date: datetime.date) -> bool:
-    # 除錯模式下強制為交易日
     if DEBUG_FORCE_PUSH:
         return True
     if curr_date.weekday() >= 5:
@@ -300,13 +350,11 @@ def fetch_trello_deployment() -> Tuple[Optional[dict], Optional[dict]]:
         trello_dict, my_portfolio = {}, {}
         for lst in lists_data:
             list_name = lst["name"]
-            # 跳過美股相關列表（避免混亂）
             if "美股" in list_name:
                 continue
             is_portfolio_list = "庫存" in list_name or "庫藏" in list_name
             for card in lst.get("cards", []):
                 card_name = card["name"]
-                # 跳過任何包含 "NOC" 的卡片（系統狀態卡）
                 if "NOC" in card_name:
                     continue
                 if is_portfolio_list:
@@ -327,23 +375,13 @@ def fetch_trello_deployment() -> Tuple[Optional[dict], Optional[dict]]:
         return None, None
 
 # =============================================================================
-# 本地狀態管理
+# 本地狀態管理（已改為 SQLite）
 # =============================================================================
 def load_state() -> Dict[str, StockState]:
-    if not Path(cfg.STATE_FILE).exists():
-        return {}
-    try:
-        with open(cfg.STATE_FILE, "r", encoding="utf-8") as f:
-            return {sym: StockState.from_dict(d) for sym, d in json.load(f).items()}
-    except:
-        return {}
+    return load_state_from_db()
 
 def save_state(state: Dict[str, StockState]) -> None:
-    try:
-        with open(cfg.STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump({sym: s.to_dict() for sym, s in state.items()}, f, ensure_ascii=False, indent=4)
-    except:
-        pass
+    save_state_to_db(state)
 
 def write_noc_log(date, symbol, name, close_price, rsi, vol_status, status, predict, chip_signal, alert) -> None:
     log_exists = Path(cfg.LOG_FILE_CSV).exists()
@@ -627,7 +665,7 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v16.12 長短雙軌版（除錯模式={'ON' if DEBUG_FORCE_PUSH else 'OFF'}）啟動。時間：{curr_time}")
+    logger.info(f"NOC 終極戰情室 v16.12（SQLite 狀態儲存）長短雙軌版（除錯模式={'ON' if DEBUG_FORCE_PUSH else 'OFF'}）啟動。時間：{curr_time}")
 
     db = NOCDatabase()
     strategy = NOCStrategy(db)
@@ -700,7 +738,7 @@ if __name__ == "__main__":
     market_mode = "BULL" if is_bull_market else "BEAR"
     logger.info(f"📡 市場模式切換 => {market_mode} (大盤訊號: {market_msg})")
 
-    noc_state = load_state()
+    noc_state = load_state() # 從 SQLite 讀取
 
     macro_msg = f"🌐 【大盤風向儀】：{macro_info['status']} | {market_msg}\n"
     if is_yellow_light:
@@ -1072,13 +1110,13 @@ if __name__ == "__main__":
         logger.info("無有效標的運算數據，終止行程。")
         sys.exit(0)
 
-    save_state(noc_state)
+    save_state(noc_state) # 儲存至 SQLite
 
     if not has_actionable_alerts and cfg.SILENT_MODE:
         logger.info("🔇 [靜默模式] 今日無任何可行動警報（無建倉/停損/獲利巡航等重要事件），系統靜默退出。")
         sys.exit(0)
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.12】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v16.12（SQLite版）】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
 
     for chart in generated_charts:
         if Path(chart).exists():
