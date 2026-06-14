@@ -454,12 +454,16 @@ class NOCStrategy:
             twii['60MA'] = twii['Close'].rolling(60).mean()
             td = twii.iloc[-1]
             y_td = twii.iloc[-2]
-            if td['Close'] > td['20MA'] and td['20MA'] >= y_td['20MA']:
-                return {"status": "🟢 綠燈", "desc": "大盤多頭格局順風。積極抱緊長線底倉，防守線隨波段墊高，允許兵力推升至上限。"}
+            # 今日站上20MA 且 昨日也站上20MA（連續兩日）
+            above_20ma = td['Close'] > td['20MA']
+            above_20ma_yest = y_td['Close'] > y_td['20MA']
+            ma20_rising = td['20MA'] >= y_td['20MA']
+            if above_20ma and above_20ma_yest and ma20_rising:
+                return {"status": "🟢 綠燈", "desc": "大盤多頭格局順風..."}
             elif td['Close'] < td['60MA']:
-                return {"status": "🔴 紅燈", "desc": "大盤崩盤警告（跌破季線）。啟動防空 protocols，全面停止新標的建倉，嚴格保留現金。"}
+                return {"status": "🔴 紅燈", "desc": "大盤崩盤警告..."}
             else:
-                return {"status": "🟡 黃燈", "desc": "大盤進入高密度震盪洗盤期。嚴禁動用新資金盲目重倉，嚴格看守防禦底線。"}
+                return {"status": "🟡 黃燈", "desc": "大盤進入高密度震盪洗盤期..."}
         except Exception as e:
             self.logger.error(f"❌ 大盤風向儀運算異常: {e}")
             return {"status": "🟡 黃燈", "desc": "總體經濟風向引擎異常，強制啟動系統震盪保護機制。"}
