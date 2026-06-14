@@ -46,16 +46,47 @@ class RadarConfig_US:
     TARGET_FILE : str = "radar_us_targets.json"
     # 預設掃描標的：大型股、熱門ETF、AI相關等
     SCAN_LIST : list = [
-        "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AVGO", "ADBE", "CRM",
-        "NFLX", "AMD", "INTC", "QCOM", "TXN", "MU", "AMAT", "LRCX", "KLAC", "SNPS",
-        "CDNS", "INTU", "NOW", "UBER", "PYPL", "DIS", "COST", "WMT", "HD", "MCD",
-        "NKE", "SBUX", "KO", "PEP", "PG", "JNJ", "UNH", "JPM", "BAC", "WFC",
-        "C", "GS", "MS", "V", "MA", "AXP", "BLK", "SPGI", "BRK.B", "LLY",
-        "TMO", "ABT", "MDT", "ISRG", "SYK", "UNP", "UPS", "FDX", "CAT", "DE",
-        "BA", "RTX", "LMT", "GE", "HON", "MMM", "CVX", "XOM", "COP", "SLB",
-        "NEE", "DUK", "SO", "D", "PLTR", "SNOW", "CRWD", "ZS", "NET", "DDOG",
-        "PANW", "FTNT", "ADSK", "WDAY", "TEAM", "ROKU", "SNAP", "PINS", "RBLX",
-        "SPY", "QQQ", "IWM", "DIA", "TLT", "GLD", "USO"
+        # 👑 科技巨頭 & AI 核心 (Mag 7 + 半導體)
+        "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "AMD", "TSM",
+        "QCOM", "TXN", "MU", "AMAT", "LRCX", "KLAC", "SNPS", "CDNS", "ARM", "INTC",
+        "ASML", "MRVL", "NXPI", "MCHP", "ADI", "ON", "GFS", "WDC", "STX", "SWKS",
+
+        # ☁️ 軟體、雲端與資安
+        "CRM", "ADBE", "INTU", "NOW", "PLTR", "CRWD", "PANW", "FTNT", "SNOW", "DDOG",
+        "NET", "ZS", "WDAY", "TEAM", "MDB", "TTD", "HUBS", "OKTA", "DOCU", "TWLO",
+
+        # 🛍️ 互聯網、電商與消費金融
+        "NFLX", "UBER", "ABNB", "PYPL", "SQ", "DASH", "SHOP", "MELI", "BABA", "PDD",
+        "V", "MA", "AXP", "HOOD", "COF", "DFS", "SYF", "FI", "FIS", "GPN",
+
+        # 🏥 醫療健康與生技 (防禦與長線基石)
+        "LLY", "UNH", "JNJ", "ABBV", "MRK", "TMO", "ABT", "DHR", "ISRG", "SYK",
+        "PFE", "VRTX", "REGN", "ZTS", "BSX", "MDT", "CI", "CVS", "ELV", "GILD",
+
+        # 🏦 傳統金融與資產管理
+        "JPM", "BAC", "WFC", "C", "MS", "GS", "BLK", "SPGI", "MCO", "CME",
+        "SCHW", "PNC", "USB", "TFC", "CB", "PGR", "TRV", "AFL", "ALL", "MET",
+
+        # 🛒 零售、民生消費與餐飲
+        "WMT", "COST", "HD", "MCD", "PG", "KO", "PEP", "NKE", "SBUX", "TGT",
+        "LOW", "TJX", "ORLY", "AZO", "ROST", "SYY", "KR", "GIS", "KHC", "MNST",
+
+        # 🏭 工業、航太與國防
+        "CAT", "DE", "GE", "HON", "BA", "RTX", "LMT", "GD", "NOC", "LHX",
+        "UNP", "UPS", "FDX", "CSX", "NSC", "PCAR", "ETN", "EMR", "PH", "ITW",
+
+        # 🛢️ 能源與原物料
+        "XOM", "CVX", "COP", "SLB", "EOG", "PXD", "MPC", "VLO", "PSX", "OXY",
+        "HAL", "BKR", "FCX", "NEM", "LIN", "SHW", "ECL", "APD", "DD", "DOW",
+
+        # ⚡ 公用事業與基礎設施
+        "NEE", "DUK", "SO", "D", "AEP", "SRE", "EXC", "XEL", "ED", "PEG",
+
+        # 🏠 房地產 (REITs)
+        "PLD", "AMT", "EQIX", "CCI", "PSA", "O", "SPG", "WELL", "DLR", "AVB",
+
+        # 📊 核心板塊與大盤 ETF (觀察資金流向火種)
+        "SPY", "QQQ", "DIA", "IWM", "VTI", "SMH", "XLK", "XLF", "XLV", "TLT"
     ]
 
 cfg = RadarConfig_US()
