@@ -156,21 +156,639 @@
         "last_alert_hash": ""
     },
     "SBUX": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 103.04000091552734,
+        "trailing_stop": 96.05,
         "last_alert_hash": ""
     },
     "ADBE": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 204.02000427246094,
+        "trailing_stop": 174.26,
         "last_alert_hash": ""
     },
     "WDAY": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 130.8000030517578,
+        "trailing_stop": 110.22,
+        "last_alert_hash": ""
+    },
+    "GOOGL": {
+        "status": "HOLD",
+        "entry": 359.67999267578125,
+        "trailing_stop": 333.04,
+        "last_alert_hash": ""
+    },
+    "AMZN": {
+        "status": "HOLD",
+        "entry": 238.5500030517578,
+        "trailing_stop": 219.14,
+        "last_alert_hash": ""
+    },
+    "MSFT": {
+        "status": "HOLD",
+        "entry": 390.739990234375,
+        "trailing_stop": 357.85,
+        "last_alert_hash": ""
+    },
+    "AAPL": {
+        "status": "HOLD",
+        "entry": 291.1300048828125,
+        "trailing_stop": 272.15,
+        "last_alert_hash": ""
+    },
+    "TSLA": {
+        "status": "HOLD",
+        "entry": 406.42999267578125,
+        "trailing_stop": 362.01,
+        "last_alert_hash": ""
+    },
+    "META": {
+        "status": "HOLD",
+        "entry": 566.97998046875,
+        "trailing_stop": 515.75,
+        "last_alert_hash": ""
+    },
+    "AVGO": {
+        "status": "HOLD",
+        "entry": 382.07000732421875,
+        "trailing_stop": 317.21,
+        "last_alert_hash": ""
+    },
+    "TSM": {
+        "status": "HOLD",
+        "entry": 423.92999267578125,
+        "trailing_stop": 376.86,
+        "last_alert_hash": ""
+    },
+    "QCOM": {
+        "status": "HOLD",
+        "entry": 211.72000122070312,
+        "trailing_stop": 164.36,
+        "last_alert_hash": ""
+    },
+    "TXN": {
+        "status": "HOLD",
+        "entry": 301.1199951171875,
+        "trailing_stop": 265.6,
+        "last_alert_hash": ""
+    },
+    "SNPS": {
+        "status": "HOLD",
+        "entry": 453.8900146484375,
+        "trailing_stop": 397.17,
+        "last_alert_hash": ""
+    },
+    "CDNS": {
+        "status": "HOLD",
+        "entry": 384.9599914550781,
+        "trailing_stop": 338.28,
+        "last_alert_hash": ""
+    },
+    "NXPI": {
+        "status": "HOLD",
+        "entry": 304.8599853515625,
+        "trailing_stop": 264.73,
+        "last_alert_hash": ""
+    },
+    "MCHP": {
+        "status": "HOLD",
+        "entry": 95.23999786376953,
+        "trailing_stop": 81.38,
+        "last_alert_hash": ""
+    },
+    "ADI": {
+        "status": "HOLD",
+        "entry": 417.7900085449219,
+        "trailing_stop": 367.37,
+        "last_alert_hash": ""
+    },
+    "GFS": {
+        "status": "HOLD",
+        "entry": 81.37999725341797,
+        "trailing_stop": 66.44,
+        "last_alert_hash": ""
+    },
+    "ON": {
+        "status": "HOLD",
+        "entry": 116.79000091552734,
+        "trailing_stop": 94.66,
+        "last_alert_hash": ""
+    },
+    "SWKS": {
+        "status": "HOLD",
+        "entry": 73.97000122070312,
+        "trailing_stop": 61.69,
+        "last_alert_hash": ""
+    },
+    "CRM": {
+        "status": "HOLD",
+        "entry": 165.88999938964844,
+        "trailing_stop": 141.29,
+        "last_alert_hash": ""
+    },
+    "INTU": {
+        "status": "HOLD",
+        "entry": 276.7300109863281,
+        "trailing_stop": 232.73,
+        "last_alert_hash": ""
+    },
+    "NOW": {
+        "status": "HOLD",
+        "entry": 102.1500015258789,
+        "trailing_stop": 80.96,
+        "last_alert_hash": ""
+    },
+    "PLTR": {
+        "status": "HOLD",
+        "entry": 127.98999786376953,
+        "trailing_stop": 109.02,
+        "last_alert_hash": ""
+    },
+    "CRWD": {
+        "status": "HOLD",
+        "entry": 682.7999877929688,
+        "trailing_stop": 576.89,
+        "last_alert_hash": ""
+    },
+    "ZS": {
+        "status": "HOLD",
+        "entry": 129.52000427246094,
+        "trailing_stop": 96.69,
+        "last_alert_hash": ""
+    },
+    "NET": {
+        "status": "HOLD",
+        "entry": 228.47999572753906,
+        "trailing_stop": 188.28,
+        "last_alert_hash": ""
+    },
+    "HUBS": {
+        "status": "HOLD",
+        "entry": 187.97999572753906,
+        "trailing_stop": 145.29,
+        "last_alert_hash": ""
+    },
+    "TTD": {
+        "status": "HOLD",
+        "entry": 19.280000686645508,
+        "trailing_stop": 15.91,
+        "last_alert_hash": ""
+    },
+    "OKTA": {
+        "status": "HOLD",
+        "entry": 116.29000091552734,
+        "trailing_stop": 93.6,
+        "last_alert_hash": ""
+    },
+    "TWLO": {
+        "status": "HOLD",
+        "entry": 204.0800018310547,
+        "trailing_stop": 168.34,
+        "last_alert_hash": ""
+    },
+    "DOCU": {
+        "status": "HOLD",
+        "entry": 45.029998779296875,
+        "trailing_stop": 38.07,
+        "last_alert_hash": ""
+    },
+    "UBER": {
+        "status": "HOLD",
+        "entry": 68.8499984741211,
+        "trailing_stop": 63.64,
+        "last_alert_hash": ""
+    },
+    "NFLX": {
+        "status": "HOLD",
+        "entry": 80.33999633789062,
+        "trailing_stop": 75.63,
+        "last_alert_hash": ""
+    },
+    "ABNB": {
+        "status": "HOLD",
+        "entry": 132.27999877929688,
+        "trailing_stop": 122.09,
+        "last_alert_hash": ""
+    },
+    "DASH": {
+        "status": "HOLD",
+        "entry": 150.5800018310547,
+        "trailing_stop": 131.56,
+        "last_alert_hash": ""
+    },
+    "SHOP": {
+        "status": "HOLD",
+        "entry": 108.23999786376953,
+        "trailing_stop": 93.18,
+        "last_alert_hash": ""
+    },
+    "BABA": {
+        "status": "HOLD",
+        "entry": 112.81999969482422,
+        "trailing_stop": 103.65,
+        "last_alert_hash": ""
+    },
+    "MELI": {
+        "status": "HOLD",
+        "entry": 1589.5999755859375,
+        "trailing_stop": 1450.59,
+        "last_alert_hash": ""
+    },
+    "PDD": {
+        "status": "HOLD",
+        "entry": 81.55999755859375,
+        "trailing_stop": 72.34,
+        "last_alert_hash": ""
+    },
+    "COF": {
+        "status": "HOLD",
+        "entry": 184.72999572753906,
+        "trailing_stop": 171.02,
+        "last_alert_hash": ""
+    },
+    "SYF": {
+        "status": "HOLD",
+        "entry": 73.36000061035156,
+        "trailing_stop": 67.98,
+        "last_alert_hash": ""
+    },
+    "FIS": {
+        "status": "HOLD",
+        "entry": 39.20000076293945,
+        "trailing_stop": 35.58,
+        "last_alert_hash": ""
+    },
+    "GPN": {
+        "status": "HOLD",
+        "entry": 67.70999908447266,
+        "trailing_stop": 59.98,
+        "last_alert_hash": ""
+    },
+    "JNJ": {
+        "status": "HOLD",
+        "entry": 240.8699951171875,
+        "trailing_stop": 229.48,
+        "last_alert_hash": ""
+    },
+    "MRK": {
+        "status": "HOLD",
+        "entry": 119.05000305175781,
+        "trailing_stop": 110.98,
+        "last_alert_hash": ""
+    },
+    "ABT": {
+        "status": "HOLD",
+        "entry": 88.18000030517578,
+        "trailing_stop": 83.04,
+        "last_alert_hash": ""
+    },
+    "ISRG": {
+        "status": "HOLD",
+        "entry": 411.05999755859375,
+        "trailing_stop": 380.18,
+        "last_alert_hash": ""
+    },
+    "DHR": {
+        "status": "HOLD",
+        "entry": 180.10000610351562,
+        "trailing_stop": 166.97,
+        "last_alert_hash": ""
+    },
+    "VRTX": {
+        "status": "HOLD",
+        "entry": 444.92999267578125,
+        "trailing_stop": 416.95,
+        "last_alert_hash": ""
+    },
+    "SYK": {
+        "status": "HOLD",
+        "entry": 312.20001220703125,
+        "trailing_stop": 290.89,
+        "last_alert_hash": ""
+    },
+    "REGN": {
+        "status": "HOLD",
+        "entry": 612.1400146484375,
+        "trailing_stop": 570.88,
+        "last_alert_hash": ""
+    },
+    "ZTS": {
+        "status": "HOLD",
+        "entry": 79.56999969482422,
+        "trailing_stop": 73.53,
+        "last_alert_hash": ""
+    },
+    "BSX": {
+        "status": "HOLD",
+        "entry": 46.90999984741211,
+        "trailing_stop": 42.23,
+        "last_alert_hash": ""
+    },
+    "ELV": {
+        "status": "HOLD",
+        "entry": 404.07000732421875,
+        "trailing_stop": 375.57,
+        "last_alert_hash": ""
+    },
+    "GILD": {
+        "status": "HOLD",
+        "entry": 125.58999633789062,
+        "trailing_stop": 116.39,
+        "last_alert_hash": ""
+    },
+    "MCO": {
+        "status": "HOLD",
+        "entry": 447.8500061035156,
+        "trailing_stop": 420.57,
+        "last_alert_hash": ""
+    },
+    "CME": {
+        "status": "HOLD",
+        "entry": 269.5299987792969,
+        "trailing_stop": 248.86,
+        "last_alert_hash": ""
+    },
+    "SCHW": {
+        "status": "HOLD",
+        "entry": 91.0999984741211,
+        "trailing_stop": 85.63,
+        "last_alert_hash": ""
+    },
+    "CB": {
+        "status": "HOLD",
+        "entry": 328.1400146484375,
+        "trailing_stop": 311.4,
+        "last_alert_hash": ""
+    },
+    "PGR": {
+        "status": "HOLD",
+        "entry": 203.11000061035156,
+        "trailing_stop": 190.04,
+        "last_alert_hash": ""
+    },
+    "TRV": {
+        "status": "HOLD",
+        "entry": 304.4599914550781,
+        "trailing_stop": 288.26,
+        "last_alert_hash": ""
+    },
+    "ALL": {
+        "status": "HOLD",
+        "entry": 221.6300048828125,
+        "trailing_stop": 207.44,
+        "last_alert_hash": ""
+    },
+    "WMT": {
+        "status": "HOLD",
+        "entry": 121.04000091552734,
+        "trailing_stop": 114.28,
+        "last_alert_hash": ""
+    },
+    "COST": {
+        "status": "HOLD",
+        "entry": 982.3499755859375,
+        "trailing_stop": 926.51,
+        "last_alert_hash": ""
+    },
+    "HD": {
+        "status": "HOLD",
+        "entry": 328.3900146484375,
+        "trailing_stop": 309.36,
+        "last_alert_hash": ""
+    },
+    "MCD": {
+        "status": "HOLD",
+        "entry": 284.80999755859375,
+        "trailing_stop": 272.39,
+        "last_alert_hash": ""
+    },
+    "PG": {
+        "status": "HOLD",
+        "entry": 149.61000061035156,
+        "trailing_stop": 141.38,
+        "last_alert_hash": ""
+    },
+    "NKE": {
+        "status": "HOLD",
+        "entry": 44.93000030517578,
+        "trailing_stop": 41.2,
+        "last_alert_hash": ""
+    },
+    "ORLY": {
+        "status": "HOLD",
+        "entry": 91.0199966430664,
+        "trailing_stop": 85.28,
+        "last_alert_hash": ""
+    },
+    "LOW": {
+        "status": "HOLD",
+        "entry": 220.77999877929688,
+        "trailing_stop": 206.99,
+        "last_alert_hash": ""
+    },
+    "AZO": {
+        "status": "HOLD",
+        "entry": 3116.300048828125,
+        "trailing_stop": 2845.27,
+        "last_alert_hash": ""
+    },
+    "SYY": {
+        "status": "HOLD",
+        "entry": 79.19000244140625,
+        "trailing_stop": 75.22,
+        "last_alert_hash": ""
+    },
+    "GIS": {
+        "status": "HOLD",
+        "entry": 34.5099983215332,
+        "trailing_stop": 32.23,
+        "last_alert_hash": ""
+    },
+    "KR": {
+        "status": "HOLD",
+        "entry": 64.70999908447266,
+        "trailing_stop": 60.66,
+        "last_alert_hash": ""
+    },
+    "LMT": {
+        "status": "HOLD",
+        "entry": 540.3300170898438,
+        "trailing_stop": 512.24,
+        "last_alert_hash": ""
+    },
+    "NOC": {
+        "status": "HOLD",
+        "entry": 550.3300170898438,
+        "trailing_stop": 518.78,
+        "last_alert_hash": ""
+    },
+    "LHX": {
+        "status": "HOLD",
+        "entry": 307.7900085449219,
+        "trailing_stop": 290.66,
+        "last_alert_hash": ""
+    },
+    "UPS": {
+        "status": "HOLD",
+        "entry": 108.0999984741211,
+        "trailing_stop": 100.42,
+        "last_alert_hash": ""
+    },
+    "NSC": {
+        "status": "HOLD",
+        "entry": 313.9100036621094,
+        "trailing_stop": 295.34,
+        "last_alert_hash": ""
+    },
+    "PCAR": {
+        "status": "HOLD",
+        "entry": 118.5199966430664,
+        "trailing_stop": 110.05,
+        "last_alert_hash": ""
+    },
+    "ETN": {
+        "status": "HOLD",
+        "entry": 391.3900146484375,
+        "trailing_stop": 350.34,
+        "last_alert_hash": ""
+    },
+    "EMR": {
+        "status": "HOLD",
+        "entry": 143.07000732421875,
+        "trailing_stop": 132.76,
+        "last_alert_hash": ""
+    },
+    "PH": {
+        "status": "HOLD",
+        "entry": 903.47998046875,
+        "trailing_stop": 845.81,
+        "last_alert_hash": ""
+    },
+    "ITW": {
+        "status": "HOLD",
+        "entry": 257.42999267578125,
+        "trailing_stop": 246.46,
+        "last_alert_hash": ""
+    },
+    "SLB": {
+        "status": "HOLD",
+        "entry": 56.18000030517578,
+        "trailing_stop": 51.4,
+        "last_alert_hash": ""
+    },
+    "EOG": {
+        "status": "HOLD",
+        "entry": 136.64999389648438,
+        "trailing_stop": 126.56,
+        "last_alert_hash": ""
+    },
+    "PSX": {
+        "status": "HOLD",
+        "entry": 179.4499969482422,
+        "trailing_stop": 165.39,
+        "last_alert_hash": ""
+    },
+    "OXY": {
+        "status": "HOLD",
+        "entry": 56.540000915527344,
+        "trailing_stop": 51.74,
+        "last_alert_hash": ""
+    },
+    "BKR": {
+        "status": "HOLD",
+        "entry": 63.13999938964844,
+        "trailing_stop": 57.68,
+        "last_alert_hash": ""
+    },
+    "NEM": {
+        "status": "HOLD",
+        "entry": 100.2300033569336,
+        "trailing_stop": 88.57,
+        "last_alert_hash": ""
+    },
+    "FCX": {
+        "status": "HOLD",
+        "entry": 68.41000366210938,
+        "trailing_stop": 59.82,
+        "last_alert_hash": ""
+    },
+    "SHW": {
+        "status": "HOLD",
+        "entry": 317.29998779296875,
+        "trailing_stop": 297.78,
+        "last_alert_hash": ""
+    },
+    "ECL": {
+        "status": "HOLD",
+        "entry": 265.4100036621094,
+        "trailing_stop": 247.6,
+        "last_alert_hash": ""
+    },
+    "DOW": {
+        "status": "HOLD",
+        "entry": 33.849998474121094,
+        "trailing_stop": 30.62,
+        "last_alert_hash": ""
+    },
+    "DD": {
+        "status": "HOLD",
+        "entry": 48.2599983215332,
+        "trailing_stop": 44.48,
+        "last_alert_hash": ""
+    },
+    "SO": {
+        "status": "HOLD",
+        "entry": 94.0,
+        "trailing_stop": 89.47,
+        "last_alert_hash": ""
+    },
+    "AEP": {
+        "status": "HOLD",
+        "entry": 129.22999572753906,
+        "trailing_stop": 123.42,
+        "last_alert_hash": ""
+    },
+    "EXC": {
+        "status": "HOLD",
+        "entry": 46.209999084472656,
+        "trailing_stop": 43.98,
+        "last_alert_hash": ""
+    },
+    "XEL": {
+        "status": "HOLD",
+        "entry": 79.22000122070312,
+        "trailing_stop": 74.83,
+        "last_alert_hash": ""
+    },
+    "ED": {
+        "status": "HOLD",
+        "entry": 107.73999786376953,
+        "trailing_stop": 101.94,
+        "last_alert_hash": ""
+    },
+    "PEG": {
+        "status": "HOLD",
+        "entry": 79.69999694824219,
+        "trailing_stop": 75.86,
+        "last_alert_hash": ""
+    },
+    "EQIX": {
+        "status": "HOLD",
+        "entry": 1055.8499755859375,
+        "trailing_stop": 1001.78,
+        "last_alert_hash": ""
+    },
+    "O": {
+        "status": "HOLD",
+        "entry": 62.720001220703125,
+        "trailing_stop": 60.0,
+        "last_alert_hash": ""
+    },
+    "WELL": {
+        "status": "HOLD",
+        "entry": 214.22999572753906,
+        "trailing_stop": 198.56,
         "last_alert_hash": ""
     }
 }
