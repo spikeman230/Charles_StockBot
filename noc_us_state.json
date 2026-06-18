@@ -790,5 +790,11 @@
         "entry": 214.22999572753906,
         "trailing_stop": 198.56,
         "last_alert_hash": ""
+    },
+    "FTNT": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
     }
 }
