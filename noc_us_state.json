@@ -844,5 +844,29 @@
         "entry": 0.0,
         "trailing_stop": 0.0,
         "last_alert_hash": ""
+    },
+    "CVS": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "C": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "GS": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "HAL": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
     }
 }
