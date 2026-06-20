@@ -1,0 +1,79 @@
+# .github/workflows/noc_daily_warroom.yml
+name: NOC 戰情室每日自動化 (更新CSV + 回顧驗證)
+
+# 觸發條件
+on:
+  # 1. 排程：台灣時間週一至週五 22:00 (UTC 14:00) 執行，收盤後分析
+  schedule:
+    - cron: '0 14 * * 6'
+  # 2. 手動觸發 (Actions 頁面可點按)
+  workflow_dispatch:
+
+jobs:
+  warroom:
+    runs-on: ubuntu-latest
+    
+    # 環境變數 (可透過 GitHub Secrets 注入)
+    env:
+      FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+      TG_TOKEN: ${{ secrets.TG_TOKEN }}
+      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      EMAIL_USER: ${{ secrets.EMAIL_USER }}
+      EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
+      TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
+      TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID }}
+      TOTAL_CAPITAL: ${{ secrets.TOTAL_CAPITAL }}
+      SILENT_MODE: "false"
+
+    steps:
+      # 1. 檢出程式碼
+      - name: 檢出 Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}   # 允許後續 push 回倉庫
+
+      # 2. 設定 Python 環境
+      - name: 設定 Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      # 3. 安裝相依套件
+      - name: 安裝套件依賴
+        run: |
+          python -m pip install --upgrade pip
+          pip install yfinance pandas numpy requests python-dotenv mplfinance
+
+      # 4. 檢查是否缺少 noc_core.py (若存在則一併加入，避免 import 失敗)
+      - name: 確認核心模組存在
+        run: |
+          if [ ! -f "noc_core.py" ]; then
+            echo "⚠️ 警告：找不到 noc_core.py，若主程式需要請確保已上傳。"
+          else
+            echo "✅ noc_core.py 已存在"
+          fi
+
+      # 5. 執行主戰情室 (更新 noc_trading_log.csv)
+      - name: 執行 NOC 戰情室 (stock_bot_0620.py)
+        continue-on-error: true   # 即使 Bot 無新訊號也繼續執行回顧引擎
+        run: |
+          python stock_bot_0620.py
+
+      # 6. 執行決策回顧引擎 (產生 decision_review.csv)
+      - name: 執行 NOC 決策回顧引擎
+        run: |
+          python noc_review_engine.py
+
+      # 7. 將更新後的 CSV 與回顧報告 Commit 回倉庫
+      - name: 提交更新檔案至倉庫
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "NOC GitHub Action"
+          # 加入追蹤的檔案 (依實際名稱調整)
+          git add noc_trading_log.csv decision_review.csv noc_review.log noc_system.log || true
+          # 若有變動則 commit，並跳過 CI 避免循環觸發
+          git diff --staged --quiet || git commit -m "📊 自動更新戰情室 CSV 與回顧報表 [skip ci]"
+          git push
