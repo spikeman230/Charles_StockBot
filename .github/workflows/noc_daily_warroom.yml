@@ -57,10 +57,10 @@ jobs:
           fi
 
       # 5. 執行主戰情室 (更新 noc_trading_log.csv)
-      - name: 執行 NOC 戰情室 (stock_bot_0620.py)
+      - name: 執行 NOC 戰情室 (stock_bot.py)
         continue-on-error: true   # 即使 Bot 無新訊號也繼續執行回顧引擎
         run: |
-          python stock_bot_0620.py
+          python stock_bot.py
 
       # 6. 執行決策回顧引擎 (產生 decision_review.csv)
       - name: 執行 NOC 決策回顧引擎
