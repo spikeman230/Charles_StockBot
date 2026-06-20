@@ -5,7 +5,7 @@ name: NOC 戰情室每日自動化 (更新CSV + 回顧驗證)
 on:
   # 1. 排程：台灣時間週一至週五 22:00 (UTC 14:00) 執行，收盤後分析
   schedule:
-    - cron: '0 14 * * 6'
+    - cron: '20 14 * * 1-5'
   # 2. 手動觸發 (Actions 頁面可點按)
   workflow_dispatch:
 
