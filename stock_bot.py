@@ -255,15 +255,26 @@ def is_trading_day(curr_date: datetime.date) -> bool:
     if curr_date.weekday() >= 5:
         return False
     try:
-        tsm = yf.Ticker("2330.TW").history(period="5d")
-        if tsm.empty:
+        # 直接获取今日数据，检查是否有成交
+        today_data = yf.Ticker("2330.TW").history(start=curr_date, end=curr_date + datetime.timedelta(days=1))
+        if today_data.empty:
+            return False
+        # 若有数据，检查成交量是否 > 0（防止假日无成交）
+        if today_data['Volume'].iloc[-1] > 0:
             return True
-        last_trading_date = tsm.index[-1].date()
-        diff_days = (curr_date - last_trading_date).days
-        return diff_days <= 1
+        return False
     except Exception as e:
-        logger.warning(f"交易日感知異常，默認開啟放行: {e}")
-        return True
+        # 若 API 异常，回退至原差值法
+        logger.warning(f"交易日感知異常，使用差值法: {e}")
+        try:
+            tsm = yf.Ticker("2330.TW").history(period="5d")
+            if tsm.empty:
+                return True
+            last_trading_date = tsm.index[-1].date()
+            diff_days = (curr_date - last_trading_date).days
+            return diff_days <= 1
+        except:
+            return True
 
 # =============================================================================
 # Trello 整合（修正：過濾無效卡片與 NOC 狀態卡）
@@ -698,7 +709,8 @@ if __name__ == "__main__":
         update_trello_system_status_bg("非交易日/休市靜默", "🔴")
         if curr_dt.hour <= 10:
             send_reports(f"NOC 戰情報告 {curr_date} (休市)", f"📡 【NOC 戰情室靜默休眠】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n🔴 今日市場休市，全系統處於資產監守維護狀態，不推播繁雜雜訊。", [])
-
+        sys.exit(0)
+        
     if not is_yellow_light:
         logger.info("通過環境感知檢查，開始同步雲端 Trello 看板部署...")
         update_trello_system_status_bg("交易日波段追蹤中", "🟢")
