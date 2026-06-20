@@ -5,6 +5,8 @@
 # 除錯模式：DEBUG_FORCE_PUSH = True 時，忽略過熱/四象限/黃燈/攻擊信號，強制推播所有股票
 # =============================================================================
 
+import matplotlib
+matplotlib.use('Agg')  # 必須在 import pyplot 或 mplfinance 之前執行
 import yfinance as yf
 import requests
 import os
@@ -835,6 +837,23 @@ if __name__ == "__main__":
 
             silent_keywords = ["中立觀察", "長線鎖籌", "洗盤耐受區"]
             is_silent = any(kw in pnl_alert for kw in silent_keywords)
+            # ===== ★ 修改 2：強制寫入庫存股 CSV（無論是否靜默） =====
+            vol_status_hold = "📈 出量" if td["Est_Volume"] > td["5VMA"] * 1.2 else ("📉 量縮" if td["Est_Volume"] < td["5VMA"] * 0.8 else "➖ 量平")
+            trend_status_hold = "🔥 多頭" if curr_price > td["20MA"] else ("🧊 空頭" if curr_price < td["60MA"] else "🔄 盤整")
+            write_noc_log(
+                date=curr_date.strftime("%Y-%m-%d"),
+                symbol=sym,
+                name=data["name"],
+                close_price=curr_price,
+                rsi=td["RSI"],
+                vol_status=vol_status_hold,
+                status=trend_status_hold,
+                predict="庫存動態防禦",
+                chip_signal=td["Chip_Status"],
+                alert=pnl_alert
+            )
+            # ======================================================
+
             if is_silent and cfg.SILENT_MODE:
                 logger.info(f"🔇 [靜默模式] 庫藏股 {sym} 指令為 '{pnl_alert}'，符合靜默關鍵字，不進行推播與繪圖。")
             else:
@@ -1034,6 +1053,24 @@ if __name__ == "__main__":
                 s += f" 👉 作戰指令: {alert}\n"
 
             action_command = s
+            # ===== ★ 修改 1：強制寫入 CSV（無論有無觸發訊號） =====
+            predict_text = trigger_label if trigger_label else "無特殊徵兆"
+            # 確保 alert 已定義（若因某些原因未定義，給予預設值）
+            if 'alert' not in locals():
+                alert = "⚠️ 資料異常"
+            write_noc_log(
+                date=curr_date.strftime("%Y-%m-%d"),
+                symbol=sym,
+                name=name,
+                close_price=close,
+                rsi=rsi,
+                vol_status=vol_status,
+                status=trend_status,
+                predict=predict_text,
+                chip_signal=chip_msg,
+                alert=alert
+            )
+            # =====================================================
 
             is_force_output = cat in force_include_categories
             if is_force_output:
