@@ -32,6 +32,16 @@ jobs:
         FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
       run: python init_db.py
       
+     # ========== 新增：驗證資料庫內容 ==========
+    - name: 檢查資料庫內容
+      run: |
+        echo "📊 檢查 stock_prices 總筆數："
+        sqlite3 noc_warroom.db "SELECT COUNT(*) FROM stock_prices;"
+        echo "📊 檢查不重複股票家數："
+        sqlite3 noc_warroom.db "SELECT COUNT(DISTINCT symbol) FROM stock_prices;"
+    # ========================================
+
+      
     # 🚀 關鍵步驟：把建好的 noc_warroom.db 存回 GitHub 倉庫！
     - name: Commit & Push database
       run: |
