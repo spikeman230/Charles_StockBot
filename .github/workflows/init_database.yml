@@ -1,10 +1,8 @@
 name: NOC 戰情室初始建庫大補丸
 
-# 關鍵：無排程，純手動按鈕觸發 (這支程式通常建庫時只執行一次)
-on: 
-  workflow_dispatch: 
+on:
+  workflow_dispatch:
 
-# 🛡️ 允許 GitHub 機器人將生成的 noc_warroom.db 存回您的代碼倉庫
 permissions:
   contents: write
 
@@ -12,45 +10,51 @@ jobs:
   initialize-db:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-        
-    - name: Install dependencies
-      # 確保 requirements.txt 裡有 FinMind, pandas, yfinance 等套件
-      # python -m pip install --upgrade pip
-      run: | 
-        pip install FinMind pandas yfinance python-dotenv tqdm
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      
-    - name: Run Database Initialization
-      env:
-        # 調用您設定在 GitHub Secrets 中的 FinMind 權限金鑰
-        FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
-      run: python init_db.py
-      
-     # ========== 新增：驗證資料庫內容 ==========
-    - name: 檢查資料庫內容
-      run: |
-        echo "📊 檢查 stock_prices 總筆數："
-        sqlite3 noc_warroom.db "SELECT COUNT(*) FROM stock_prices;"
-        echo "📊 檢查不重複股票家數："
-        sqlite3 noc_warroom.db "SELECT COUNT(DISTINCT symbol) FROM stock_prices;"
-    # ========================================
+      - uses: actions/checkout@v4
 
-      
-    # 🚀 關鍵步驟：把建好的 noc_warroom.db 存回 GitHub 倉庫！
-    - name: Commit & Push database
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        
-        # 使用 -f 強制加入，避免 db 檔案不小心被您的 .gitignore 規則擋住
-        git add -f noc_warroom.db
-        
-        # 檢查資料庫如果有成功生成且變動，才進行 commit
-        git diff-index --quiet HEAD || git commit -m "🗄️ 初始建置 NOC 歷史戰情資料庫 (SQLite)"
-        git push
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install FinMind pandas yfinance python-dotenv tqdm
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update
+          sudo apt-get install git-lfs
+          git lfs install
+
+      - name: Run Database Initialization
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+        run: python init_db.py
+
+      - name: 檢查資料庫內容
+        run: |
+          echo "📊 檢查 stock_prices 總筆數："
+          sqlite3 noc_warroom.db "SELECT COUNT(*) FROM stock_prices;"
+          echo "📊 檢查不重複股票家數："
+          sqlite3 noc_warroom.db "SELECT COUNT(DISTINCT symbol) FROM stock_prices;"
+
+      - name: Commit & Push database
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+          # 1. 強制移除 LFS 對 noc_warroom.db 的追蹤（若存在的話）
+          git lfs untrack "noc_warroom.db" || true
+
+          # 2. 建立 .gitattributes，強制該檔案以一般二進位檔案提交
+          echo "noc_warroom.db binary -text -diff -merge" > .gitattributes
+          git add .gitattributes
+
+          # 3. 強制加入真實資料庫檔案（覆蓋 LFS 指標）
+          git add -f noc_warroom.db
+
+          # 4. 檢查是否有變更，若有則 commit 並 push
+          git diff-index --quiet HEAD || git commit -m "🗄️ 初始建置 NOC 歷史戰情資料庫 (SQLite)"
+          git push
