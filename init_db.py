@@ -52,7 +52,10 @@ if __name__ == "__main__":
         fetcher.fetch_market_health_data(start_date, db)
         
         # 2. 自動清洗名單：去除 .TW 與 .TWO，保留純數字給 FinMind，並去重複
-        target_stocks = list(set([s.split('.')[0] for s in SCAN_LIST if s.split('.')[0].isdigit()]))
+        #target_stocks = list(set([s.split('.')[0] for s in SCAN_LIST if s.split('.')[0].isdigit()]))
+       
+        # 修正：保留完整代號（含 .TW / .TWO）
+        target_stocks = list(set([s for s in SCAN_LIST if s.split('.')[0].isdigit()]))
         
         print(f"🎯 成功讀取硬體編碼名單！最終鎖定 {len(target_stocks)} 檔股票，準備進行 400 天歷史大補給！")
         print("⚠️ 預計耗時 15-25 分鐘，請耐心等候...")
