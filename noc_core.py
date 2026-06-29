@@ -606,7 +606,7 @@ class NOCDataFetcher:
             print(f"   ⏳ 正在下載 {symbol} 自 {start_date} 的歷史資料...")
             ticker = yf.Ticker(symbol)
             hist = ticker.history(start=start_date)
-            
+        
             if hist.empty:
                 print(f"   ⚠️ {symbol} 無歷史資料 (start_date={start_date})")
                 return
@@ -619,6 +619,9 @@ class NOCDataFetcher:
                 db.save_shares_out(symbol, shares_out)
                 print(f"   📊 {symbol} 股本: {shares_out:,} 股")
 
+            # 確認資料庫路徑是否正確
+            print(f"   📂 資料庫路徑: {db.db_path}")
+        
             with sqlite3.connect(db.db_path) as conn:
                 for idx, row in hist.iterrows():
                     date_str = idx.strftime("%Y-%m-%d")
@@ -627,12 +630,15 @@ class NOCDataFetcher:
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (symbol, date_str, row['Open'], row['High'], row['Low'], row['Close'], int(row['Volume']), row['Close']))
         
-            print(f"   💾 {symbol} 已寫入資料庫 (自 {start_date} 起)")
+            # 確認寫入後立即查詢
+            with sqlite3.connect(db.db_path) as conn:
+                count = conn.execute("SELECT COUNT(*) FROM stock_prices WHERE symbol = ?", (symbol,)).fetchone()[0]
+                print(f"   💾 {symbol} 已寫入資料庫 (共 {count} 筆)")
         
         except Exception as e:
             print(f"   ❌ {symbol} 儲存失敗: {e}")
-            # 可選：將錯誤寫入日誌以便追蹤
-            self.logger.error(f"{symbol} 儲存失敗: {e}")
+            import traceback
+            traceback.print_exc()
 
     def fetch_financial_statements(self, symbol: str, db: NOCDatabase) -> None:
         # 原有實作，可保留空或補上
