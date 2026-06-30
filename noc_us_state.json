@@ -192,9 +192,9 @@
         "last_alert_hash": ""
     },
     "AAPL": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "REAL_HOLD",
+        "entry": 296.35,
+        "trailing_stop": 272.67354474748885,
         "last_alert_hash": ""
     },
     "TSLA": {
@@ -894,6 +894,12 @@
         "last_alert_hash": ""
     },
     "ROST": {
+        "status": "NONE",
+        "entry": 0.0,
+        "trailing_stop": 0.0,
+        "last_alert_hash": ""
+    },
+    "DLR": {
         "status": "NONE",
         "entry": 0.0,
         "trailing_stop": 0.0,
