@@ -1,8 +1,8 @@
 # =============================================================================
-# NOC 戰情室核心引擎 v16.10
+# NOC 戰情室核心引擎 v16.11
 # 功能：籌碼矩陣、四象限量價、K線形態防禦、過熱攔截、初升段突破偵測
-# 本地 SQLite 資料庫支援（stock_prices, market_health, stock_info, fundamental_state）
-# 完整的技術指標計算（與原 stock_bot 完全一致）
+# 新增：雙軌量能系統（實際量比 vs 預估量比）、ABCX量縮回測不破偵測
+# 本地 SQLite 資料庫支援
 # =============================================================================
 
 import yfinance as yf
@@ -180,6 +180,39 @@ def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series, lookback: int = 2
             return True, "🔥 放量站上20MA", 2
     return False, "", 0
 
+# ---------------------- ABCX量縮回測不破偵測 (新增) ----------------------
+def detect_abcx_pullback(hist: pd.DataFrame, td: pd.Series) -> bool:
+    """
+    偵測 ABCX 量縮回測不破結構：
+    - 條件A：過去 13~2 天內有帶量長紅 (Volume_Ratio_Act > 1.8 且收紅)
+    - 條件B：今日真實量能極度萎縮 (Volume < 昨日5VMA * 0.6)
+    - 條件C：今日收盤守住前波紅K的開盤價，且站上20MA
+    回傳 True 表示符合結構
+    """
+    if len(hist) < 20:
+        return False
+
+    # 條件A：尋找前波突破長紅 (過去 13 到 2 天內)
+    recent_hist = hist.iloc[-13:-2]
+    breakout_days = recent_hist[(recent_hist['Volume_Ratio_Act'] > 1.8) & (recent_hist['Close'] > recent_hist['Open'])]
+    if breakout_days.empty:
+        return False
+
+    # 條件B：判定今日量縮極致 (真實 Volume 必須小於昨日 5VMA 的 60%)
+    actual_vol = td.get('Volume', 0)
+    vma5_yest = hist['5VMA'].shift(1).iloc[-1]
+    if vma5_yest <= 0:
+        return False
+    is_volume_shrunk = (actual_vol < vma5_yest * 0.6)
+
+    # 條件C：判定回測不破 (今日 Close >= 前波突破點的 Open，且 Close >= 20MA)
+    breakout_open = breakout_days.iloc[-1]['Open']
+    close = td['Close']
+    ma20 = td['20MA']
+    is_holding_support = (close >= breakout_open) and (close >= ma20)
+
+    return bool(is_volume_shrunk and is_holding_support)
+
 # ---------------------- 旱地拔蔥偵測 ----------------------
 def calculate_monster_breakout(hist: pd.DataFrame, td: pd.Series) -> bool:
     close = td['Close']
@@ -241,7 +274,7 @@ def is_high_quality_signal(hist: pd.DataFrame, td: pd.Series, matrix_signal: str
 def get_revenue_yoy(symbol: str, token: str = "") -> str:
     if not token:
         return "N/A"
-    match = re.search(r"\\d+", symbol)
+    match = re.search(r"\d+", symbol)
     if not match:
         return "N/A"
     try:
@@ -276,7 +309,7 @@ def get_pe_ratio(symbol: str) -> str:
 def get_finmind_chip_data(symbol: str, start_date_str: str, token: str = "") -> pd.DataFrame:
     if not token:
         return pd.DataFrame()
-    match = re.search(r"\\d+", symbol)
+    match = re.search(r"\d+", symbol)
     if not match:
         return pd.DataFrame()
     try:
@@ -320,7 +353,7 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     conds = [hist["Signal_CoBuy"], hist["Signal_Trust_Trend"], hist["Total_Institutional"] > 0]
     hist["Chip_Status"] = np.select(conds, ["🤝 土洋齊買", "🏦 投信作帳", "📈 法人偏多"], default="➖ 中性/偏空")
     return hist
-    
+
 # =============================================================================
 # 7. 本地 SQLite 資料庫支援
 # =============================================================================
@@ -603,25 +636,24 @@ class NOCDataFetcher:
 
     def fetch_and_store_stock_data(self, symbol: str, start_date: str, db: NOCDatabase):
         try:
-            print(f"   ⏳ 正在下載 {symbol} 自 {start_date} 的歷史資料...")
+            print(f" ⏳ 正在下載 {symbol} 自 {start_date} 的歷史資料...")
             ticker = yf.Ticker(symbol)
             hist = ticker.history(start=start_date)
-        
+
             if hist.empty:
-                print(f"   ⚠️ {symbol} 無歷史資料 (start_date={start_date})")
+                print(f" ⚠️ {symbol} 無歷史資料 (start_date={start_date})")
                 return
-            
-            print(f"   ✅ {symbol} 下載成功，共 {len(hist)} 筆")
-        
+
+            print(f" ✅ {symbol} 下載成功，共 {len(hist)} 筆")
+
             info = ticker.info
             shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
             if shares_out:
                 db.save_shares_out(symbol, shares_out)
-                print(f"   📊 {symbol} 股本: {shares_out:,} 股")
+                print(f" 📊 {symbol} 股本: {shares_out:,} 股")
 
-            # 確認資料庫路徑是否正確
-            print(f"   📂 資料庫路徑: {db.db_path}")
-        
+            print(f" 📂 資料庫路徑: {db.db_path}")
+
             with sqlite3.connect(db.db_path) as conn:
                 for idx, row in hist.iterrows():
                     date_str = idx.strftime("%Y-%m-%d")
@@ -629,19 +661,17 @@ class NOCDataFetcher:
                         INSERT OR REPLACE INTO stock_prices (symbol, date, open, high, low, close, volume, adj_close)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (symbol, date_str, row['Open'], row['High'], row['Low'], row['Close'], int(row['Volume']), row['Close']))
-        
-            # 確認寫入後立即查詢
+
             with sqlite3.connect(db.db_path) as conn:
                 count = conn.execute("SELECT COUNT(*) FROM stock_prices WHERE symbol = ?", (symbol,)).fetchone()[0]
-                print(f"   💾 {symbol} 已寫入資料庫 (共 {count} 筆)")
-        
+                print(f" 💾 {symbol} 已寫入資料庫 (共 {count} 筆)")
+
         except Exception as e:
-            print(f"   ❌ {symbol} 儲存失敗: {e}")
+            print(f" ❌ {symbol} 儲存失敗: {e}")
             import traceback
             traceback.print_exc()
 
     def fetch_financial_statements(self, symbol: str, db: NOCDatabase) -> None:
-        # 原有實作，可保留空或補上
         pass
 
 # =============================================================================
@@ -676,14 +706,16 @@ def calculate_all_indicators(hist: pd.DataFrame, symbol: str = "", token: str = 
     hist["60MA"] = hist["Close"].rolling(60).mean()
 
     # ========== 量能均線（使用實際成交量，而非 Est_Volume） ==========
-    hist["5VMA"] = hist["Volume"].rolling(5).mean()           # 修正：改用實際 Volume
+    hist["5VMA"] = hist["Volume"].rolling(5).mean() # 修正：改用實際 Volume
     hist["60VMA"] = hist["Volume"].rolling(60).mean()
 
     # ========== 換手率（盤中使用 Est_Volume 估算，盤後等於實際） ==========
     hist["Turnover_Rate"] = ((hist["Est_Volume"] / hist["Shares_Out"]) * 100).fillna(1.5)
 
-    # ========== 量比（使用實際成交量 / 昨日 5VMA） ==========
-    hist["Volume_Ratio"] = (hist["Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
+    # ========== 量比（雙軌量能系統） ==========
+    hist["Volume_Ratio_Act"] = (hist["Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
+    hist["Volume_Ratio_Est"] = (hist["Est_Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
+    hist["Volume_Ratio"] = hist["Volume_Ratio_Est"] # 預設為預估量比
 
     # ========== K線特徵 ==========
     hist['Candle_Ratio'] = (hist['High'] - hist[['Open','Close']].max(axis=1)) / (hist['High'] - hist['Low'] + 1e-9)
@@ -816,7 +848,7 @@ def get_stock_data(symbol: str, db: Optional[NOCDatabase] = None, name: str = ""
     if 'PE' not in hist.columns:
         hist['PE'] = get_pe_ratio(symbol)
     if 'YoY' not in hist.columns:
-        hist['YoY'] = get_revenue_yoy(symbol, token)   
+        hist['YoY'] = get_revenue_yoy(symbol, token)
 
     return hist
 
