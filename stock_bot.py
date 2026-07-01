@@ -1,12 +1,12 @@
 # =============================================================================
 # NOC 終極戰情室 v16.12 長短雙軌版（SQLite 狀態儲存）
 # 核心功能：初升段即時偵測、過熱攔截、白名單強制輸出、四象限矩陣
-# 整合：旱地拔蔥、狙擊金叉（統一使用 noc_core 函數）
+# 整合：旱地拔蔥、狙擊金叉、ABCX回踩（統一使用 noc_core 函數）
 # 除錯模式：DEBUG_FORCE_PUSH = True 時，忽略過熱/四象限/黃燈/攻擊信號，強制推播所有股票
 # =============================================================================
 
 import matplotlib
-matplotlib.use('Agg')  # 必須在 import pyplot 或 mplfinance 之前執行
+matplotlib.use('Agg') # 必須在 import pyplot 或 mplfinance 之前執行
 import yfinance as yf
 import requests
 import os
@@ -39,7 +39,7 @@ from noc_core import (
     NOCDatabase, NOCStrategy, NOCDataFetcher, NOCRiskManager,
     analyze_chip_tactics, NOCChipMatrix, is_high_quality_signal,
     assess_volume_turnover_signal, is_overheated, detect_initial_breakout,
-    calculate_monster_breakout, calculate_sniper_signal
+    calculate_monster_breakout, calculate_sniper_signal, detect_abcx_pullback
 )
 
 # =============================================================================
@@ -669,8 +669,7 @@ def send_reports(subject: str, text_body: str, chart_files: list) -> None:
                 server.send_message(msg)
         except:
             pass
-
-# =============================================================================
+            # =============================================================================
 # 主程式
 # =============================================================================
 if __name__ == "__main__":
@@ -712,7 +711,7 @@ if __name__ == "__main__":
         if curr_dt.hour <= 10:
             send_reports(f"NOC 戰情報告 {curr_date} (休市)", f"📡 【NOC 戰情室靜默休眠】\n📅 時間：{curr_time}\n━━━━━━━━━━━━━━\n🔴 今日市場休市，全系統處於資產監守維護狀態，不推播繁雜雜訊。", [])
         sys.exit(0)
-        
+
     if not is_yellow_light:
         logger.info("通過環境感知檢查，開始同步雲端 Trello 看板部署...")
         update_trello_system_status_bg("交易日波段追蹤中", "🟢")
@@ -721,14 +720,15 @@ if __name__ == "__main__":
     STOCK_DICT = TRELLO_DICT if TRELLO_DICT else {}
     MY_PORTFOLIO = TRELLO_PORTFOLIO if TRELLO_PORTFOLIO else {}
 
-    for fname, label in [(cfg.RADAR_FILE, "👀 長線觀察區 (雷達自動火種)"), (cfg.LIGHTNING_FILE, "👀 短線觀察區 (閃電自動火種)")]:
+    # ===== ★ 修改 2：重構分類名稱 =====
+    for fname, label in [(cfg.RADAR_FILE, "🔍 守株待測區 (雷達自動火種)"), (cfg.LIGHTNING_FILE, "🌀 ABCX回踩區 (閃電自動火種)")]:
         if Path(fname).exists():
             try:
                 with open(fname, "r", encoding="utf-8") as f:
                     STOCK_DICT[label] = json.load(f)
             except Exception as e:
                 logger.error(f"讀取 {fname} 失敗: {e}")
-    
+
     # 整合短線飆股搜尋器結果 (Momentum)
     MOMENTUM_FILE = "momentum_targets.json"
     if Path(MOMENTUM_FILE).exists():
@@ -740,7 +740,7 @@ if __name__ == "__main__":
                 logger.info(f"✅ 已載入 {len(momentum_data)} 檔短線飆股至追蹤區")
         except Exception as e:
             logger.error(f"讀取短線飆股清單失敗: {e}")
-    
+
     all_symbols = {sym: data["name"] for sym, data in MY_PORTFOLIO.items()}
     for stocks in STOCK_DICT.values():
         for sym, item in stocks.items():
@@ -872,9 +872,10 @@ if __name__ == "__main__":
                 has_actionable_alerts = True
 
     # =========================================================================
-    # 戰區 2：觀察區 (白名單: 長線觀測區, 短線觀測區, ⚡ 短線飆股區 (Momentum))
+    # 戰區 2：觀察區 (白名單: 守株待測區, ABCX回踩區, 短線飆股區)
     # =========================================================================
-    force_include_categories = ["長線觀測區", "短線觀測區", "⚡ 短線飆股區 (Momentum)"]
+    # ===== ★ 修改 2：同步更新 force_include_categories =====
+    force_include_categories = ["🔍 守株待測區 (雷達自動火種)", "🌀 ABCX回踩區 (閃電自動火種)", "⚡短線飆股區 (Momentum)"]
     for cat, stocks in STOCK_DICT.items():
         if not stocks:
             continue
@@ -968,65 +969,76 @@ if __name__ == "__main__":
                     logger.info(f"🛑 [四象限攔截] {sym} 信號為 {quadrant_signal}，強制封鎖推播。")
                     continue
 
-            # 狀態機觸發判斷（優先級：初升段突破 > 旱地拔蔥 > 狙擊金叉）
+            # ===== ★ 修改 3：狀態機中插入 ABCX 優先判定 =====
             if sym_state.status == "REAL_HOLD":
                 alert = f"💼 持股防禦區 | 📍 最新防線: {sym_state.trailing_stop:.1f}"
             elif sym_state.status == "NONE":
-                initial_break, break_type, _ = detect_initial_breakout(hist, td)
-                if initial_break and not is_yellow_light:
-                    trigger_label = break_type
+                # 優先判定是否符合 A-B-C-X 量縮回測不破
+                if detect_abcx_pullback(hist, td) and not is_yellow_light:
+                    trigger_label = "🌀【ABCX回踩】量縮回測不破，極致洗盤結束！"
                     risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
                     defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=local_market_mode, is_yellow_light=False)
                     stop_price = defense_info["defense_line"]
                     noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
-                    alert = "⚡【初升段起漲】放量突破關鍵價位，小注試單！"
+                    alert = "⚡【完美回測】勝率極高，建議在此處建立防禦型底倉！"
                     action_plan_text = build_light_plan(sym, close, hist, manual_stop_price, local_market_mode)
-                elif td.get("Monster_Breakout", False):
-                    trigger_label = "🔥【旱地拔蔥】底部極端爆量，長紅突破季線！"
-                    if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
-                        alert = "🛡️【基本面攔截】營收 YoY 衰退，無情淘汰。"
-                    elif trend_score < 0:
-                        alert = "🛡️【趨勢攔截】長線多頭條件未滿足，拒絕追高。"
-                    elif is_yellow_light:
-                        alert = "🟡【黃燈強制攔截】大盤震盪洗盤，強制攔截新倉。"
-                        action_plan_text = ""
-                    else:
-                        matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
-                        td['Trend_Score'] = trend_score
-                        if not is_high_quality_signal(hist, td, matrix_signal, local_market_mode):
-                            logger.info(f"🔇 低品質訊號攔截 {sym} : {trigger_label}")
-                            trigger_label = ""
-                            alert = "📉 訊號品質不足 (未突破20日高點/量比<2/籌碼弱勢)"
+                else:
+                    # 原本的初升段、旱地拔蔥、狙擊金叉邏輯放在此 else 區塊內繼續執行
+                    initial_break, break_type, _ = detect_initial_breakout(hist, td)
+                    if initial_break and not is_yellow_light:
+                        trigger_label = break_type
+                        risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
+                        defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=local_market_mode, is_yellow_light=False)
+                        stop_price = defense_info["defense_line"]
+                        noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
+                        alert = "⚡【初升段起漲】放量突破關鍵價位，小注試單！"
+                        action_plan_text = build_light_plan(sym, close, hist, manual_stop_price, local_market_mode)
+                    elif td.get("Monster_Breakout", False):
+                        trigger_label = "🔥【旱地拔蔥】底部極端爆量，長紅突破季線！"
+                        if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
+                            alert = "🛡️【基本面攔截】營收 YoY 衰退，無情淘汰。"
+                        elif trend_score < 0:
+                            alert = "🛡️【趨勢攔截】長線多頭條件未滿足，拒絕追高。"
+                        elif is_yellow_light:
+                            alert = "🟡【黃燈強制攔截】大盤震盪洗盤，強制攔截新倉。"
+                            action_plan_text = ""
                         else:
-                            risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
-                            defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=local_market_mode, is_yellow_light=is_yellow_light)
-                            stop_price = defense_info["defense_line"]
-                            noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
-                            alert = "🐉【妖股起漲預警】資金強勢介入，無視基本面，強烈建議觀察試單！"
-                            action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
-                elif td.get("Sniper_Signal", False):
-                    trigger_label = "🌟 狙擊金叉 (底部扭轉)"
-                    if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
-                        alert = "🛡️【基本面攔截】營收 YoY 衰退，無情淘汰。"
-                    elif trend_score < 0:
-                        alert = "🛡️【趨勢攔截】長線多頭條件未滿足，拒絕追高。"
-                    elif is_yellow_light:
-                        alert = "🟡【黃燈強制攔截】大盤進入震盪洗盤期，戰情室強制攔截，禁止盲目開新倉建倉。"
-                        action_plan_text = ""
-                    else:
-                        matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
-                        td['Trend_Score'] = trend_score
-                        if not is_high_quality_signal(hist, td, matrix_signal, local_market_mode):
-                            logger.info(f"🔇 低品質訊號攔截 {sym} : {trigger_label}")
-                            trigger_label = ""
-                            alert = "📉 訊號品質不足 (未突破20日高點/量比<2/籌碼弱勢)"
+                            matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
+                            td['Trend_Score'] = trend_score
+                            if not is_high_quality_signal(hist, td, matrix_signal, local_market_mode):
+                                logger.info(f"🔇 低品質訊號攔截 {sym} : {trigger_label}")
+                                trigger_label = ""
+                                alert = "📉 訊號品質不足 (未突破20日高點/量比<2/籌碼弱勢)"
+                            else:
+                                risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
+                                defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=local_market_mode, is_yellow_light=is_yellow_light)
+                                stop_price = defense_info["defense_line"]
+                                noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
+                                alert = "🐉【妖股起漲預警】資金強勢介入，無視基本面，強烈建議觀察試單！"
+                                action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
+                    elif td.get("Sniper_Signal", False):
+                        trigger_label = "🌟 狙擊金叉 (底部扭轉)"
+                        if not is_lightning and ("衰退" in fund_health or "警報" in fund_health):
+                            alert = "🛡️【基本面攔截】營收 YoY 衰退，無情淘汰。"
+                        elif trend_score < 0:
+                            alert = "🛡️【趨勢攔截】長線多頭條件未滿足，拒絕追高。"
+                        elif is_yellow_light:
+                            alert = "🟡【黃燈強制攔截】大盤進入震盪洗盤期，戰情室強制攔截，禁止盲目開新倉建倉。"
+                            action_plan_text = ""
                         else:
-                            risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
-                            defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=local_market_mode, is_yellow_light=is_yellow_light)
-                            stop_price = defense_info["defense_line"]
-                            noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
-                            alert = f"🚀【長線波段佈局觸發】"
-                            action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
+                            matrix_signal = chip_matrix_analyzer.analyze(hist, market_mode=local_market_mode)
+                            td['Trend_Score'] = trend_score
+                            if not is_high_quality_signal(hist, td, matrix_signal, local_market_mode):
+                                logger.info(f"🔇 低品質訊號攔截 {sym} : {trigger_label}")
+                                trigger_label = ""
+                                alert = "📉 訊號品質不足 (未突破20日高點/量比<2/籌碼弱勢)"
+                            else:
+                                risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
+                                defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=local_market_mode, is_yellow_light=is_yellow_light)
+                                stop_price = defense_info["defense_line"]
+                                noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
+                                alert = f"🚀【長線波段佈局觸發】"
+                                action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
 
             # ------------------- 組裝推播訊息（明確化） -------------------
             if trigger_label:
@@ -1055,7 +1067,6 @@ if __name__ == "__main__":
             action_command = s
             # ===== ★ 修改 1：強制寫入 CSV（無論有無觸發訊號） =====
             predict_text = trigger_label if trigger_label else "無特殊徵兆"
-            # 確保 alert 已定義（若因某些原因未定義，給予預設值）
             if 'alert' not in locals():
                 alert = "⚠️ 資料異常"
             write_noc_log(
