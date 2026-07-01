@@ -1,7 +1,7 @@
 # =============================================================================
-# NOC 戰情室核心引擎 v16.11
+# NOC 戰情室核心引擎 v16.12 (強化防禦版)
 # 功能：籌碼矩陣、四象限量價、K線形態防禦、過熱攔截、初升段突破偵測
-# 新增：雙軌量能系統（實際量比 vs 預估量比）、ABCX量縮回測不破偵測
+# 新增：雙軌量能系統（實際量比 vs 預估量比）、ABCX量縮回測不破偵測（含欄位檢查）
 # 本地 SQLite 資料庫支援
 # =============================================================================
 
@@ -139,9 +139,8 @@ def is_overheated(close: float, ma20: float, ma60: float,
     if reasons:
         return True, " | ".join(reasons)
     return False, ""
-
 # =============================================================================
-# 5. 初升段突破偵測
+# 5. 初升段突破偵測 + ABCX量縮回測不破 (防禦強化)
 # =============================================================================
 def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series, lookback: int = 20) -> Tuple[bool, str, int]:
     close = td['Close']
@@ -180,7 +179,7 @@ def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series, lookback: int = 2
             return True, "🔥 放量站上20MA", 2
     return False, "", 0
 
-# ---------------------- ABCX量縮回測不破偵測 (新增) ----------------------
+# ---------------------- ABCX量縮回測不破偵測 (強化防禦) ----------------------
 def detect_abcx_pullback(hist: pd.DataFrame, td: pd.Series) -> bool:
     """
     偵測 ABCX 量縮回測不破結構：
@@ -190,6 +189,16 @@ def detect_abcx_pullback(hist: pd.DataFrame, td: pd.Series) -> bool:
     回傳 True 表示符合結構
     """
     if len(hist) < 20:
+        return False
+
+    # === 防禦性檢查：必要欄位是否存在 ===
+    required_cols = ['Volume_Ratio_Act', '5VMA', '20MA']
+    for col in required_cols:
+        if col not in hist.columns:
+            logger.warning(f"detect_abcx_pullback: 缺少必要欄位 '{col}'，跳過檢測")
+            return False
+    if 'Volume' not in td or 'Close' not in td or '20MA' not in td:
+        logger.warning("detect_abcx_pullback: td 缺少 Volume/Close/20MA")
         return False
 
     # 條件A：尋找前波突破長紅 (過去 13 到 2 天內)
@@ -267,8 +276,7 @@ def is_high_quality_signal(hist: pd.DataFrame, td: pd.Series, matrix_signal: str
     trend_score = td.get('Trend_Score', -1.0)
     good_trend = trend_score > 0
     return price_break and strong_volume and (strong_chip or good_trend)
-
-# =============================================================================
+    # =============================================================================
 # 基本面輔助函數（從 stock_bot 移植）
 # =============================================================================
 def get_revenue_yoy(symbol: str, token: str = "") -> str:
@@ -471,7 +479,74 @@ class NOCDatabase:
             pass
 
 # =============================================================================
-# 8. 策略與風險管理類別
+# 8. 數據獲取器 (NOCDataFetcher) - 支援資料庫寫入
+# =============================================================================
+class NOCDataFetcher:
+    def __init__(self, token: str = ""):
+        self.token = token
+        self.logger = logging.getLogger(__name__)
+
+    def fetch_market_health_data(self, start_date: str, db: NOCDatabase):
+        try:
+            twii = yf.Ticker("^TWII").history(start=start_date)
+            if twii.empty:
+                self.logger.warning("無法下載加權指數資料")
+                return
+            twii['20MA'] = twii['Close'].rolling(20).mean()
+            twii['60MA'] = twii['Close'].rolling(60).mean()
+            with sqlite3.connect(db.db_path) as conn:
+                for idx, row in twii.iterrows():
+                    date_str = idx.strftime("%Y-%m-%d")
+                    conn.execute('''
+                        INSERT OR REPLACE INTO market_health (date, twii_close, twii_20ma, twii_60ma, foreign_futures_net)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (date_str, row['Close'], row['20MA'], row['60MA'], 0))
+            self.logger.info(f"大盤歷史資料已更新至 {db.db_path}")
+        except Exception as e:
+            self.logger.error(f"大盤資料下載失敗: {e}")
+
+    def fetch_and_store_stock_data(self, symbol: str, start_date: str, db: NOCDatabase):
+        try:
+            print(f" ⏳ 正在下載 {symbol} 自 {start_date} 的歷史資料...")
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(start=start_date)
+
+            if hist.empty:
+                print(f" ⚠️ {symbol} 無歷史資料 (start_date={start_date})")
+                return
+
+            print(f" ✅ {symbol} 下載成功，共 {len(hist)} 筆")
+
+            info = ticker.info
+            shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
+            if shares_out:
+                db.save_shares_out(symbol, shares_out)
+                print(f" 📊 {symbol} 股本: {shares_out:,} 股")
+
+            print(f" 📂 資料庫路徑: {db.db_path}")
+
+            with sqlite3.connect(db.db_path) as conn:
+                for idx, row in hist.iterrows():
+                    date_str = idx.strftime("%Y-%m-%d")
+                    conn.execute('''
+                        INSERT OR REPLACE INTO stock_prices (symbol, date, open, high, low, close, volume, adj_close)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (symbol, date_str, row['Open'], row['High'], row['Low'], row['Close'], int(row['Volume']), row['Close']))
+
+            with sqlite3.connect(db.db_path) as conn:
+                count = conn.execute("SELECT COUNT(*) FROM stock_prices WHERE symbol = ?", (symbol,)).fetchone()[0]
+                print(f" 💾 {symbol} 已寫入資料庫 (共 {count} 筆)")
+
+        except Exception as e:
+            print(f" ❌ {symbol} 儲存失敗: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def fetch_financial_statements(self, symbol: str, db: NOCDatabase) -> None:
+        pass
+
+# =============================================================================
+# 9. 策略與風險管理類別
 # =============================================================================
 class NOCStrategy:
     def __init__(self, db: Optional[NOCDatabase] = None):
@@ -608,74 +683,7 @@ class NOCRiskManager:
             }
 
 # =============================================================================
-# 9. 數據獲取器 (NOCDataFetcher) - 支援資料庫寫入
-# =============================================================================
-class NOCDataFetcher:
-    def __init__(self, token: str = ""):
-        self.token = token
-        self.logger = logging.getLogger(__name__)
-
-    def fetch_market_health_data(self, start_date: str, db: NOCDatabase):
-        try:
-            twii = yf.Ticker("^TWII").history(start=start_date)
-            if twii.empty:
-                self.logger.warning("無法下載加權指數資料")
-                return
-            twii['20MA'] = twii['Close'].rolling(20).mean()
-            twii['60MA'] = twii['Close'].rolling(60).mean()
-            with sqlite3.connect(db.db_path) as conn:
-                for idx, row in twii.iterrows():
-                    date_str = idx.strftime("%Y-%m-%d")
-                    conn.execute('''
-                        INSERT OR REPLACE INTO market_health (date, twii_close, twii_20ma, twii_60ma, foreign_futures_net)
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', (date_str, row['Close'], row['20MA'], row['60MA'], 0))
-            self.logger.info(f"大盤歷史資料已更新至 {db.db_path}")
-        except Exception as e:
-            self.logger.error(f"大盤資料下載失敗: {e}")
-
-    def fetch_and_store_stock_data(self, symbol: str, start_date: str, db: NOCDatabase):
-        try:
-            print(f" ⏳ 正在下載 {symbol} 自 {start_date} 的歷史資料...")
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(start=start_date)
-
-            if hist.empty:
-                print(f" ⚠️ {symbol} 無歷史資料 (start_date={start_date})")
-                return
-
-            print(f" ✅ {symbol} 下載成功，共 {len(hist)} 筆")
-
-            info = ticker.info
-            shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
-            if shares_out:
-                db.save_shares_out(symbol, shares_out)
-                print(f" 📊 {symbol} 股本: {shares_out:,} 股")
-
-            print(f" 📂 資料庫路徑: {db.db_path}")
-
-            with sqlite3.connect(db.db_path) as conn:
-                for idx, row in hist.iterrows():
-                    date_str = idx.strftime("%Y-%m-%d")
-                    conn.execute('''
-                        INSERT OR REPLACE INTO stock_prices (symbol, date, open, high, low, close, volume, adj_close)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (symbol, date_str, row['Open'], row['High'], row['Low'], row['Close'], int(row['Volume']), row['Close']))
-
-            with sqlite3.connect(db.db_path) as conn:
-                count = conn.execute("SELECT COUNT(*) FROM stock_prices WHERE symbol = ?", (symbol,)).fetchone()[0]
-                print(f" 💾 {symbol} 已寫入資料庫 (共 {count} 筆)")
-
-        except Exception as e:
-            print(f" ❌ {symbol} 儲存失敗: {e}")
-            import traceback
-            traceback.print_exc()
-
-    def fetch_financial_statements(self, symbol: str, db: NOCDatabase) -> None:
-        pass
-
-# =============================================================================
-# 10. 完整的技術指標計算函數 (從 stock_bot 移植)
+# 10. 完整的技術指標計算函數 (含雙軌量比)
 # =============================================================================
 def calculate_all_indicators(hist: pd.DataFrame, symbol: str = "", token: str = "") -> pd.DataFrame:
     """給定基礎 OHLCV 與 Shares_Out，計算所有技術指標"""
@@ -706,7 +714,7 @@ def calculate_all_indicators(hist: pd.DataFrame, symbol: str = "", token: str = 
     hist["60MA"] = hist["Close"].rolling(60).mean()
 
     # ========== 量能均線（使用實際成交量，而非 Est_Volume） ==========
-    hist["5VMA"] = hist["Volume"].rolling(5).mean() # 修正：改用實際 Volume
+    hist["5VMA"] = hist["Volume"].rolling(5).mean() # 使用實際 Volume
     hist["60VMA"] = hist["Volume"].rolling(60).mean()
 
     # ========== 換手率（盤中使用 Est_Volume 估算，盤後等於實際） ==========
@@ -715,7 +723,7 @@ def calculate_all_indicators(hist: pd.DataFrame, symbol: str = "", token: str = 
     # ========== 量比（雙軌量能系統） ==========
     hist["Volume_Ratio_Act"] = (hist["Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
     hist["Volume_Ratio_Est"] = (hist["Est_Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
-    hist["Volume_Ratio"] = hist["Volume_Ratio_Est"] # 預設為預估量比
+    hist["Volume_Ratio"] = hist["Volume_Ratio_Est"] # 预设为预估量比
 
     # ========== K線特徵 ==========
     hist['Candle_Ratio'] = (hist['High'] - hist[['Open','Close']].max(axis=1)) / (hist['High'] - hist['Low'] + 1e-9)
