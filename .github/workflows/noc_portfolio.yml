@@ -32,7 +32,7 @@ jobs:
 
       - name: Ensure required files exist
         run: |
-          if [ ! -f "noc_portfolio.py" ]; then
+          if [ ! -f "noc_protfolio.py" ]; then
             echo "❌ noc_portfolio.py not found!"
             exit 1
           fi
@@ -52,7 +52,7 @@ jobs:
           # 若有其他變數（如 FINMIND_TOKEN）也可加入
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: |
-          python noc_portfolio.py
+          python noc_protfolio.py
 
       - name: Upload database artifact (optional)
         if: always()
