@@ -1,0 +1,63 @@
+name: NOC Portfolio 損益與庫存管理
+
+on:
+  # 可手動觸發 (方便測試)
+  workflow_dispatch:
+
+  # 定時排程：每個交易日台灣時間 14:30 (UTC+8) 執行
+  # 換算為 UTC 時間為 06:30
+  schedule:
+    - cron: '30 9 * * 1-5' # 週一至週五 UTC 6:30 = 台北 14:30
+
+jobs:
+  run-portfolio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || echo "No requirements.txt found, installing core packages..."
+          pip install yfinance pandas numpy requests python-dotenv
+
+      - name: Ensure required files exist
+        run: |
+          if [ ! -f "noc_portfolio.py" ]; then
+            echo "❌ noc_portfolio.py not found!"
+            exit 1
+          fi
+          if [ ! -f "noc_core.py" ]; then
+            echo "⚠️ noc_core.py not found, but portfolio script may still work with fallback."
+          fi
+
+      - name: Run Portfolio Quartermaster
+        env:
+          # 從 GitHub Secrets 注入環境變數
+          TRELLO_API_KEY: ${{ secrets.TRELLO_API_KEY }}
+          TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
+          TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID }}
+          TRELLO_LIST_NAME: ${{ secrets.TRELLO_LIST_NAME }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # 若有其他變數（如 FINMIND_TOKEN）也可加入
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+        run: |
+          python noc_portfolio.py
+
+      - name: Upload database artifact (optional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: noc-portfolio-db
+          path: noc_portfolio.db
+          retention-days: 7
