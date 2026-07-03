@@ -44,7 +44,7 @@ jobs:
           fi
           echo "✅ Trello 環境變數已設定"
 
-      - name: Run Portfolio Quartermaster
+      - name: Run Portfolio 損益與庫存管理
         env:
           # 使用與 daily_report.yml 相同的變數名稱 TRELLO_KEY
           TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
@@ -55,7 +55,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: |
-          python noc_portfolio.py
+          python noc_protfolio.py
 
       # 上傳資料庫備份（與 daily_report.yml 的備份風格類似）
       - name: Upload portfolio database
