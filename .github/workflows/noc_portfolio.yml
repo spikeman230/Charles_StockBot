@@ -1,13 +1,11 @@
 name: NOC Portfolio 損益與庫存管理
 
 on:
-  # 可手動觸發 (方便測試)
+  # 允許手動觸發
   workflow_dispatch:
-
-  # 定時排程：每個交易日台灣時間 14:30 (UTC+8) 執行
-  # 換算為 UTC 時間為 06:30
+  # 定時排程：每個交易日台灣時間 14:30 (UTC 6:30)
   schedule:
-    - cron: '30 9 * * 1-5' # 週一至週五 UTC 6:30 = 台北 14:30
+    - cron: '30 9 * * 1-5'
 
 jobs:
   run-portfolio:
@@ -18,46 +16,53 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.10
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
 
+      # 安裝相依套件（與 daily_report.yml 相同作法）
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || echo "No requirements.txt found, installing core packages..."
-          pip install yfinance pandas numpy requests python-dotenv
+          pip install -r requirements.txt || pip install yfinance pandas numpy requests python-dotenv
 
-      - name: Ensure required files exist
+      # 驗證 Trello 環境變數是否存在（增加診斷）
+      - name: Validate Trello secrets
+        env:
+          TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
+          TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
+          TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID }}
         run: |
-          if [ ! -f "noc_protfolio.py" ]; then
-            echo "❌ noc_portfolio.py not found!"
+          echo "TRELLO_KEY length: ${#TRELLO_KEY}"
+          echo "TRELLO_TOKEN length: ${#TRELLO_TOKEN}"
+          echo "TRELLO_BOARD_ID length: ${#TRELLO_BOARD_ID}"
+          if [ -z "$TRELLO_KEY" ] || [ -z "$TRELLO_TOKEN" ] || [ -z "$TRELLO_BOARD_ID" ]; then
+            echo "❌ Trello 環境變數未完整設定，請檢查 GitHub Secrets。"
             exit 1
           fi
-          if [ ! -f "noc_core.py" ]; then
-            echo "⚠️ noc_core.py not found, but portfolio script may still work with fallback."
-          fi
+          echo "✅ Trello 環境變數已設定"
 
       - name: Run Portfolio Quartermaster
         env:
-          # 從 GitHub Secrets 注入環境變數
-          TRELLO_API_KEY: ${{ secrets.TRELLO_API_KEY }}
+          # 使用與 daily_report.yml 相同的變數名稱 TRELLO_KEY
+          TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
           TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
           TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID }}
-          TRELLO_LIST_NAME: ${{ secrets.TRELLO_LIST_NAME }}
+          TRELLO_LIST_NAME: ${{ secrets.TRELLO_LIST_NAME || '庫存機櫃' }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          # 若有其他變數（如 FINMIND_TOKEN）也可加入
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: |
-          python noc_protfolio.py
+          python noc_portfolio.py
 
-      - name: Upload database artifact (optional)
+      # 上傳資料庫備份（與 daily_report.yml 的備份風格類似）
+      - name: Upload portfolio database
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: noc-portfolio-db
           path: noc_portfolio.db
           retention-days: 7
+
