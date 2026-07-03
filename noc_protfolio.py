@@ -41,7 +41,7 @@ except ImportError:
 # ========== 環境變數載入 ==========
 load_dotenv()
 
-TRELLO_API_KEY = os.getenv("TRELLO_API_KEY")
+TRELLO_API_KEY = os.getenv("TRELLO_KEY")
 TRELLO_TOKEN = os.getenv("TRELLO_TOKEN")
 TRELLO_BOARD_ID = os.getenv("TRELLO_BOARD_ID")
 TRELLO_LIST_NAME = os.getenv("TRELLO_LIST_NAME", "庫存機櫃")
