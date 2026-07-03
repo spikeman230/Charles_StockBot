@@ -44,9 +44,9 @@ load_dotenv()
 TRELLO_API_KEY = os.getenv("TRELLO_KEY")
 TRELLO_TOKEN = os.getenv("TRELLO_TOKEN")
 TRELLO_BOARD_ID = os.getenv("TRELLO_BOARD_ID")
-TRELLO_LIST_NAME = os.getenv("TRELLO_LIST_NAME", "庫存機櫃")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TRELLO_LIST_NAME = os.getenv("TRELLO_LIST_NAME", "💼 庫存機櫃")
+TELEGRAM_BOT_TOKEN = os.getenv("TG_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TG_CHAT_ID")
 
 DB_PATH = "noc_portfolio.db" # 專屬資料庫
 
