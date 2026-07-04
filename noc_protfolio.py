@@ -142,8 +142,12 @@ def fetch_trello_deployment() -> List[Dict[str, Any]]:
             logger.warning(f"卡片 {name} 成本或股數無效，跳過")
             continue
 
+        # 使用正則表達式，精準萃取出最前面的英文與數字代號
+        ticker_match = re.match(r"^[A-Za-z0-9.]+", name)
+        symbol_only = ticker_match.group() if ticker_match else name
+
         result.append({
-            'symbol': name, # 直接使用卡片名稱作為股票代號
+            'symbol': symbol_only, # 只塞入純代號 (例如: 3019.TW)
             'name': name,
             'entry_price': entry_price,
             'shares': shares
