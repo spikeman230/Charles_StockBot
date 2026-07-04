@@ -1,7 +1,8 @@
 # =============================================================================
-# NOC 戰情室核心引擎 v16.12 (強化防禦版)
+# NOC 戰情室核心引擎 v16.13 (強化防禦版 + 跳空偵測)
 # 功能：籌碼矩陣、四象限量價、K線形態防禦、過熱攔截、初升段突破偵測
 # 新增：雙軌量能系統（實際量比 vs 預估量比）、ABCX量縮回測不破偵測（含欄位檢查）
+# 跳空幅度(Gap_Pct)、高檔竭盡缺口攔截、突破缺口標示
 # 本地 SQLite 資料庫支援
 # =============================================================================
 
@@ -116,11 +117,11 @@ def assess_volume_turnover_signal(vol_ratio: float, turnover: float, shares_out:
     return "➖ 中性觀望"
 
 # =============================================================================
-# 4. 過熱攔截函數
+# 4. 過熱攔截函數 (新增 gap_pct 參數)
 # =============================================================================
 def is_overheated(close: float, ma20: float, ma60: float,
                   recent_5d_return: float, recent_10d_return: float,
-                  price_position: float, vol_ratio: float) -> Tuple[bool, str]:
+                  price_position: float, vol_ratio: float, gap_pct: float = 0.0) -> Tuple[bool, str]:
     reasons = []
     if ma20 > 0:
         bias20 = (close - ma20) / ma20 * 100
@@ -136,9 +137,13 @@ def is_overheated(close: float, ma20: float, ma60: float,
         reasons.append(f"10日漲幅{recent_10d_return:.1f}%")
     if price_position > 0.9 and vol_ratio > 2.5:
         reasons.append(f"高檔爆量(位置{price_position:.2f},量比{vol_ratio:.1f})")
+    # ===== 新增：高檔竭盡缺口攔截 =====
+    if gap_pct > 4.0 and price_position > 0.8:
+        reasons.append(f"高檔竭盡缺口(跳空{gap_pct:.1f}%)")
     if reasons:
         return True, " | ".join(reasons)
     return False, ""
+
 # =============================================================================
 # 5. 初升段突破偵測 + ABCX量縮回測不破 (防禦強化)
 # =============================================================================
@@ -172,11 +177,15 @@ def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series, lookback: int = 2
     if bias > 20:
         return False, "", 0
 
+    # ===== 新增：突破缺口判斷 =====
+    gap_pct = td.get('Gap_Pct', 0.0)
+    gap_str = f" [帶突破缺口 {gap_pct:.1f}%]" if gap_pct > 1.0 else ""
+
     if (first_above_ma20 or first_break_high) and good_volume:
         if first_break_high:
-            return True, "🚀 首次突破20日高點", 3
+            return True, f"🚀 首次突破20日高點{gap_str}", 3
         else:
-            return True, "🔥 放量站上20MA", 2
+            return True, f"🔥 放量站上20MA{gap_str}", 2
     return False, "", 0
 
 # ---------------------- ABCX量縮回測不破偵測 (強化防禦) ----------------------
@@ -276,7 +285,8 @@ def is_high_quality_signal(hist: pd.DataFrame, td: pd.Series, matrix_signal: str
     trend_score = td.get('Trend_Score', -1.0)
     good_trend = trend_score > 0
     return price_break and strong_volume and (strong_chip or good_trend)
-    # =============================================================================
+
+# =============================================================================
 # 基本面輔助函數（從 stock_bot 移植）
 # =============================================================================
 def get_revenue_yoy(symbol: str, token: str = "") -> str:
@@ -683,7 +693,7 @@ class NOCRiskManager:
             }
 
 # =============================================================================
-# 10. 完整的技術指標計算函數 (含雙軌量比)
+# 10. 完整的技術指標計算函數 (含雙軌量比 + Gap_Pct)
 # =============================================================================
 def calculate_all_indicators(hist: pd.DataFrame, symbol: str = "", token: str = "") -> pd.DataFrame:
     """給定基礎 OHLCV 與 Shares_Out，計算所有技術指標"""
@@ -735,6 +745,9 @@ def calculate_all_indicators(hist: pd.DataFrame, symbol: str = "", token: str = 
     hist['Bias_60MA'] = (hist['Close'] - hist['60MA']) / hist['60MA'] * 100
     hist['Return_5D'] = hist['Close'].pct_change(5) * 100
     hist['Return_10D'] = hist['Close'].pct_change(10) * 100
+
+    # ========== 跳空幅度 (隔夜報酬率) ==========
+    hist['Gap_Pct'] = ((hist['Open'] - hist['Close'].shift(1)) / hist['Close'].shift(1)).fillna(0) * 100
 
     # ========== 其他 ==========
     hist["25MA_Rising"] = hist["25MA"] > hist["25MA"].shift(1)
