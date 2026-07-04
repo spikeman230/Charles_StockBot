@@ -41,6 +41,7 @@ from noc_core import (
     analyze_chip_tactics, NOCChipMatrix, is_high_quality_signal,
     assess_volume_turnover_signal, is_overheated, detect_initial_breakout,
     calculate_monster_breakout, calculate_sniper_signal, detect_abcx_pullback
+    calculate_all_indicators   # ✅ 新增這一行
 )
 
 # =============================================================================
