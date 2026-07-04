@@ -41,13 +41,13 @@ from noc_core import (
     analyze_chip_tactics, NOCChipMatrix, is_high_quality_signal,
     assess_volume_turnover_signal, is_overheated, detect_initial_breakout,
     calculate_monster_breakout, calculate_sniper_signal, detect_abcx_pullback,
-    calculate_all_indicators   # ✅ 新增這一行
+    calculate_all_indicators
 )
 
 # =============================================================================
 # 除錯模式開關 (True = 強制推播所有觀察股，忽略過熱/大盤/信號過濾)
 # =============================================================================
-DEBUG_FORCE_PUSH = True # 除錯完成後改為 False / True
+DEBUG_FORCE_PUSH = False # 改為 False，避免除錯模式干擾正常運作
 
 # =============================================================================
 # 初始化與組態
@@ -77,15 +77,16 @@ TRELLO_TOKEN = os.getenv("TRELLO_TOKEN")
 TRELLO_BOARD_ID = os.getenv("TRELLO_BOARD_ID")
 
 class Config:
-    TOTAL_CAPITAL : float = float(os.getenv("TOTAL_CAPITAL", "600000"))
-    RISK_PER_TRADE : float = float(os.getenv("RISK_PER_TRADE", "0.02"))
-    ATR_MULTIPLIER : float = float(os.getenv("ATR_MULTIPLIER", "3.0"))
-    YOY_EXPLOSION_PCT : float = float(os.getenv("YOY_EXPLOSION_PCT", "10.0"))
-    PE_LIMIT : float = float(os.getenv("PE_LIMIT", "40.0"))
+    # 修正：避免環境變數為空字串導致 float('') 錯誤
+    TOTAL_CAPITAL : float = float(os.getenv("TOTAL_CAPITAL", "600000") or "600000")
+    RISK_PER_TRADE : float = float(os.getenv("RISK_PER_TRADE", "0.02") or "0.02")
+    ATR_MULTIPLIER : float = float(os.getenv("ATR_MULTIPLIER", "3.0") or "3.0")
+    YOY_EXPLOSION_PCT : float = float(os.getenv("YOY_EXPLOSION_PCT", "10.0") or "10.0")
+    PE_LIMIT : float = float(os.getenv("PE_LIMIT", "40.0") or "40.0")
     SILENT_MODE : bool = os.getenv("SILENT_MODE", "false").lower() == "true"
-    CACHE_TTL_MINUTES : int = int(os.getenv("CACHE_TTL_MINUTES", "30"))
-    CACHE_MAX_ITEMS : int = int(os.getenv("CACHE_MAX_ITEMS", "200"))
-    MAX_WORKERS : int = int(os.getenv("MAX_WORKERS", "6"))
+    CACHE_TTL_MINUTES : int = int(os.getenv("CACHE_TTL_MINUTES", "30") or "30")
+    CACHE_MAX_ITEMS : int = int(os.getenv("CACHE_MAX_ITEMS", "200") or "200")
+    MAX_WORKERS : int = int(os.getenv("MAX_WORKERS", "6") or "6")
     # 移除 STATE_FILE，改用資料庫
     LOG_FILE_CSV : str = "noc_trading_log.csv"
     RADAR_FILE : str = "radar_targets.json"
@@ -249,7 +250,6 @@ def build_light_plan(symbol: str, close: float, hist: pd.DataFrame, manual_stop:
         f" * 移動防禦底線：{stop_loss:.2f}\n"
         f" * 鐵律：若三日內未站穩，立即減碼。\n"
     )
-
 # =============================================================================
 # 交易日感知
 # =============================================================================
@@ -388,7 +388,6 @@ def fetch_trello_deployment() -> Tuple[Optional[dict], Optional[dict]]:
     except Exception as e:
         logger.error(f"無法完整拉取 Trello 看板配置: {e}")
         return None, None
-
 # =============================================================================
 # 本地狀態管理（已改為 SQLite）
 # =============================================================================
@@ -427,7 +426,7 @@ def get_market_regime() -> Tuple[bool, str]:
 def get_revenue_yoy(symbol: str):
     if not FINMIND_TOKEN:
         return "N/A"
-    match = re.search(r"\d+", symbol)
+    match = re.search(r"\d+", symbol) # 修正正則表達式
     if not match:
         return "N/A"
     try:
@@ -461,7 +460,7 @@ def get_pe_ratio(symbol: str):
 def get_finmind_chip_data(symbol: str, start_date_str: str) -> pd.DataFrame:
     if not FINMIND_TOKEN:
         return pd.DataFrame()
-    match = re.search(r"\d+", symbol)
+    match = re.search(r"\d+", symbol) # 修正正則表達式
     if not match:
         return pd.DataFrame()
     try:
@@ -505,8 +504,7 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     conds = [hist["Signal_CoBuy"], hist["Signal_Trust_Trend"], hist["Total_Institutional"] > 0]
     hist["Chip_Status"] = np.select(conds, ["🤝 土洋齊買", "🏦 投信作帳", "📈 法人偏多"], default="➖ 中性/偏空")
     return hist
-
-# =============================================================================
+    # =============================================================================
 # 核心數據抓取與技術指標（使用統一函數計算狙擊金叉與旱地拔蔥）
 # =============================================================================
 def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
@@ -514,7 +512,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
     if cached is not None:
         return cached
     try:
-        match = re.search(r"\\d+", symbol)
+        match = re.search(r"\d+", symbol) # 修正正則表達式
         if match and FINMIND_TOKEN:
             raw_id = match.group()
             local_db = NOCDatabase()
@@ -538,7 +536,6 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
                 hist = hist.merge(chip_df, left_on="Date_Key", right_index=True, how="left").ffill().fillna(0)
 
         # ===== 使用 noc_core 的 calculate_all_indicators 統一計算所有技術指標 =====
-        # 該函數會自動生成 Volume_Ratio_Act, 5VMA (基於真實 Volume), Gap_Pct 等
         hist = calculate_all_indicators(hist, symbol=symbol, token=FINMIND_TOKEN)
 
         # 補上籌碼信號（法人買賣超分析）
@@ -550,7 +547,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         if 'YoY' not in hist.columns:
             hist['YoY'] = get_revenue_yoy(symbol)
 
-        # 計算狙擊金叉與旱地拔蔥（這些函數會自行計算所需指標，但可能會重複，無礙）
+        # 計算狙擊金叉與旱地拔蔥
         sniper_val = calculate_sniper_signal(hist)
         hist['Sniper_Signal'] = sniper_val
         hist['Sniper_Memory_5D'] = hist['Sniper_Signal'].rolling(5).max().fillna(0)
@@ -564,7 +561,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
     except Exception as e:
         logger.error(f"❌ 標的 [{symbol}] 執行技術分析精算失敗: {e}")
         return None
-        
+
 # =============================================================================
 # 並行預載入
 # =============================================================================
@@ -628,7 +625,7 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v17.0（SQLite 狀態儲存）長短雙軌版（除錯模式={'ON' if DEBUG_FORCE_PUSH else 'OFF'}）啟動。時間：{curr_time}")
+    logger.info(f"NOC 終極戰情室 v17.1（SQLite 狀態儲存）長短雙軌版（除錯模式={'ON' if DEBUG_FORCE_PUSH else 'OFF'}）啟動。時間：{curr_time}")
 
     db = NOCDatabase()
     strategy = NOCStrategy(db)
@@ -651,7 +648,8 @@ if __name__ == "__main__":
         sys.exit(0)
     elif "黃燈" in macro_info["status"] or macro_info["status"] == "🟡 黃燈":
         logger.warning("🟡 觸發大盤黃燈防禦電路！總兵力天花板強制鎖定 50% 水位 (6.5萬) / 雷達新火種禁止開新倉 / 防守線緊縮至 2.0 ATR 或月線。")
-        cfg.TOTAL_CAPITAL = float(os.getenv("TOTAL_CAPITAL", "600000")) * 0.5
+        # 修正：避免空字串
+        cfg.TOTAL_CAPITAL = float(os.getenv("TOTAL_CAPITAL", "600000") or "600000") * 0.5
         cfg.ATR_MULTIPLIER = 2.0
         is_yellow_light = True
         update_trello_system_status_bg("🟡 黃燈防禦協議 (半倉/收緊防護)", "🟡")
@@ -771,7 +769,6 @@ if __name__ == "__main__":
                 noc_state[sym] = StockState(status="NONE")
             elif isinstance(yoy_single, (int, float)) and yoy_single < 0:
                 pnl_alert = f"⚠️【營運動能轉弱】單月年增率 {yoy_single:.1f}%，減碼觀察，不加碼。"
-            # ===== ★ 新增：跳空破底逃命警報 =====
             elif td.get('Gap_Pct', 0.0) <= -3.0:
                 pnl_alert = f"🚨【跳空破底】開盤向下跳空 {td.get('Gap_Pct', 0.0):.1f}%，恐有突發利空，無條件斬倉！"
                 noc_state[sym] = StockState(status="NONE")
@@ -781,7 +778,6 @@ if __name__ == "__main__":
             elif trello_stop > 0 and sym_state.trailing_stop != final_stop:
                 pnl_alert = f"🛡️【手動指揮】已依據 Trello 覆寫防守線至 {final_stop:.2f}"
                 noc_state[sym].trailing_stop = final_stop
-            # ===== ★ 獲利加倉判斷（優於一般獲利巡航） =====
             elif roi_pct > 0 and detect_initial_breakout(hist, td)[0]:
                 _, break_type, _ = detect_initial_breakout(hist, td)
                 pnl_alert = f"🚀【獲利加倉確認】X波突破發動 ({break_type})！建議啟動右側加倉，防線上移至 {final_stop:.2f}！"
@@ -798,7 +794,7 @@ if __name__ == "__main__":
 
             silent_keywords = ["中立觀察", "長線鎖籌", "洗盤耐受區"]
             is_silent = any(kw in pnl_alert for kw in silent_keywords)
-            # ===== ★ 修改 2：強制寫入庫存股 CSV（無論是否靜默） =====
+            # ===== ★ 強制寫入庫存股 CSV（無論是否靜默） =====
             vol_status_hold = "📈 出量" if td["Est_Volume"] > td["5VMA"] * 1.2 else ("📉 量縮" if td["Est_Volume"] < td["5VMA"] * 0.8 else "➖ 量平")
             trend_status_hold = "🔥 多頭" if curr_price > td["20MA"] else ("🧊 空頭" if curr_price < td["60MA"] else "🔄 盤整")
             write_noc_log(
@@ -835,7 +831,6 @@ if __name__ == "__main__":
     # =========================================================================
     # 戰區 2：觀察區 (白名單: 守株待測區, ABCX回踩區, 短線飆股區)
     # =========================================================================
-    # ===== ★ 修改 2：同步更新 force_include_categories =====
     force_include_categories = ["🔍 守株待測區 (雷達自動火種)", "🌀 ABCX回踩區 (閃電自動火種)", "⚡短線飆股區 (Momentum)"]
     for cat, stocks in STOCK_DICT.items():
         if not stocks:
@@ -909,7 +904,7 @@ if __name__ == "__main__":
                 ma60_val = td['60MA'] if not pd.isna(td['60MA']) else 0
                 return_5d = td.get('Return_5D', 0)
                 return_10d = td.get('Return_10D', 0)
-                gap_pct = td.get('Gap_Pct', 0.0) # 新增：取得跳空幅度
+                gap_pct = td.get('Gap_Pct', 0.0)
                 overheated, over_reason = is_overheated(close, ma20_val, ma60_val, return_5d, return_10d, price_position, vol_ratio, gap_pct)
                 if overheated:
                     logger.info(f"🛑 [過熱攔截] {sym} 原因: {over_reason}，強制封鎖推播。")
@@ -931,7 +926,7 @@ if __name__ == "__main__":
                     logger.info(f"🛑 [四象限攔截] {sym} 信號為 {quadrant_signal}，強制封鎖推播。")
                     continue
 
-            # ===== ★ 修改 3：狀態機中插入 ABCX 優先判定 =====
+            # ===== ★ 狀態機中插入 ABCX 優先判定 =====
             if sym_state.status == "REAL_HOLD":
                 alert = f"💼 持股防禦區 | 📍 最新防線: {sym_state.trailing_stop:.1f}"
             elif sym_state.status == "NONE":
@@ -945,7 +940,7 @@ if __name__ == "__main__":
                     alert = "⚡【完美回測】勝率極高，建議在此處建立防禦型底倉！"
                     action_plan_text = build_light_plan(sym, close, hist, manual_stop_price, local_market_mode)
                 else:
-                    # 原本的初升段、旱地拔蔥、狙擊金叉邏輯放在此 else 區塊內繼續執行
+                    # 原本的初升段、旱地拔蔥、狙擊金叉邏輯
                     initial_break, break_type, _ = detect_initial_breakout(hist, td)
                     if initial_break and not is_yellow_light:
                         trigger_label = break_type
@@ -1017,7 +1012,6 @@ if __name__ == "__main__":
             s += f" 💰 法人動向: {chip_msg}\n"
             s += f" 📊 財報透視: {fund_health}\n"
 
-            # 安全顯示單月營收年增率
             yoy_display = f"{yoy:.1f}%" if isinstance(yoy, (int, float)) else str(yoy)
             s += f" 📈 單月YoY: {yoy_display} | 累計描述: {fund_health}\n"
 
@@ -1027,7 +1021,7 @@ if __name__ == "__main__":
                 s += f" 👉 作戰指令: {alert}\n"
 
             action_command = s
-            # ===== ★ 修改 1：強制寫入 CSV（無論有無觸發訊號） =====
+            # ===== ★ 強制寫入 CSV（無論有無觸發訊號） =====
             predict_text = trigger_label if trigger_label else "無特殊徵兆"
             if 'alert' not in locals():
                 alert = "⚠️ 資料異常"
@@ -1138,7 +1132,7 @@ if __name__ == "__main__":
         logger.info("🔇 [靜默模式] 今日無任何可行動警報（無建倉/停損/獲利巡航等重要事件），系統靜默退出。")
         sys.exit(0)
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v17.0（SQLite版）】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v17.1（SQLite版）】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
 
     for chart in generated_charts:
         if Path(chart).exists():
