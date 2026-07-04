@@ -28,10 +28,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt || pip install yfinance pandas numpy requests python-dotenv
 
-      # 驗證 Trello 環境變數是否存在（增加診斷）
+     # 驗證 Trello 環境變數是否存在（增加診斷）
       - name: Validate Trello secrets
         env:
           TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
+          TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}       # 👈 補上這行
+          TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID }} # 👈 補上這行
           TG_TOKEN: ${{ secrets.TG_TOKEN }}      
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
@@ -51,8 +53,8 @@ jobs:
           TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
           TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID }}
           TRELLO_LIST_NAME: ${{ secrets.TRELLO_LIST_NAME || '庫存機櫃' }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}         # 👈 改成這樣
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}     # 👈 改成這樣
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: |
           python noc_protfolio.py
