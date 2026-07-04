@@ -1,11 +1,13 @@
 name: NOC Portfolio 損益與庫存管理
 
 on:
-  # 允許手動觸發
   workflow_dispatch:
-  # 定時排程：每個交易日台灣時間 14:30 (UTC 6:30)
   schedule:
-    - cron: '30 9 * * 1-5'
+    - cron: '30 13 * * 1-5'
+
+# 🌟 依照總部的標準寫法：將寫入權限設定在全域層級
+permissions:
+  contents: write
 
 jobs:
   run-portfolio:
@@ -13,8 +15,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -22,18 +23,16 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
-      # 安裝相依套件（與 daily_report.yml 相同作法）
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt || pip install yfinance pandas numpy requests python-dotenv
 
-     # 驗證 Trello 環境變數是否存在（增加診斷）
       - name: Validate Trello secrets
         env:
           TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
-          TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}       # 👈 補上這行
-          TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID }} # 👈 補上這行
+          TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
+          TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID }}
           TG_TOKEN: ${{ secrets.TG_TOKEN }}      
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
@@ -48,23 +47,20 @@ jobs:
 
       - name: Run Portfolio 損益與庫存管理
         env:
-          # 使用與 daily_report.yml 相同的變數名稱 TRELLO_KEY
           TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
           TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
           TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID }}
           TRELLO_LIST_NAME: ${{ secrets.TRELLO_LIST_NAME || '庫存機櫃' }}
-          TG_TOKEN: ${{ secrets.TG_TOKEN }}         # 👈 改成這樣
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}     # 👈 改成這樣
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+        run: python noc_protfolio.py
+
+      # 🌟 完全致敬總部的短路判斷寫法，並使用 -f 強制加入資料庫
+      - name: Commit & Push updated database
         run: |
-          python noc_protfolio.py
-
-      # 上傳資料庫備份（與 daily_report.yml 的備份風格類似）
-      - name: Upload portfolio database
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: noc-portfolio-db
-          path: noc_portfolio.db
-          retention-days: 7
-
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -f noc_portfolio.db
+          git diff-index --quiet HEAD || git commit -m "🗄️ 自動更新軍需官總帳資料庫"
+          git push
