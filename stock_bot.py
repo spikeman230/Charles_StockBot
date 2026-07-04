@@ -77,7 +77,7 @@ TRELLO_TOKEN = os.getenv("TRELLO_TOKEN")
 TRELLO_BOARD_ID = os.getenv("TRELLO_BOARD_ID")
 
 class Config:
-    TOTAL_CAPITAL : float = float(os.getenv("TOTAL_CAPITAL", "130000"))
+    TOTAL_CAPITAL : float = float(os.getenv("TOTAL_CAPITAL", "600000"))
     RISK_PER_TRADE : float = float(os.getenv("RISK_PER_TRADE", "0.02"))
     ATR_MULTIPLIER : float = float(os.getenv("ATR_MULTIPLIER", "3.0"))
     YOY_EXPLOSION_PCT : float = float(os.getenv("YOY_EXPLOSION_PCT", "10.0"))
@@ -651,7 +651,7 @@ if __name__ == "__main__":
         sys.exit(0)
     elif "黃燈" in macro_info["status"] or macro_info["status"] == "🟡 黃燈":
         logger.warning("🟡 觸發大盤黃燈防禦電路！總兵力天花板強制鎖定 50% 水位 (6.5萬) / 雷達新火種禁止開新倉 / 防守線緊縮至 2.0 ATR 或月線。")
-        cfg.TOTAL_CAPITAL = float(os.getenv("TOTAL_CAPITAL", "130000")) * 0.5
+        cfg.TOTAL_CAPITAL = float(os.getenv("TOTAL_CAPITAL", "600000")) * 0.5
         cfg.ATR_MULTIPLIER = 2.0
         is_yellow_light = True
         update_trello_system_status_bg("🟡 黃燈防禦協議 (半倉/收緊防護)", "🟡")
