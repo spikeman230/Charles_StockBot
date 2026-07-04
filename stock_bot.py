@@ -513,7 +513,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
     if cached is not None:
         return cached
     try:
-        match = re.search(r"\d+", symbol)
+        match = re.search(r"\\d+", symbol)
         if match and FINMIND_TOKEN:
             raw_id = match.group()
             local_db = NOCDatabase()
@@ -529,76 +529,27 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
 
         hist["Shares_Out"] = shares_out if shares_out else np.nan
         hist["Date_Key"] = hist.index.date
+
+        # 獲取法人籌碼資料（若有 FinMind）
         if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
             chip_df = get_finmind_chip_data(symbol, (datetime.datetime.now() - datetime.timedelta(days=200)).strftime("%Y-%m-%d"))
             if not chip_df.empty:
                 hist = hist.merge(chip_df, left_on="Date_Key", right_index=True, how="left").ffill().fillna(0)
 
+        # ===== 使用 noc_core 的 calculate_all_indicators 統一計算所有技術指標 =====
+        # 該函數會自動生成 Volume_Ratio_Act, 5VMA (基於真實 Volume), Gap_Pct 等
+        hist = calculate_all_indicators(hist, symbol=symbol, token=FINMIND_TOKEN)
+
+        # 補上籌碼信號（法人買賣超分析）
         hist = calculate_chip_signals(hist)
 
-        # 動態量能預估
-        now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
-        market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
-        market_close = now.replace(hour=13, minute=30, second=0, microsecond=0)
-        total_trading_minutes = (market_close - market_open).total_seconds() / 60.0
-        if market_open < now < market_close:
-            elapsed_mins = max(1.0, (now - market_open).total_seconds() / 60.0)
-            vol_mult = total_trading_minutes / elapsed_mins
-        else:
-            vol_mult = 1.0
-        hist["Est_Volume"] = hist["Volume"].copy()
-        if len(hist) > 0:
-            hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = int(hist["Volume"].iloc[-1] * vol_mult)
+        # 補上 PE 與 YoY（若 calculate_all_indicators 已包含可省略，但保留確保）
+        if 'PE' not in hist.columns:
+            hist['PE'] = get_pe_ratio(symbol)
+        if 'YoY' not in hist.columns:
+            hist['YoY'] = get_revenue_yoy(symbol)
 
-        hist["5MA"] = hist["Close"].rolling(5).mean()
-        hist["20MA"] = hist["Close"].rolling(20).mean()
-        hist["25MA"] = hist["Close"].rolling(25).mean()
-        hist["60MA"] = hist["Close"].rolling(60).mean()
-        hist["5VMA"] = hist["Est_Volume"].rolling(5).mean()
-        hist["60VMA"] = hist["Volume"].rolling(60).mean()
-
-        hist["Turnover_Rate"] = ((hist["Est_Volume"] / hist["Shares_Out"]) * 100).fillna(1.5)
-        hist["Volume_Ratio"] = (hist["Est_Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
-
-        # K線特徵
-        hist['Candle_Ratio'] = (hist['High'] - hist[['Open','Close']].max(axis=1)) / (hist['High'] - hist['Low'] + 1e-9)
-        hist['Close_vs_High'] = hist['Close'] / hist['High']
-        hist['Is_Red'] = hist['Close'] >= hist['Open']
-
-        # 乖離與漲幅（用於過熱攔截）
-        hist['Bias_20MA'] = (hist['Close'] - hist['20MA']) / hist['20MA'] * 100
-        hist['Bias_60MA'] = (hist['Close'] - hist['60MA']) / hist['60MA'] * 100
-        hist['Return_5D'] = hist['Close'].pct_change(5) * 100
-        hist['Return_10D'] = hist['Close'].pct_change(10) * 100
-
-        # ========== 跳空幅度 (隔夜報酬率) ==========
-        hist['Gap_Pct'] = ((hist['Open'] - hist['Close'].shift(1)) / hist['Close'].shift(1)).fillna(0) * 100
-
-        hist["25MA_Rising"] = hist["25MA"] > hist["25MA"].shift(1)
-        hist["Is_Red_Candle"] = hist["Close"] > hist["Open"]
-        hist["Lower_Shadow_Ratio"] = (hist[["Open", "Close"]].min(axis=1) - hist["Low"]) / (hist["High"] - hist["Low"]).replace(0, 0.001)
-
-        hist["Signal_2560"] = (hist["25MA"] > hist["25MA"].shift(3)) & (hist["5VMA"] > hist["60VMA"]) & (hist["Low"] <= hist["25MA"] * 1.015) & (hist["Close"] >= hist["25MA"] * 0.985) & (hist["Est_Volume"] < hist["5VMA"])
-        hist["High_60"] = hist["High"].rolling(window=60, min_periods=20).max()
-        hist["Low_60"] = hist["Low"].rolling(window=60, min_periods=20).min()
-        hist["Price_Position"] = (hist["Close"] - hist["Low_60"]) / (hist["High_60"] - hist["Low_60"]).replace(0, np.nan)
-
-        l9, h9 = hist["Low"].rolling(9).min(), hist["High"].rolling(9).max()
-        hist["K"] = ((hist["Close"] - l9) / (h9 - l9).replace(0, np.nan) * 100).ewm(com=2, adjust=False).mean()
-        hist["D"] = hist["K"].ewm(com=2, adjust=False).mean()
-
-        delta = hist["Close"].diff()
-        rs = delta.clip(lower=0).ewm(com=13, adjust=False).mean() / (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean().replace(0, np.nan)
-        hist["RSI"] = (100 - (100 / (1 + rs))).fillna(50)
-
-        hist["ATR"] = pd.concat([hist["High"] - hist["Low"], (hist["High"] - hist["Close"].shift(1)).abs(), (hist["Low"] - hist["Close"].shift(1)).abs()], axis=1).max(axis=1).rolling(14).mean()
-
-        hist["MACD"] = hist["Close"].ewm(span=12, adjust=False).mean() - hist["Close"].ewm(span=26, adjust=False).mean()
-        hist["MACD_Hist"] = hist["MACD"] - hist["MACD"].ewm(span=9, adjust=False).mean()
-        hist["STD20"] = hist["Close"].rolling(20).std()
-        hist["BB_Width"] = (4 * hist["STD20"]) / hist["20MA"].replace(0, np.nan)
-
-        # ========== 使用統一函數計算狙擊金叉與旱地拔蔥 ==========
+        # 計算狙擊金叉與旱地拔蔥（這些函數會自行計算所需指標，但可能會重複，無礙）
         sniper_val = calculate_sniper_signal(hist)
         hist['Sniper_Signal'] = sniper_val
         hist['Sniper_Memory_5D'] = hist['Sniper_Signal'].rolling(5).max().fillna(0)
@@ -607,18 +558,13 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
         monster_val = calculate_monster_breakout(hist, td_temp)
         hist['Monster_Breakout'] = monster_val
 
-        hist["20_High"] = hist["High"].rolling(20).max().shift(1)
-        hist["Shadow_Ratio"] = (hist["High"] - hist[["Open", "Close"]].max(axis=1)) / (hist["High"] - hist["Low"]).replace(0, 0.001)
-
-        hist["PE"] = get_pe_ratio(symbol)
-        hist["YoY"] = get_revenue_yoy(symbol)
-
         DATA_CACHE.set(symbol, hist)
         return hist
     except Exception as e:
         logger.error(f"❌ 標的 [{symbol}] 執行技術分析精算失敗: {e}")
         return None
-        # =============================================================================
+        
+# =============================================================================
 # 並行預載入
 # =============================================================================
 def preload_all_stocks(all_symbols: Dict[str, str]) -> None:
