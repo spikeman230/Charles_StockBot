@@ -32,8 +32,8 @@ jobs:
       - name: Validate Trello secrets
         env:
           TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
-          TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
-          TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID }}
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}      
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           echo "TRELLO_KEY length: ${#TRELLO_KEY}"
           echo "TRELLO_TOKEN length: ${#TRELLO_TOKEN}"
