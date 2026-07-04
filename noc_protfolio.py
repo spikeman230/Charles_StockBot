@@ -104,9 +104,10 @@ def fetch_trello_deployment() -> List[Dict[str, Any]]:
         logger.error(f"無法取得 Trello 列表: {e}")
         return []
 
-    target_list = next((lst for lst in lists if lst['name'] == TRELLO_LIST_NAME), None)
+    # 改為模糊比對：只要列表名稱裡面包含「庫存」或「庫藏」兩個字，就會自動鎖定！
+    target_list = next((lst for lst in lists if "庫存" in lst['name'] or "庫藏" in lst['name']), None)
     if not target_list:
-        logger.error(f"找不到 Trello 列表: {TRELLO_LIST_NAME}")
+        logger.error("找不到 Trello 列表 (名稱需包含『庫存』或『庫藏』)")
         return []
 
     list_id = target_list['id']
