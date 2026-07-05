@@ -45,7 +45,7 @@ class RadarConfig:
     MAX_WORKERS : int = int(os.environ.get("MAX_WORKERS", "5"))
     TARGET_FILE : str = "radar_targets.json"
     SCAN_LIST : list = [
-        # 總司令專屬：黃金淬鍊 170 檔波段觀察池 (此處以高流動性權值與成長股為範例)
+        # 總司令專屬：200 檔旗艦級波段觀察池
         # [權值前 50 大]
         "0050.TW", "2330.TW", "2317.TW", "2454.TW", "2382.TW", "2308.TW", "3231.TW", "3037.TW",
         "2303.TW", "3008.TW", "3034.TW", "3711.TW", "2357.TW", "2395.TW", "2408.TW", "2353.TW",
