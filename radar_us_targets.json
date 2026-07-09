@@ -1,12 +1,12 @@
 {
-    "SWKS": {
-        "name": "SWKS",
+    "COST": {
+        "name": "COST",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "BABA": {
-        "name": "BABA",
-        "tactics": "🔥 🔥 放量站上20MA",
+    "PEP": {
+        "name": "PEP",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     }
 }
