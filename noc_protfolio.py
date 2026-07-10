@@ -4,7 +4,7 @@ NOC 投資組合軍需官 (Portfolio Quartermaster)
 功能：
 1. 建立交易總帳 (trade_ledger)
 2. 從 Trello 同步庫存 (新增 / 平倉)
-3. 計算未實現損益與 ATR 防線
+3. 計算未實現損益與 ATR 防線 (已實裝裝甲級 NaN 防護機制)
 4. 生成並推播每日後勤戰報 (Telegram)
 """
 
@@ -225,13 +225,15 @@ def sync_trello_positions(conn: sqlite3.Connection, trello_positions: List[Dict[
             exit_price = p['entry_price'] # fallback
             try:
                 ticker = yf.Ticker(p['symbol'])
-                hist = ticker.history(period="2d")
+                # 🛡️ 延長為 5 天並過濾空值，防止假日或單日抓不到資料
+                hist = ticker.history(period="5d")
+                hist = hist.dropna(subset=['Close'])
                 if len(hist) >= 2:
-                    exit_price = hist['Close'].iloc[-2] # 前一日
+                    exit_price = float(hist['Close'].iloc[-2]) # 取倒數第二天當作出場價
                 elif len(hist) == 1:
-                    exit_price = hist['Close'].iloc[-1] # 只有今日？但可能不完整
+                    exit_price = float(hist['Close'].iloc[-1])
                 else:
-                    logger.warning(f"{p['symbol']} 無足夠歷史資料，使用成本價平倉")
+                    logger.warning(f"{p['symbol']} 無足夠有效歷史資料，使用成本價平倉")
             except Exception as e:
                 logger.error(f"取得 {p['symbol']} 收盤價失敗: {e}")
 
@@ -265,11 +267,17 @@ def calculate_open_positions(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
         try:
             ticker = yf.Ticker(p['symbol'])
             hist = ticker.history(period="60d")
+            
+            # 🛡️ 裝甲級防護：徹底清除 yfinance 傳回的 NaN (空值) 爛資料
+            hist = hist.dropna(subset=['Close'])
+            
             if hist.empty:
-                logger.warning(f"{p['symbol']} 無歷史資料，跳過")
+                logger.warning(f"{p['symbol']} 過濾後無有效歷史資料，跳過")
                 continue
 
-            current_price = hist['Close'].iloc[-1]
+            # 確保取得的是乾淨的 float，徹底杜絕 nan 傳染
+            current_price = float(hist['Close'].iloc[-1])
+            
             # 未實現損益
             unrealized_pnl = (current_price - p['entry_price']) * p['shares']
             unrealized_pnl_pct = (current_price / p['entry_price'] - 1) * 100
@@ -407,4 +415,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
