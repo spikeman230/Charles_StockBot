@@ -1,11 +1,6 @@
 {
-    "COST": {
-        "name": "COST",
-        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "PEP": {
-        "name": "PEP",
+    "META": {
+        "name": "META",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     }
