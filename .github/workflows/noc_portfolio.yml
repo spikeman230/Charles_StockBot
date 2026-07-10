@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+# 🛡️ 裝甲級防護：強制禁止 Python 生成 __pycache__，確保 Git 環境純淨
+env:
+  PYTHONDONTWRITEBYTECODE: 1
+
 jobs:
   run-portfolio:
     runs-on: ubuntu-latest
