@@ -251,34 +251,41 @@ def build_light_plan(symbol: str, close: float, hist: pd.DataFrame, manual_stop:
         f" * 鐵律：若三日內未站穩，立即減碼。\n"
     )
 # =============================================================================
-# 交易日感知
+# 交易日感知 (修復版：絕對日期鎖定)
 # =============================================================================
 def is_trading_day(curr_date: datetime.date) -> bool:
     if DEBUG_FORCE_PUSH:
         return True
+    
+    # 週末絕對不開盤，第一道防線過濾
     if curr_date.weekday() >= 5:
         return False
+        
     try:
-        # 直接获取今日数据，检查是否有成交
-        today_data = yf.Ticker("2330.TW").history(start=curr_date, end=curr_date + datetime.timedelta(days=1))
-        if today_data.empty:
-            return False
-        # 若有数据，检查成交量是否 > 0（防止假日无成交）
-        if today_data['Volume'].iloc[-1] > 0:
-            return True
-        return False
-    except Exception as e:
-        # 若 API 异常，回退至原差值法
-        logger.warning(f"交易日感知異常，使用差值法: {e}")
-        try:
-            tsm = yf.Ticker("2330.TW").history(period="5d")
-            if tsm.empty:
+        # 抓取最近 5 天交易資料 (最穩定的 API 呼叫方式)
+        tsm = yf.Ticker("2330.TW").history(period="5d")
+        
+        if tsm.empty:
+            # 網路掛掉或 API 異常，預設放行讓後面主程序去報錯
+            return True 
+        
+        # 取得 Yahoo 伺服器回傳的「最後一個有效交易日」
+        last_date = tsm.index[-1].date()
+        
+        # 🛡️ 核心邏輯：如果最後交易日「等於今天」，代表今天確實有開盤
+        if last_date == curr_date:
+            # 雙重防護：確認今天有實質成交量 (防堵某些系統異常掛零)
+            if tsm['Volume'].iloc[-1] > 0:
                 return True
-            last_trading_date = tsm.index[-1].date()
-            diff_days = (curr_date - last_trading_date).days
-            return diff_days <= 1
-        except:
-            return True
+        
+        # 如果最後交易日不是今天 (例如今天是週三國定假日，最後交易日會停在週二)
+        # 則系統精準判定為休市！
+        return False
+        
+    except Exception as e:
+        logger.error(f"交易日感知異常: {e}")
+        # 發生不可預期錯誤時，預設放行
+        return True
 
 # =============================================================================
 # Trello 整合（修正：過濾無效卡片與 NOC 狀態卡）
