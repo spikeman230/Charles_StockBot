@@ -938,13 +938,15 @@ if __name__ == "__main__":
                 alert = f"💼 持股防禦區 | 📍 最新防線: {sym_state.trailing_stop:.1f}"
             elif sym_state.status == "NONE":
                 # 優先判定是否符合 A-B-C-X 量縮回測不破
-                if detect_abcx_pullback(hist, td) and not is_yellow_light:
-                    trigger_label = "🌀【ABCX回踩】量縮回測不破，極致洗盤結束！"
+                # 🛡️ 實裝基礎版均線濾網：回踩時，收盤價必須穩站 20MA(月線) 與 60MA(季線) 之上
+                ma60_val = td['60MA'] if not pd.isna(td['60MA']) else 0
+                if detect_abcx_pullback(hist, td) and (close > ma20) and (close > ma60_val) and not is_yellow_light:
+                    trigger_label = "🌀【ABCX回踩】量縮不破且穩守月季線，極致洗盤結束！"
                     risk_calculator = NOCRiskManager(total_capital=cfg.TOTAL_CAPITAL)
                     defense_info = risk_calculator.get_position_and_defense(sym, close, hist, market_mode=local_market_mode, is_yellow_light=False)
                     stop_price = defense_info["defense_line"]
                     noc_state[sym] = StockState(status="HOLD", entry=close, trailing_stop=stop_price)
-                    alert = "⚡【完美回測】勝率極高，建議在此處建立防禦型底倉！"
+                    alert = "⚡【完美回測】趨勢多頭且量縮，建議在此處建立防禦型底倉！"
                     action_plan_text = build_light_plan(sym, close, hist, manual_stop_price, local_market_mode)
                 else:
                     # 原本的初升段、旱地拔蔥、狙擊金叉邏輯
