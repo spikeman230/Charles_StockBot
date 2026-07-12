@@ -1,6 +1,6 @@
 # =============================================================================
-# NOC 游擊隊雷達 (noc_radar.py) v16.8
-# 整合：初升段突破、起漲攻擊區、旱地拔蔥、狙擊金叉
+# NOC 游擊隊雷達 (noc_radar.py) v16.9
+# 整合：初升段突破、起漲攻擊區、旱地拔蔥、狙擊金叉、ABCX回踩
 # 採用與 stock_bot 完全相同的數據預處理（含動態量能、法人籌碼合併）
 # =============================================================================
 
@@ -13,10 +13,10 @@ import json
 import time
 import logging
 import re
-import requests  # 補上
+import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 from dotenv import load_dotenv
-from typing import Optional, Dict, Any, Tuple  # 補上 Optional
+from typing import Optional, Dict, Any, Tuple
 
 from noc_core import (
     NOCStrategy, NOCDatabase,
@@ -25,7 +25,9 @@ from noc_core import (
     detect_initial_breakout,
     calculate_monster_breakout,
     calculate_sniper_signal,
-    NOCChipMatrix
+    NOCChipMatrix,
+    calculate_all_indicators, # ✅ 新增：統一指標計算
+    detect_abcx_pullback # ✅ 新增：ABCX 偵測
 )
 
 load_dotenv()
@@ -131,7 +133,10 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     return hist
 
 def get_stock_data_for_radar(symbol: str) -> Optional[pd.DataFrame]:
-    """與 stock_bot.get_stock_data 完全相同的實作（不含快取）"""
+    """
+    與 stock_bot.get_stock_data 完全相同的實作，但無快取。
+    使用 calculate_all_indicators 統一生成所有指標（含 Volume_Ratio_Act、真實 5VMA 等）
+    """
     try:
         stock = yf.Ticker(symbol)
         info = stock.info
@@ -149,57 +154,22 @@ def get_stock_data_for_radar(symbol: str) -> Optional[pd.DataFrame]:
             if not chip_df.empty:
                 hist = hist.merge(chip_df, left_on="Date_Key", right_index=True, how="left").ffill().fillna(0)
 
+        # ========== 使用核心引擎的統一指標計算 ==========
+        hist = calculate_all_indicators(hist, symbol=symbol, token=FINMIND_TOKEN)
+
+        # 補上籌碼信號
         hist = calculate_chip_signals(hist)
 
-        # 動態量能預估（收盤後等於實際量）
-        now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
-        market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
-        market_close = now.replace(hour=13, minute=30, second=0, microsecond=0)
-        total_trading_minutes = (market_close - market_open).total_seconds() / 60.0
-        if market_open < now < market_close:
-            elapsed_mins = max(1.0, (now - market_open).total_seconds() / 60.0)
-            vol_mult = total_trading_minutes / elapsed_mins
-        else:
-            vol_mult = 1.0
-        hist["Est_Volume"] = hist["Volume"].copy()
-        if len(hist) > 0:
-            hist.iloc[-1, hist.columns.get_loc("Est_Volume")] = int(hist["Volume"].iloc[-1] * vol_mult)
-
-        hist["5MA"] = hist["Close"].rolling(5).mean()
-        hist["20MA"] = hist["Close"].rolling(20).mean()
-        hist["25MA"] = hist["Close"].rolling(25).mean()
-        hist["60MA"] = hist["Close"].rolling(60).mean()
-        hist["5VMA"] = hist["Est_Volume"].rolling(5).mean()
-        hist["60VMA"] = hist["Volume"].rolling(60).mean()
-
-        hist["Turnover_Rate"] = ((hist["Est_Volume"] / hist["Shares_Out"]) * 100).fillna(1.5)
-        hist["Volume_Ratio"] = (hist["Est_Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
-
-        hist['Candle_Ratio'] = (hist['High'] - hist[['Open','Close']].max(axis=1)) / (hist['High'] - hist['Low'] + 1e-9)
-        hist['Close_vs_High'] = hist['Close'] / hist['High']
-        hist['Is_Red'] = hist['Close'] >= hist['Open']
-
-        hist['Bias_20MA'] = (hist['Close'] - hist['20MA']) / hist['20MA'] * 100
-        hist['Bias_60MA'] = (hist['Close'] - hist['60MA']) / hist['60MA'] * 100
-        hist['Return_5D'] = hist['Close'].pct_change(5) * 100
-        hist['Return_10D'] = hist['Close'].pct_change(10) * 100
-
-        hist['High_60'] = hist['High'].rolling(window=60, min_periods=20).max()
-        hist['Low_60'] = hist['Low'].rolling(window=60, min_periods=20).min()
-        hist['Price_Position'] = (hist['Close'] - hist['Low_60']) / (hist['High_60'] - hist['Low_60']).replace(0, np.nan)
-
-        # 狙擊金叉計算（會自動添加 MACD 等）
+        # 計算狙擊金叉與旱地拔蔥（calculate_all_indicators 未包含）
         sniper_val = calculate_sniper_signal(hist)
         hist['Sniper_Signal'] = sniper_val
 
-        # 旱地拔蔥
         td_temp = hist.iloc[-1]
         monster_val = calculate_monster_breakout(hist, td_temp)
         hist['Monster_Breakout'] = monster_val
 
-        # 其他指標（選擇性）
-        hist['ATR'] = pd.concat([hist['High'] - hist['Low'], (hist['High'] - hist['Close'].shift(1)).abs(), (hist['Low'] - hist['Close'].shift(1)).abs()], axis=1).max(axis=1).rolling(14).mean()
-        hist['RSI'] = 50 # 簡化，實際可不計算，雷達不依賴 RSI
+        # 補充其他可能遺漏的指標（如 ATR、RSI 等，calculate_all_indicators 已包含 ATR）
+        # 此處不再重複計算
 
         return hist
     except Exception as e:
@@ -230,12 +200,14 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
         if "衰退" in fund_health or "警報" in fund_health:
             return None
 
-        # 過熱攔截（與戰情室一致）
+        # 過熱攔截（傳入 gap_pct）
+        gap_pct = td.get('Gap_Pct', 0.0)
         overheated, over_reason = is_overheated(
             close=close, ma20=ma20, ma60=ma60,
             recent_5d_return=td.get('Return_5D', 0),
             recent_10d_return=td.get('Return_10D', 0),
-            price_position=price_position, vol_ratio=vol_ratio
+            price_position=price_position, vol_ratio=vol_ratio,
+            gap_pct=gap_pct # ✅ 新增
         )
         if overheated:
             logger.debug(f"🔥 [過熱攔截] {symbol}: {over_reason}")
@@ -255,26 +227,33 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
         if quadrant_signal in danger:
             return None
 
-        # 核心攻擊信號
+        # ========== 核心攻擊信號（含 ABCX 回踩） ==========
         initial_break, break_type, _ = detect_initial_breakout(hist, td, lookback=20)
         monster = td.get('Monster_Breakout', False)
         sniper = td.get('Sniper_Signal', False)
 
-        is_valid = initial_break or monster or sniper or (quadrant_signal == "🟢 起漲攻擊區")
+        # ✅ 新增：ABCX 回踩判定（需同時滿足站穩月季線）
+        abcx = detect_abcx_pullback(hist, td)
+        abcx_valid = abcx and (close > ma20) and (close > ma60)
+
+        # 任何一項成立即為有效火種
+        is_valid = initial_break or monster or sniper or (quadrant_signal == "🟢 起漲攻擊區") or abcx_valid
         if not is_valid:
             return None
 
-        # 戰術描述
+        # 戰術描述（優先級：旱地拔蔥 > 狙擊金叉 > ABCX > 初升段 > 起漲攻擊區）
         if monster:
             tactics_desc = f"🔥 旱地拔蔥 (爆量長紅突破季線)"
         elif sniper:
             tactics_desc = f"🌟 狙擊金叉 (底部扭轉)"
+        elif abcx_valid:
+            tactics_desc = f"🌀 ABCX回踩 (量縮不破且穩守月季線)"
         elif initial_break:
             tactics_desc = f"🔥 {break_type}"
         else:
             tactics_desc = f"🚀 中段加速 | {quadrant_signal}"
 
-        # 簡單計算 RSI 與乖離（可選）
+        # 計算 RSI 與乖離（可選，用於輸出）
         delta = hist["Close"].diff()
         rs = delta.clip(lower=0).ewm(com=13, adjust=False).mean() / (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean().replace(0, 0.001)
         rsi = (100 - (100 / (1 + rs))).iloc[-1]
@@ -298,7 +277,7 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
 
 # ---------- 主程式 ----------
 if __name__ == "__main__":
-    logger.info("⚡ NOC 游擊隊雷達 v16.8 (與戰情室同源數據) 啟動...")
+    logger.info("⚡ NOC 游擊隊雷達 v16.9 (含 ABCX 回踩) 啟動...")
     start_time = time.time()
     strategy = NOCStrategy()
     macro = strategy.get_macro_status()
