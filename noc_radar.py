@@ -1,8 +1,7 @@
 # =============================================================================
-# NOC 游擊隊雷達 (noc_radar.py) v16.9 (去除防干擾版本)
+# NOC 游擊隊雷達 (noc_radar.py) v16.8
 # 整合：初升段突破、起漲攻擊區、旱地拔蔥、狙擊金叉
 # 採用與 stock_bot 完全相同的數據預處理（含動態量能、法人籌碼合併）
-# 新增：ABCX 量縮回踩基礎版 (穩守月季線) 掃描能力
 # =============================================================================
 
 import yfinance as yf
@@ -14,11 +13,10 @@ import json
 import time
 import logging
 import re
-import requests  
-import sys 
+import requests  # 補上
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 from dotenv import load_dotenv
-from typing import Optional, Dict, Any, Tuple  
+from typing import Optional, Dict, Any, Tuple  # 補上 Optional
 
 from noc_core import (
     NOCStrategy, NOCDatabase,
@@ -27,8 +25,7 @@ from noc_core import (
     detect_initial_breakout,
     calculate_monster_breakout,
     calculate_sniper_signal,
-    NOCChipMatrix,
-    detect_abcx_pullback 
+    NOCChipMatrix
 )
 
 load_dotenv()
@@ -43,8 +40,6 @@ logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
 # 環境變數（與 stock_bot 共用）
 FINMIND_TOKEN = os.getenv("FINMIND_TOKEN")
-# 除錯模式開關
-DEBUG_FORCE_PUSH = False
 
 class RadarConfig:
     MAX_WORKERS : int = int(os.environ.get("MAX_WORKERS", "5"))
@@ -69,15 +64,18 @@ class RadarConfig:
         "8016.TW", "8081.TW", "8150.TW", "3376.TW", "3035.TW", "3227.TWO", "3131.TWO", "2451.TW",
         "5469.TW", "3413.TW", "3450.TW", "4919.TW",
         # [區塊 3：重電/綠能/電纜與生技醫療 - 共 60 檔]
+        # 重電綠能 (25檔)
         "1513.TW", "1514.TW", "1519.TW", "1605.TW", "1504.TW", "1503.TW", "1515.TW", "1520.TW",
         "3708.TW", "1609.TW", "1608.TW", "1611.TW", "1612.TW", "1618.TW", "9958.TW", "3712.TW",
-        "6409.TW", "1582.TW", "1532.TW", "4536.TW", "8926.TW", "6869.TW", "1537.TW",
+        "6409.TW", "1582.TW", "1522.TW", "1532.TW", "4536.TW", "8926.TW", "6869.TW", "1537.TW",
         # [區塊 4：傳產塑化/汽車零組件/造船航太 - 共 30 檔]
-        "1319.TW", "1522.TW", "6605.TW", "7736.TW", "1524.TW", 
-        "1536.TW", "2231.TW", "1521.TW", "1525.TW", "2228.TW", 
-        "2115.TW", "2201.TW", "2204.TW", "3346.TW", "1339.TW", "6279.TW",
+        # 汽車零組件 (13檔)
+        "1536.TW", "2231.TW", "1521.TW", "1525.TW", "2228.TW", "2115.TW", "2201.TW", "2204.TW",
+        "3346.TW", "1339.TW", "6279.TW", "1524.TW", "1568.TW",
+        # 傳產塑化化學 (12檔)
         "1314.TW", "1717.TW", "1304.TW", "1308.TW", "1309.TW", "1312.TW", "1305.TW", "1710.TW",
-        "1704.TW", "4722.TW", "4739.TW", "1718.TW",
+        "1704.TW", "4722.TW", "4739.TW", "1718.TW", "1319.TW", "6605.TW", "7736.TW", "1522.TW",
+        # 造船與軍工航太 (5檔)
         "2208.TW", "2634.TW", "4541.TW", "8222.TW", "2646.TW"
     ]
 
@@ -201,7 +199,7 @@ def get_stock_data_for_radar(symbol: str) -> Optional[pd.DataFrame]:
 
         # 其他指標（選擇性）
         hist['ATR'] = pd.concat([hist['High'] - hist['Low'], (hist['High'] - hist['Close'].shift(1)).abs(), (hist['Low'] - hist['Close'].shift(1)).abs()], axis=1).max(axis=1).rolling(14).mean()
-        hist['RSI'] = 50
+        hist['RSI'] = 50 # 簡化，實際可不計算，雷達不依賴 RSI
 
         return hist
     except Exception as e:
@@ -223,7 +221,7 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
         turnover = td['Turnover_Rate']
         price_position = td['Price_Position'] if not pd.isna(td['Price_Position']) else 0.5
 
-        # 趨勢與基本面
+        # 趨勢與基本面（與 stock_bot 相同）
         trend_score = strategy.get_trend_score(hist)
         if trend_score < 0:
             return None
@@ -232,7 +230,7 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
         if "衰退" in fund_health or "警報" in fund_health:
             return None
 
-        # 過熱攔截
+        # 過熱攔截（與戰情室一致）
         overheated, over_reason = is_overheated(
             close=close, ma20=ma20, ma60=ma60,
             recent_5d_return=td.get('Return_5D', 0),
@@ -262,18 +260,12 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
         monster = td.get('Monster_Breakout', False)
         sniper = td.get('Sniper_Signal', False)
 
-        # 【ABCX 基礎版判定】
-        ma60_val = ma60 if not pd.isna(ma60) else 0
-        is_abcx_basic = detect_abcx_pullback(hist, td) and (close > ma20) and (close > ma60_val)
-
-        is_valid = initial_break or monster or sniper or is_abcx_basic or (quadrant_signal == "🟢 起漲攻擊區")
+        is_valid = initial_break or monster or sniper or (quadrant_signal == "🟢 起漲攻擊區")
         if not is_valid:
             return None
 
         # 戰術描述
-        if is_abcx_basic:
-            tactics_desc = f"🌀 ABCX回踩 (量縮不破且穩守月季線)"
-        elif monster:
+        if monster:
             tactics_desc = f"🔥 旱地拔蔥 (爆量長紅突破季線)"
         elif sniper:
             tactics_desc = f"🌟 狙擊金叉 (底部扭轉)"
@@ -282,6 +274,7 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
         else:
             tactics_desc = f"🚀 中段加速 | {quadrant_signal}"
 
+        # 簡單計算 RSI 與乖離（可選）
         delta = hist["Close"].diff()
         rs = delta.clip(lower=0).ewm(com=13, adjust=False).mean() / (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean().replace(0, 0.001)
         rsi = (100 - (100 / (1 + rs))).iloc[-1]
@@ -305,18 +298,15 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
 
 # ---------- 主程式 ----------
 if __name__ == "__main__":
-    logger.info("⚡ NOC 游擊隊雷達 v16.9 (去除休市防擾版) 啟動...")
+    logger.info("⚡ NOC 游擊隊雷達 v16.8 (與戰情室同源數據) 啟動...")
     start_time = time.time()
-    
     strategy = NOCStrategy()
     macro = strategy.get_macro_status()
-    
-    # 直接略過休市感知，只要執行就掃描
     if macro["status"] == "🔴 紅燈":
         logger.warning("🚨 大盤跌破季線，停止掃描")
         with open(cfg.TARGET_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f)
-        sys.exit(0)
+        exit(0)
 
     logger.info(f"📡 大盤{macro['status']}，開始掃描 {len(cfg.SCAN_LIST)} 檔")
     found = []
