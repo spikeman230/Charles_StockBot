@@ -1,7 +1,9 @@
 # =============================================================================
-# NOC 游擊隊雷達 (noc_radar.py) v16.8
+# NOC 游擊隊雷達 (noc_radar.py) v16.9 (防干擾休市版)
 # 整合：初升段突破、起漲攻擊區、旱地拔蔥、狙擊金叉
 # 採用與 stock_bot 完全相同的數據預處理（含動態量能、法人籌碼合併）
+# 新增：絕對日期鎖定交易日感知，防止休假日異常運作
+# 新增：ABCX 量縮回踩基礎版 (穩守月季線) 掃描能力
 # =============================================================================
 
 import yfinance as yf
@@ -13,10 +15,11 @@ import json
 import time
 import logging
 import re
-import requests  # 補上
+import requests  
+import sys # 補上 sys 用於退出程式
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 from dotenv import load_dotenv
-from typing import Optional, Dict, Any, Tuple  # 補上 Optional
+from typing import Optional, Dict, Any, Tuple  
 
 from noc_core import (
     NOCStrategy, NOCDatabase,
@@ -25,7 +28,8 @@ from noc_core import (
     detect_initial_breakout,
     calculate_monster_breakout,
     calculate_sniper_signal,
-    NOCChipMatrix
+    NOCChipMatrix,
+    detect_abcx_pullback # 新增匯入 ABCX 偵測模組
 )
 
 load_dotenv()
@@ -40,6 +44,8 @@ logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
 # 環境變數（與 stock_bot 共用）
 FINMIND_TOKEN = os.getenv("FINMIND_TOKEN")
+# 除錯模式開關
+DEBUG_FORCE_PUSH = False
 
 class RadarConfig:
     MAX_WORKERS : int = int(os.environ.get("MAX_WORKERS", "5"))
@@ -67,19 +73,54 @@ class RadarConfig:
         # 重電綠能 (25檔)
         "1513.TW", "1514.TW", "1519.TW", "1605.TW", "1504.TW", "1503.TW", "1515.TW", "1520.TW",
         "3708.TW", "1609.TW", "1608.TW", "1611.TW", "1612.TW", "1618.TW", "9958.TW", "3712.TW",
-        "6409.TW", "1582.TW", "1522.TW", "1532.TW", "4536.TW", "8926.TW", "6869.TW", "1537.TW",
+        "6409.TW", "1582.TW", "1532.TW", "4536.TW", "8926.TW", "6869.TW", "1537.TW",
         # [區塊 4：傳產塑化/汽車零組件/造船航太 - 共 30 檔]
-        # 汽車零組件 (13檔)
-        "1536.TW", "2231.TW", "1521.TW", "1525.TW", "2228.TW", "2115.TW", "2201.TW", "2204.TW",
-        "3346.TW", "1339.TW", "6279.TW", "1524.TW", "1568.TW",
+        # 🔥 汽車零組件與 AM 族群 (16檔 - 總司令欽點 AM 五虎將已全數歸建)
+        "1319.TW", "1522.TW", "6605.TW", "7736.TW", "1524.TW", 
+        "1536.TW", "2231.TW", "1521.TW", "1525.TW", "2228.TW", 
+        "2115.TW", "2201.TW", "2204.TW", "3346.TW", "1339.TW", "6279.TW",
         # 傳產塑化化學 (12檔)
         "1314.TW", "1717.TW", "1304.TW", "1308.TW", "1309.TW", "1312.TW", "1305.TW", "1710.TW",
-        "1704.TW", "4722.TW", "4739.TW", "1718.TW", "1319.TW", "6605.TW", "7736.TW", "1522.TW",
+        "1704.TW", "4722.TW", "4739.TW", "1718.TW",
         # 造船與軍工航太 (5檔)
         "2208.TW", "2634.TW", "4541.TW", "8222.TW", "2646.TW"
     ]
 
 cfg = RadarConfig()
+
+# =============================================================================
+# 交易日感知 (防干擾：絕對日期鎖定)
+# =============================================================================
+def is_trading_day(curr_date: datetime.date) -> bool:
+    if DEBUG_FORCE_PUSH:
+        return True
+    
+    # 週末絕對不開盤，第一道防線過濾
+    if curr_date.weekday() >= 5:
+        return False
+        
+    try:
+        # 抓取最近 5 天交易資料
+        tsm = yf.Ticker("2330.TW").history(period="5d")
+        
+        if tsm.empty:
+            return True 
+        
+        # 取得 Yahoo 伺服器回傳的「最後一個有效交易日」
+        last_date = tsm.index[-1].date()
+        
+        # 如果最後交易日「等於今天」，代表今天確實有開盤
+        if last_date == curr_date:
+            # 雙重防護：確認今天有實質成交量
+            if tsm['Volume'].iloc[-1] > 0:
+                return True
+        
+        # 非今天，判定為休市
+        return False
+        
+    except Exception as e:
+        logger.error(f"交易日感知異常: {e}")
+        return True
 
 # ---------- 輔助函數：與 stock_bot 完全相同的數據獲取（含法人籌碼） ----------
 def get_finmind_chip_data(symbol: str, start_date_str: str) -> pd.DataFrame:
@@ -260,12 +301,18 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
         monster = td.get('Monster_Breakout', False)
         sniper = td.get('Sniper_Signal', False)
 
-        is_valid = initial_break or monster or sniper or (quadrant_signal == "🟢 起漲攻擊區")
+        # 【新增】ABCX 基礎版判定：量縮不破，且穩守月線(20MA)與季線(60MA)
+        ma60_val = ma60 if not pd.isna(ma60) else 0
+        is_abcx_basic = detect_abcx_pullback(hist, td) and (close > ma20) and (close > ma60_val)
+
+        is_valid = initial_break or monster or sniper or is_abcx_basic or (quadrant_signal == "🟢 起漲攻擊區")
         if not is_valid:
             return None
 
         # 戰術描述
-        if monster:
+        if is_abcx_basic:
+            tactics_desc = f"🌀 ABCX回踩 (量縮不破且穩守月季線)"
+        elif monster:
             tactics_desc = f"🔥 旱地拔蔥 (爆量長紅突破季線)"
         elif sniper:
             tactics_desc = f"🌟 狙擊金叉 (底部扭轉)"
@@ -298,15 +345,26 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
 
 # ---------- 主程式 ----------
 if __name__ == "__main__":
-    logger.info("⚡ NOC 游擊隊雷達 v16.8 (與戰情室同源數據) 啟動...")
+    logger.info("⚡ NOC 游擊隊雷達 v16.9 (防干擾休市版) 啟動...")
     start_time = time.time()
+    
+    # 🎯 [新增] 交易日感知攔截
+    tw_tz = datetime.timezone(datetime.timedelta(hours=8))
+    curr_date = datetime.datetime.now(tw_tz).date()
+    if not is_trading_day(curr_date):
+        logger.info("⛔ 今日非台股交易日/休市。雷達進入休眠狀態，停止掃描。")
+        # 清空目標檔案，避免舊資料殘留
+        with open(cfg.TARGET_FILE, "w", encoding="utf-8") as f:
+            json.dump({}, f)
+        sys.exit(0)
+
     strategy = NOCStrategy()
     macro = strategy.get_macro_status()
     if macro["status"] == "🔴 紅燈":
         logger.warning("🚨 大盤跌破季線，停止掃描")
         with open(cfg.TARGET_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f)
-        exit(0)
+        sys.exit(0)
 
     logger.info(f"📡 大盤{macro['status']}，開始掃描 {len(cfg.SCAN_LIST)} 檔")
     found = []
