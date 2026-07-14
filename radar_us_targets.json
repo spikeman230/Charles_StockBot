@@ -1,17 +1,27 @@
 {
-    "INTU": {
-        "name": "INTU",
+    "CRWD": {
+        "name": "CRWD",
         "tactics": "🔥 🚀 首次突破20日高點",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "TEAM": {
-        "name": "TEAM",
-        "tactics": "🔥 🚀 首次突破20日高點",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "PYPL": {
-        "name": "PYPL",
+    "MDB": {
+        "name": "MDB",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "SYK": {
+        "name": "SYK",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "MS": {
+        "name": "MS",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "GS": {
+        "name": "GS",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     }
 }
