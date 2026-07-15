@@ -1,8 +1,9 @@
 # =============================================================================
-# NOC 終極戰情室 v17.1 雙引擎加倉版（SQLite 狀態儲存）
+# NOC 終極戰情室 v17.2（SQLite 狀態儲存）雙引擎加倉版 + 台股生存法則
 # 核心功能：初升段即時偵測、過熱攔截、白名單強制輸出、量價四象限戰術矩陣
 # 整合功能：旱地拔蔥、狙擊金叉、ABCX量縮回測不破（優先判定機制）
 # 新增特徵：雙軌量能系統（實際量比 vs 預估量比）、庫藏股【獲利加倉】動態追擊雷達
+# 台股生存法則 8 大口訣即時判讀
 # 除錯模式：DEBUG_FORCE_PUSH = True 時，忽略過熱/四象限/黃燈/攻擊信號，強制推播所有股票
 # =============================================================================
 
@@ -41,7 +42,8 @@ from noc_core import (
     analyze_chip_tactics, NOCChipMatrix, is_high_quality_signal,
     assess_volume_turnover_signal, is_overheated, detect_initial_breakout,
     calculate_monster_breakout, calculate_sniper_signal, detect_abcx_pullback,
-    calculate_all_indicators
+    calculate_all_indicators,
+    analyze_volume_price_pattern # ✅ 新增：台股生存法則
 )
 
 # =============================================================================
@@ -250,6 +252,7 @@ def build_light_plan(symbol: str, close: float, hist: pd.DataFrame, manual_stop:
         f" * 移動防禦底線：{stop_loss:.2f}\n"
         f" * 鐵律：若三日內未站穩，立即減碼。\n"
     )
+
 # =============================================================================
 # 交易日感知 (修復版：絕對日期鎖定)
 # =============================================================================
@@ -395,6 +398,7 @@ def fetch_trello_deployment() -> Tuple[Optional[dict], Optional[dict]]:
     except Exception as e:
         logger.error(f"無法完整拉取 Trello 看板配置: {e}")
         return None, None
+
 # =============================================================================
 # 本地狀態管理（已改為 SQLite）
 # =============================================================================
@@ -433,7 +437,7 @@ def get_market_regime() -> Tuple[bool, str]:
 def get_revenue_yoy(symbol: str):
     if not FINMIND_TOKEN:
         return "N/A"
-    match = re.search(r"\d+", symbol) # 修正正則表達式
+    match = re.search(r"\d+", symbol)
     if not match:
         return "N/A"
     try:
@@ -467,7 +471,7 @@ def get_pe_ratio(symbol: str):
 def get_finmind_chip_data(symbol: str, start_date_str: str) -> pd.DataFrame:
     if not FINMIND_TOKEN:
         return pd.DataFrame()
-    match = re.search(r"\d+", symbol) # 修正正則表達式
+    match = re.search(r"\d+", symbol)
     if not match:
         return pd.DataFrame()
     try:
@@ -511,7 +515,8 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     conds = [hist["Signal_CoBuy"], hist["Signal_Trust_Trend"], hist["Total_Institutional"] > 0]
     hist["Chip_Status"] = np.select(conds, ["🤝 土洋齊買", "🏦 投信作帳", "📈 法人偏多"], default="➖ 中性/偏空")
     return hist
-    # =============================================================================
+
+# =============================================================================
 # 核心數據抓取與技術指標（使用統一函數計算狙擊金叉與旱地拔蔥）
 # =============================================================================
 def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
@@ -519,7 +524,7 @@ def get_stock_data(symbol: str, name: str) -> Optional[pd.DataFrame]:
     if cached is not None:
         return cached
     try:
-        match = re.search(r"\d+", symbol) # 修正正則表達式
+        match = re.search(r"\d+", symbol)
         if match and FINMIND_TOKEN:
             raw_id = match.group()
             local_db = NOCDatabase()
@@ -623,8 +628,7 @@ def send_reports(subject: str, text_body: str, chart_files: list) -> None:
                 server.send_message(msg)
         except:
             pass
-
-# =============================================================================
+            # =============================================================================
 # 主程式
 # =============================================================================
 if __name__ == "__main__":
@@ -632,7 +636,7 @@ if __name__ == "__main__":
     curr_dt = datetime.datetime.now(tw_tz)
     curr_date, curr_time = curr_dt.date(), curr_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    logger.info(f"NOC 終極戰情室 v17.1（SQLite 狀態儲存）長短雙軌版（除錯模式={'ON' if DEBUG_FORCE_PUSH else 'OFF'}）啟動。時間：{curr_time}")
+    logger.info(f"NOC 終極戰情室 v17.2（SQLite 狀態儲存）長短雙軌版（除錯模式={'ON' if DEBUG_FORCE_PUSH else 'OFF'}）啟動。時間：{curr_time}")
 
     db = NOCDatabase()
     strategy = NOCStrategy(db)
@@ -798,6 +802,12 @@ if __name__ == "__main__":
             else:
                 pnl_alert = f"🔍【中立觀察】價格震盪，監控防禦底線 ({final_stop:.2f})。"
                 noc_state[sym].trailing_stop = final_stop
+
+            # ===== 台股生存法則：若為中立觀察，則用口訣取代（若有非中性狀態） =====
+            if pnl_alert == f"🔍【中立觀察】價格震盪，監控防禦底線 ({final_stop:.2f})。":
+                vp_pattern = analyze_volume_price_pattern(hist, td)
+                if vp_pattern != "➖ 價量結構平穩":
+                    pnl_alert = vp_pattern + f" (防線 {final_stop:.2f})"
 
             silent_keywords = ["中立觀察", "長線鎖籌", "洗盤耐受區"]
             is_silent = any(kw in pnl_alert for kw in silent_keywords)
@@ -1006,6 +1016,12 @@ if __name__ == "__main__":
                                 alert = f"🚀【長線波段佈局觸發】"
                                 action_plan_text = build_tactical_plan(sym, close, hist, trend_score, fund_health, manual_stop_price, market_mode=local_market_mode)
 
+            # ===== 台股生存法則：若尚未觸發特殊信號（預設 alert），則用量價口訣補充 =====
+            if alert == "✅ 趨勢追蹤中，尚未觸發佈局點":
+                vp_pattern = analyze_volume_price_pattern(hist, td)
+                if vp_pattern != "➖ 價量結構平穩":
+                    alert = vp_pattern
+
             # ------------------- 組裝推播訊息（明確化） -------------------
             if trigger_label:
                 header = f"🎯 {name} ({sym}) —— {trigger_label}\n"
@@ -1141,7 +1157,7 @@ if __name__ == "__main__":
         logger.info("🔇 [靜默模式] 今日無任何可行動警報（無建倉/停損/獲利巡航等重要事件），系統靜默退出。")
         sys.exit(0)
 
-    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v17.1（SQLite版）】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
+    send_reports(f"NOC 戰情報告 {curr_date}", f"📡 【NOC 終極戰情室 v17.2（SQLite版）】\n📅 執行時間：{curr_time}\n━━━━━━━━━━━━━━\n" + "".join(msg_list), generated_charts)
 
     for chart in generated_charts:
         if Path(chart).exists():
