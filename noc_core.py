@@ -1,8 +1,9 @@
 # =============================================================================
-# NOC 戰情室核心引擎 v16.13 (強化防禦版 + 跳空偵測)
+# NOC 戰情室核心引擎 v17.2 (強化防禦版 + 跳空偵測 + 量價口訣)
 # 功能：籌碼矩陣、四象限量價、K線形態防禦、過熱攔截、初升段突破偵測
 # 新增：雙軌量能系統（實際量比 vs 預估量比）、ABCX量縮回測不破偵測（含欄位檢查）
 # 跳空幅度(Gap_Pct)、高檔竭盡缺口攔截、突破缺口標示
+# 台股生存法則：量價結構判讀（8大口訣）
 # 本地 SQLite 資料庫支援
 # =============================================================================
 
@@ -373,6 +374,68 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     return hist
 
 # =============================================================================
+# 台股生存法則：量價結構判讀（基於 Gemini 量化定義）
+# =============================================================================
+def analyze_volume_price_pattern(hist: pd.DataFrame, td: pd.Series) -> str:
+    """
+    依據「台股生存法則」8 大口訣，判讀當前 K 線的量價結構。
+    參數：
+        hist: 完整歷史 DataFrame（需包含 Volume_Ratio_Act, Bias_20MA 等欄位）
+        td: 最新一筆 K 線（Series）
+    回傳：狀態字串（如 "🔥 快漲慢跌 (主力出貨中)"）
+    """
+    # ----- 1. 基礎指標計算 -----
+    if len(hist) < 2:
+        return "➖ 價量結構平穩"
+    
+    ret = (td['Close'] - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2] * 100
+    vol_ratio_act = td.get('Volume_Ratio_Act', 1.0)
+    bias20 = td.get('Bias_20MA', 0.0)
+    
+    is_spike = vol_ratio_act > 1.5
+    is_shrink = vol_ratio_act < 0.7
+    is_rise = ret > 0.5
+    is_fall = ret < -0.5
+    is_flat = -0.5 <= ret <= 0.5
+    
+    # ----- 2. 計算過去 10 天的快漲慢跌 / 快跌慢漲 -----
+    lookback = 10
+    fast_up_slow_down = False
+    fast_down_slow_up = False
+    
+    if len(hist) >= lookback + 1:
+        recent = hist.iloc[-lookback-1:-1]
+        recent_ret = (recent['Close'] - recent['Close'].shift(1)) / recent['Close'].shift(1) * 100
+        up_ret = recent_ret[recent_ret > 0]
+        down_ret = recent_ret[recent_ret < 0]
+        up_days = len(up_ret)
+        down_days = len(down_ret)
+        avg_gain = up_ret.mean() if up_days > 0 else 0.0
+        avg_loss = abs(down_ret.mean()) if down_days > 0 else 0.0
+        
+        if avg_gain > avg_loss * 1.5 and up_days < down_days:
+            fast_up_slow_down = True
+        if avg_loss > avg_gain * 1.5 and down_days < up_days:
+            fast_down_slow_up = True
+    
+    # ----- 3. 優先級判定（if-elif-else 鏈）-----
+    if fast_up_slow_down and bias20 > 5:
+        return "🔥 快漲慢跌 (主力出貨中)"
+    if fast_down_slow_up and bias20 < -5:
+        return "📥 快跌慢漲 (主力吸籌中)"
+    if is_spike and is_rise:
+        return "⚠️ 放量上漲 (提防短線回落)"
+    if is_spike and is_fall:
+        return "🔄 放量下跌 (恐慌盤，準備反彈)"
+    if is_shrink and is_flat and bias20 > 10:
+        return "🔴 縮量不漲/不跌 (高檔頭部已成)"
+    if is_shrink and is_rise:
+        return "📈 縮量上漲 (籌碼鎖定，繼續上漲)"
+    if is_shrink and is_fall:
+        return "📉 縮量下跌 (無量下殺，繼續下跌)"
+    return "➖ 價量結構平穩"
+
+# =============================================================================
 # 7. 本地 SQLite 資料庫支援
 # =============================================================================
 class NOCDatabase:
@@ -487,8 +550,7 @@ class NOCDatabase:
                              (symbol, shares_out, datetime.datetime.now().isoformat()))
         except:
             pass
-
-# =============================================================================
+            # =============================================================================
 # 8. 數據獲取器 (NOCDataFetcher) - 支援資料庫寫入
 # =============================================================================
 class NOCDataFetcher:
