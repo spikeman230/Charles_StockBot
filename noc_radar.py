@@ -1,6 +1,7 @@
 # =============================================================================
-# NOC 游擊隊雷達 (noc_radar.py) v16.9
+# NOC 游擊隊雷達 (noc_radar.py) v17.2
 # 整合：初升段突破、起漲攻擊區、旱地拔蔥、狙擊金叉、ABCX回踩
+# 新增：台股生存法則（量價結構判讀）
 # 採用與 stock_bot 完全相同的數據預處理（含動態量能、法人籌碼合併）
 # =============================================================================
 
@@ -26,8 +27,9 @@ from noc_core import (
     calculate_monster_breakout,
     calculate_sniper_signal,
     NOCChipMatrix,
-    calculate_all_indicators, # ✅ 新增：統一指標計算
-    detect_abcx_pullback # ✅ 新增：ABCX 偵測
+    calculate_all_indicators,
+    detect_abcx_pullback,
+    analyze_volume_price_pattern # ✅ 新增：台股生存法則
 )
 
 load_dotenv()
@@ -207,7 +209,7 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
             recent_5d_return=td.get('Return_5D', 0),
             recent_10d_return=td.get('Return_10D', 0),
             price_position=price_position, vol_ratio=vol_ratio,
-            gap_pct=gap_pct # ✅ 新增
+            gap_pct=gap_pct
         )
         if overheated:
             logger.debug(f"🔥 [過熱攔截] {symbol}: {over_reason}")
@@ -232,7 +234,7 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
         monster = td.get('Monster_Breakout', False)
         sniper = td.get('Sniper_Signal', False)
 
-        # ✅ 新增：ABCX 回踩判定（需同時滿足站穩月季線）
+        # ✅ ABCX 回踩判定（需同時滿足站穩月季線）
         abcx = detect_abcx_pullback(hist, td)
         abcx_valid = abcx and (close > ma20) and (close > ma60)
 
@@ -253,11 +255,25 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
         else:
             tactics_desc = f"🚀 中段加速 | {quadrant_signal}"
 
+        # ===== 台股生存法則：計算量價口訣 =====
+        vp_pattern = analyze_volume_price_pattern(hist, td)
+        if vp_pattern != "➖ 價量結構平穩":
+            extra_tip = f"量價: {vp_pattern}"
+        else:
+            extra_tip = ""
+
         # 計算 RSI 與乖離（可選，用於輸出）
         delta = hist["Close"].diff()
         rs = delta.clip(lower=0).ewm(com=13, adjust=False).mean() / (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean().replace(0, 0.001)
         rsi = (100 - (100 / (1 + rs))).iloc[-1]
         bias_20 = ((close - ma20) / ma20) * 100 if ma20 else 0
+
+        # 組裝 trello_tip（含量價口訣，若有）
+        base_tip = "系統雷達自動篩選，等待總司令確認建倉。"
+        if extra_tip:
+            full_tip = f"{base_tip} ({extra_tip})"
+        else:
+            full_tip = base_tip
 
         return {
             "symbol": symbol,
@@ -269,7 +285,7 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
             "Turnover": round(turnover, 2),
             "Quadrant": quadrant_signal,
             "Signal": tactics_desc,
-            "trello_tip": "系統雷達自動篩選，等待總司令確認建倉。"
+            "trello_tip": full_tip
         }
     except Exception as e:
         logger.debug(f"掃描 {symbol} 異常: {e}")
@@ -277,7 +293,7 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
 
 # ---------- 主程式 ----------
 if __name__ == "__main__":
-    logger.info("⚡ NOC 游擊隊雷達 v16.9 (含 ABCX 回踩) 啟動...")
+    logger.info("⚡ NOC 游擊隊雷達 v17.0 (含 ABCX 回踩 + 量價口訣) 啟動...")
     start_time = time.time()
     strategy = NOCStrategy()
     macro = strategy.get_macro_status()
@@ -295,10 +311,11 @@ if __name__ == "__main__":
             r = future.result()
             if r:
                 found.append(r)
-                logger.info(f"🎯 火種: {r['symbol']} 收{r['close']} | {r['Signal']}")
+                logger.info(f"🎯 火種: {r['symbol']} 收{r['close']} | {r['Signal']} | {r['trello_tip']}")
 
     logger.info(f"掃描完成，耗時 {time.time()-start_time:.1f} 秒，共 {len(found)} 檔")
     radar_dict = {t["symbol"]: {"name": t["name"], "tactics": t["Signal"], "trello_tip": t["trello_tip"]} for t in found}
     with open(cfg.TARGET_FILE, "w", encoding="utf-8") as f:
         json.dump(radar_dict, f, ensure_ascii=False, indent=4)
     logger.info(f"✅ 火種已寫入 {cfg.TARGET_FILE}")
+
