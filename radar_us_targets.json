@@ -1,6 +1,11 @@
 {
-    "ASML": {
-        "name": "ASML",
+    "QCOM": {
+        "name": "QCOM",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "NFLX": {
+        "name": "NFLX",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
@@ -9,13 +14,13 @@
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "PGR": {
-        "name": "PGR",
+    "ABT": {
+        "name": "ABT",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "TJX": {
-        "name": "TJX",
+    "EMR": {
+        "name": "EMR",
         "tactics": "🌟 狙擊金叉 (底部扭轉)",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     }
