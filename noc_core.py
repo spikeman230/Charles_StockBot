@@ -1,9 +1,10 @@
 # =============================================================================
-# NOC 戰情室核心引擎 v17.2 (強化防禦版 + 跳空偵測 + 量價口訣)
+# NOC 戰情室核心引擎 v17.3 (強化防禦版 + 跳空偵測 + 量價口訣 + 剔除台積電)
 # 功能：籌碼矩陣、四象限量價、K線形態防禦、過熱攔截、初升段突破偵測
 # 新增：雙軌量能系統（實際量比 vs 預估量比）、ABCX量縮回測不破偵測（含欄位檢查）
 # 跳空幅度(Gap_Pct)、高檔竭盡缺口攔截、突破缺口標示
 # 台股生存法則：量價結構判讀（8大口訣）
+# 剔除台積電權重的大盤參考指標
 # 本地 SQLite 資料庫支援
 # =============================================================================
 
@@ -434,7 +435,6 @@ def analyze_volume_price_pattern(hist: pd.DataFrame, td: pd.Series) -> str:
     if is_shrink and is_fall:
         return "📉 縮量下跌 (無量下殺，繼續下跌)"
     return "➖ 價量結構平穩"
-
 # =============================================================================
 # 7. 本地 SQLite 資料庫支援
 # =============================================================================
@@ -550,7 +550,8 @@ class NOCDatabase:
                              (symbol, shares_out, datetime.datetime.now().isoformat()))
         except:
             pass
-            # =============================================================================
+
+# =============================================================================
 # 8. 數據獲取器 (NOCDataFetcher) - 支援資料庫寫入
 # =============================================================================
 class NOCDataFetcher:
@@ -616,7 +617,6 @@ class NOCDataFetcher:
 
     def fetch_financial_statements(self, symbol: str, db: NOCDatabase) -> None:
         pass
-
 # =============================================================================
 # 9. 策略與風險管理類別
 # =============================================================================
@@ -634,16 +634,58 @@ class NOCStrategy:
             twii['60MA'] = twii['Close'].rolling(60).mean()
             td = twii.iloc[-1]
             y_td = twii.iloc[-2]
-            # 今日站上20MA 且 昨日也站上20MA（連續兩日）
+            twii_close = td['Close']
+
+            # ----- 原有的大盤燈號判斷（完全保留） -----
             above_20ma = td['Close'] > td['20MA']
             above_20ma_yest = y_td['Close'] > y_td['20MA']
             ma20_rising = td['20MA'] >= y_td['20MA']
             if above_20ma and above_20ma_yest and ma20_rising:
-                return {"status": "🟢 綠燈", "desc": "大盤多頭格局順風..."}
+                status = "🟢 綠燈"
+                desc = "大盤多頭格局順風..."
             elif td['Close'] < td['60MA']:
-                return {"status": "🔴 紅燈", "desc": "大盤崩盤警告..."}
+                status = "🔴 紅燈"
+                desc = "大盤崩盤警告..."
             else:
-                return {"status": "🟡 黃燈", "desc": "大盤進入高密度震盪洗盤期..."}
+                status = "🟡 黃燈"
+                desc = "大盤進入高密度震盪洗盤期..."
+
+            # ===== 新增：計算台積電權重與剔除後指數 =====
+            try:
+                tsmc = yf.Ticker("2330.TW")
+                tsmc_info = tsmc.info
+                tsmc_market_cap = tsmc_info.get("marketCap", 0)
+                
+                # 嘗試獲取大盤總市值（若無法取得則使用預設權重）
+                # 注意：^TWII.info 可能沒有總市值，此處使用固定權重 0.40 作為備案
+                # 您可以改為從環境變數讀取，或自行計算
+                default_weight = float(os.getenv("TSMC_WEIGHT", "0.40"))
+                weight = default_weight
+                
+                # 若成功獲取台積電市值，嘗試估算權重（需自行取得大盤總市值，此處簡化）
+                # 以下為示範：若您有可靠的大盤總市值來源，可替換下方計算
+                # 例如：total_market_cap = 取得大盤總市值
+                # if total_market_cap and tsmc_market_cap:
+                # weight = tsmc_market_cap / total_market_cap
+                # 因無法可靠獲取，我們保留預設值
+                
+                # 限制權重範圍在 35%～45% 之間
+                weight = max(0.35, min(0.45, weight))
+            except Exception as e:
+                self.logger.warning(f"台積電權重計算失敗，使用預設值 40%: {e}")
+                weight = 0.40
+
+            # 計算剔除台積電後的指數（近似值）
+            index_without_tsmc = twii_close * (1 - weight)
+
+            # 回傳時保留原有 status/desc，並新增參考欄位
+            return {
+                "status": status,
+                "desc": desc,
+                "twii_close": round(twii_close, 0),
+                "tsmc_weight": round(weight * 100, 1),
+                "index_without_tsmc": round(index_without_tsmc, 0)
+            }
         except Exception as e:
             self.logger.error(f"❌ 大盤風向儀運算異常: {e}")
             return {"status": "🟡 黃燈", "desc": "總體經濟風向引擎異常，強制啟動系統震盪保護機制。"}
@@ -953,3 +995,4 @@ def get_macro_status_from_db(db: NOCDatabase) -> dict:
                 return {"status": "🟡 黃燈", "desc": "震盪盤整"}
     except:
         return {"status": "🟡 黃燈", "desc": "資料庫讀取失敗"}
+
