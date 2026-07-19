@@ -1,8 +1,9 @@
 # =============================================================================
-# NOC 游擊隊雷達 (noc_radar.py) v17.2
+# NOC 游擊隊雷達 (noc_radar.py) v17.3
 # 整合：初升段突破、起漲攻擊區、旱地拔蔥、狙擊金叉、ABCX回踩
 # 新增：台股生存法則（量價結構判讀）
 # 採用與 stock_bot 完全相同的數據預處理（含動態量能、法人籌碼合併）
+# 紅燈模式：無視紅燈，強制執行掃描以提前捕捉上升股（先清空火種清單）
 # =============================================================================
 
 import yfinance as yf
@@ -29,7 +30,7 @@ from noc_core import (
     NOCChipMatrix,
     calculate_all_indicators,
     detect_abcx_pullback,
-    analyze_volume_price_pattern # ✅ 新增：台股生存法則
+    analyze_volume_price_pattern
 )
 
 load_dotenv()
@@ -177,7 +178,6 @@ def get_stock_data_for_radar(symbol: str) -> Optional[pd.DataFrame]:
     except Exception as e:
         logger.debug(f"獲取 {symbol} 數據失敗: {e}")
         return None
-
 # ---------- 雷達掃描函數 ----------
 def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
     try:
@@ -293,15 +293,18 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
 
 # ---------- 主程式 ----------
 if __name__ == "__main__":
-    logger.info("⚡ NOC 游擊隊雷達 v17.0 (含 ABCX 回踩 + 量價口訣) 啟動...")
+    logger.info("⚡ NOC 游擊隊雷達 v17.2 (含 ABCX 回踩 + 量價口訣 + 紅燈無視) 啟動...")
     start_time = time.time()
     strategy = NOCStrategy()
     macro = strategy.get_macro_status()
+    
+    # ===== 紅燈處理：改為先清空檔案，再繼續掃描 =====
     if macro["status"] == "🔴 紅燈":
-        logger.warning("🚨 大盤跌破季線，停止掃描")
+        logger.warning("🚨🚨🚨 警告：目前大盤處於 🔴 紅燈（空頭極端危險期）！已依據總司令作戰協議放寬防線限制，雷達將無視紅燈，強制執行掃描以提前捕捉上升股！")
+        # 先清空火種清單，確保無舊資料殘留，再繼續執行掃描
         with open(cfg.TARGET_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f)
-        exit(0)
+        # 不 exit，繼續往下執行掃描
 
     logger.info(f"📡 大盤{macro['status']}，開始掃描 {len(cfg.SCAN_LIST)} 檔")
     found = []
