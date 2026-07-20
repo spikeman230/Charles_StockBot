@@ -1,36 +1,6 @@
 {
-    "QCOM": {
-        "name": "QCOM",
-        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "AMAT": {
-        "name": "AMAT",
-        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "LRCX": {
-        "name": "LRCX",
-        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "MCHP": {
-        "name": "MCHP",
-        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "WDC": {
-        "name": "WDC",
-        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "STX": {
-        "name": "STX",
-        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "NFLX": {
-        "name": "NFLX",
+    "HUBS": {
+        "name": "HUBS",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     }
