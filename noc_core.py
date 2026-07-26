@@ -195,7 +195,7 @@ def detect_abcx_pullback(hist: pd.DataFrame, td: pd.Series) -> bool:
     """
     偵測 ABCX 量縮回測不破結構：
     - 條件A：過去 13~2 天內有帶量長紅 (Volume_Ratio_Act > 1.8 且收紅)
-    - 條件B：今日真實量能極度萎縮 (Volume < 昨日5VMA * 0.6)
+    - 條件B：今日真實量能極度萎縮 (Volume < 昨日5VMA * 0.7)
     - 條件C：今日收盤守住前波紅K的開盤價，且站上20MA
     回傳 True 表示符合結構
     """
