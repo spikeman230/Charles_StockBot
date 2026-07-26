@@ -193,45 +193,43 @@ def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series, lookback: int = 2
 # ---------------------- ABCX量縮回測不破偵測 (強化防禦) ----------------------
 def detect_abcx_pullback(hist: pd.DataFrame, td: pd.Series) -> bool:
     """
-    偵測 ABCX 量縮回測不破結構：
-    - 條件A：過去 13~2 天內有帶量長紅 (Volume_Ratio_Act > 1.8 且收紅)
-    - 條件B：今日真實量能極度萎縮 (Volume < 昨日5VMA * 0.7)
-    - 條件C：今日收盤守住前波紅K的開盤價，且站上20MA
-    回傳 True 表示符合結構
+    NOC 戰情室：ABCX 黃金折衷防護版
+    - A 點放量放寬至 1.5 倍 (捕捉中大型股)
+    - 嚴格保留 A 點必須為收紅 K (Close > Open，杜絕黑K主力出貨)
+    - X 點量縮放寬至 0.7 倍 (對齊 SQL)
+    - 穩守月線 20MA 與季線 60MA (支撐鐵壁)
     """
     if len(hist) < 20:
         return False
 
-    # === 防禦性檢查：必要欄位是否存在 ===
-    required_cols = ['Volume_Ratio_Act', '5VMA', '20MA']
+    required_cols = ['5VMA', '20MA', '60MA']
     for col in required_cols:
         if col not in hist.columns:
-            logger.warning(f"detect_abcx_pullback: 缺少必要欄位 '{col}'，跳過檢測")
             return False
-    if 'Volume' not in td or 'Close' not in td or '20MA' not in td:
-        logger.warning("detect_abcx_pullback: td 缺少 Volume/Close/20MA")
-        return False
 
-    # 條件A：尋找前波突破長紅 (過去 13 到 2 天內)
-    recent_hist = hist.iloc[-13:-2]
-    breakout_days = recent_hist[(recent_hist['Volume_Ratio_Act'] > 1.8) & (recent_hist['Close'] > recent_hist['Open'])]
+    # 1. A 點放量 1.5 倍 + 保留收紅 K (防範假突破出貨)
+    recent_hist = hist.iloc[-11:-1] # 過去 10 天
+    breakout_days = recent_hist[
+        (recent_hist['Volume'] > recent_hist['5VMA'] * 1.5) & 
+        (recent_hist['Close'] >= recent_hist['Open']) # 保留紅 K 防禦
+    ]
     if breakout_days.empty:
         return False
 
-    # 條件B：判定今日量縮極致 (真實 Volume 必須小於昨日 5VMA 的 60%)
+    # 2. X 點量縮極致 (對齊 0.70 倍)
     actual_vol = td.get('Volume', 0)
     vma5_yest = hist['5VMA'].shift(1).iloc[-1]
     if vma5_yest <= 0:
         return False
-    is_volume_shrunk = (actual_vol < vma5_yest * 0.6)
+    is_volume_shrunk = (actual_vol < vma5_yest * 0.7)
 
-    # 條件C：判定回測不破 (今日 Close >= 前波突破點的 Open，且 Close >= 20MA)
-    breakout_open = breakout_days.iloc[-1]['Open']
+    # 3. 穩守月線與季線
     close = td['Close']
     ma20 = td['20MA']
-    is_holding_support = (close >= breakout_open) and (close >= ma20)
+    ma60 = td['60MA']
+    is_holding_ma = (close >= ma20) and (close >= ma60)
 
-    return bool(is_volume_shrunk and is_holding_support)
+    return bool(is_volume_shrunk and is_holding_ma)
 
 # ---------------------- 旱地拔蔥偵測 ----------------------
 def calculate_monster_breakout(hist: pd.DataFrame, td: pd.Series) -> bool:
