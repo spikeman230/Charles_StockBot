@@ -4,18 +4,18 @@
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
+    "TWLO": {
+        "name": "TWLO",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
     "UBER": {
         "name": "UBER",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "CVS": {
-        "name": "CVS",
-        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "PLD": {
-        "name": "PLD",
+    "MELI": {
+        "name": "MELI",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     }
