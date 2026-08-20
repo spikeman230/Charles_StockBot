@@ -1,17 +1,17 @@
 {
-    "MRVL": {
-        "name": "MRVL",
+    "WMT": {
+        "name": "WMT",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "PFE": {
-        "name": "PFE",
+    "TJX": {
+        "name": "TJX",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "O": {
-        "name": "O",
-        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+    "DE": {
+        "name": "DE",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     }
 }
