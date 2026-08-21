@@ -882,9 +882,9 @@
         "last_alert_hash": ""
     },
     "HOOD": {
-        "status": "NONE",
-        "entry": 0.0,
-        "trailing_stop": 0.0,
+        "status": "HOLD",
+        "entry": 108.12999725341797,
+        "trailing_stop": 93.88,
         "last_alert_hash": ""
     },
     "TJX": {
