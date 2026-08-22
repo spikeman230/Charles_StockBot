@@ -8,7 +8,8 @@ import yfinance as yf
 from dotenv import load_dotenv
 
 from noc_core import NOCDatabase, NOCDataFetcher
-from radar_scan_list import SCAN_LIST
+from noc_radar import RadarConfig
+SCAN_LIST = RadarConfig.SCAN_LIST
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
