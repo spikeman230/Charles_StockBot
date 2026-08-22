@@ -940,6 +940,7 @@ def calculate_all_indicators(hist: pd.DataFrame, symbol: str = "", token: str = 
     # ========== 量能均線（使用實際成交量，而非 Est_Volume） ==========
     hist["5VMA"] = hist["Volume"].rolling(5).mean()
     hist["20VMA"] = hist["Volume"].rolling(20).mean() # 新增
+    hist["60VMA"] = hist["Volume"].rolling(60).mean() # 🔥 在這裡補上這一行！
 
     # ========== 換手率（盤中使用 Est_Volume 估算，盤後等於實際） ==========
     hist["Turnover_Rate"] = ((hist["Est_Volume"] / hist["Shares_Out"]) * 100).fillna(1.5)
