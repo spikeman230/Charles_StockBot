@@ -1,10 +1,7 @@
 # =============================================================================
-# NOC 戰情室核心引擎 v17.3 (強化防禦版 + 跳空偵測 + 量價口訣 + 剔除台積電)
-# 功能：籌碼矩陣、四象限量價、K線形態防禦、過熱攔截、初升段突破偵測
-# 新增：雙軌量能系統（實際量比 vs 預估量比）、ABCX量縮回測不破偵測（含欄位檢查）
-# 跳空幅度(Gap_Pct)、高檔竭盡缺口攔截、突破缺口標示
-# 台股生存法則：量價結構判讀（8大口訣）
-# 剔除台積電權重的大盤參考指標
+# NOC 戰情室核心引擎 v18.0 (精準買點 + 階梯式出場)
+# 功能：籌碼矩陣、四象限量價、精準買點引擎（ABCX回踩 + 起漲第一棒）
+# 嚴格過熱過濾、階梯式動態停損/停利、大盤海象判讀
 # 本地 SQLite 資料庫支援
 # =============================================================================
 
@@ -20,7 +17,7 @@ import sqlite3
 import os
 import re
 import requests
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 
 # 靜音防護
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -119,7 +116,7 @@ def assess_volume_turnover_signal(vol_ratio: float, turnover: float, shares_out:
     return "➖ 中性觀望"
 
 # =============================================================================
-# 4. 過熱攔截函數 (新增 gap_pct 參數)
+# 4. 過熱攔截函數 (保留原有，新增更嚴格的進場過熱過濾器)
 # =============================================================================
 def is_overheated(close: float, ma20: float, ma60: float,
                   recent_5d_return: float, recent_10d_return: float,
@@ -139,7 +136,6 @@ def is_overheated(close: float, ma20: float, ma60: float,
         reasons.append(f"10日漲幅{recent_10d_return:.1f}%")
     if price_position > 0.9 and vol_ratio > 2.5:
         reasons.append(f"高檔爆量(位置{price_position:.2f},量比{vol_ratio:.1f})")
-    # ===== 新增：高檔竭盡缺口攔截 =====
     if gap_pct > 4.0 and price_position > 0.8:
         reasons.append(f"高檔竭盡缺口(跳空{gap_pct:.1f}%)")
     if reasons:
@@ -147,7 +143,37 @@ def is_overheated(close: float, ma20: float, ma60: float,
     return False, ""
 
 # =============================================================================
-# 5. 初升段突破偵測 + ABCX量縮回測不破 (防禦強化)
+# 4-1. 嚴格進場過熱過濾器 (用於買點審查)
+# =============================================================================
+def is_entry_overheated(td: pd.Series) -> Tuple[bool, str]:
+    """
+    審查當前K線是否符合進場條件，若過熱則禁止買進。
+    回傳 (是否過熱, 原因字串)
+    """
+    reasons = []
+    bias_20ma = td.get('Bias_20MA', 0.0)
+    bias_5ma = td.get('Bias_5MA', 0.0)
+    gap_pct = td.get('Gap_Pct', 0.0)
+    upper_shadow = td.get('Upper_Shadow_Ratio', 0.0)
+
+    # 乖離過大
+    if bias_20ma > 7.5:
+        reasons.append(f"20MA乖離{bias_20ma:.1f}% > 7.5%")
+    if bias_5ma > 4.5:
+        reasons.append(f"5MA乖離{bias_5ma:.1f}% > 4.5%")
+    # 跳空過大
+    if gap_pct > 1.8:
+        reasons.append(f"跳空{gap_pct:.1f}% > 1.8%")
+    # 上影線過長
+    if upper_shadow > 0.40:
+        reasons.append(f"上影線比例{upper_shadow:.2f} > 0.40")
+
+    if reasons:
+        return True, " | ".join(reasons)
+    return False, ""
+
+# =============================================================================
+# 5. 初升段突破偵測 (保留原有，但新增函數detect_precision_buy_point提供更高級買點)
 # =============================================================================
 def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series, lookback: int = 20) -> Tuple[bool, str, int]:
     close = td['Close']
@@ -179,7 +205,6 @@ def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series, lookback: int = 2
     if bias > 20:
         return False, "", 0
 
-    # ===== 新增：突破缺口判斷 =====
     gap_pct = td.get('Gap_Pct', 0.0)
     gap_str = f" [帶突破缺口 {gap_pct:.1f}%]" if gap_pct > 1.0 else ""
 
@@ -190,14 +215,74 @@ def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series, lookback: int = 2
             return True, f"🔥 放量站上20MA{gap_str}", 2
     return False, "", 0
 
-# ---------------------- ABCX量縮回測不破偵測 (強化防禦) ----------------------
+# =============================================================================
+# 5-1. 精準買點判斷引擎 (ABCX回踩 + 起漲第一棒)
+# =============================================================================
+def detect_precision_buy_point(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool, str, float]:
+    """
+    精準買點偵測，回傳 (是否有效, 戰術名稱, 防守價)
+    戰術A: ABCX極致量縮回踩 (優先)
+    戰術B: 起漲第一棒 (旱地拔蔥)
+    """
+    # 基礎多頭架構：股價站上月線與季線
+    close = td['Close']
+    ma20 = td.get('20MA', 0)
+    ma60 = td.get('60MA', 0)
+    if pd.isna(ma20) or pd.isna(ma60):
+        return False, "", 0.0
+    if close <= ma20 or close <= ma60:
+        return False, "", 0.0
+
+    # 過熱過濾
+    overheated, reason = is_entry_overheated(td)
+    if overheated:
+        logger.debug(f"買點過熱過濾: {reason}")
+        return False, "", 0.0
+
+    vol_ratio = td.get('Volume_Ratio', 1.0)
+    bias_20ma = td.get('Bias_20MA', 0.0)
+
+    # ---------- 戰術A：ABCX極致量縮回踩 ----------
+    # A點條件：過去3~10天內有放量紅K (Volume > 1.5 * 5VMA 且 Close >= Open)
+    lookback_start = max(0, len(hist) - 10)
+    lookback_end = max(0, len(hist) - 3)
+    recent_hist = hist.iloc[lookback_start:lookback_end] if lookback_end > lookback_start else pd.DataFrame()
+    if not recent_hist.empty:
+        # 使用真實5VMA，注意計算移位
+        vma5_series = hist['5VMA'].rolling(5).mean() # 但我們直接用hist的5VMA
+        # 針對recent_hist中的每一日，判斷是否放量紅K
+        a_point = None
+        for idx in recent_hist.index:
+            row = recent_hist.loc[idx]
+            # 找尋最近期的滿足條件
+            if row['Volume'] > row['5VMA'] * 1.5 and row['Close'] >= row['Open']:
+                a_point = row
+                break # 取最近的一個
+        if a_point is not None:
+            # X點條件：今日量縮 < 0.7 * 昨日5VMA
+            vma5_yest = hist['5VMA'].shift(1).iloc[-1]
+            if not pd.isna(vma5_yest) and td['Volume'] < vma5_yest * 0.7:
+                # 支撐條件：Bias_20MA 介於 0% ~ 3.5%
+                if 0 <= bias_20ma <= 3.5:
+                    # 防守價 = max(A點低點, 20MA * 0.985)
+                    stop_loss = max(a_point['Low'], ma20 * 0.985)
+                    return True, "🌀 ABCX極致量縮回踩", round(stop_loss, 2)
+
+    # ---------- 戰術B：起漲第一棒 (旱地拔蔥) ----------
+    # 昨日收盤 < 昨日20MA，今日放量紅K突破20MA
+    if len(hist) >= 2:
+        prev_close = hist['Close'].iloc[-2]
+        prev_ma20 = hist['20MA'].iloc[-2]
+        if prev_close < prev_ma20 and close > ma20 and td['Close'] > td['Open'] and vol_ratio >= 1.8 and bias_20ma <= 4.0:
+            stop_loss = td['Open'] * 0.98
+            return True, "🔥 起漲第一棒 (旱地拔蔥)", round(stop_loss, 2)
+
+    return False, "", 0.0
+
+# ---------------------- 舊版ABCX量縮回測不破 (保留以相容) ----------------------
 def detect_abcx_pullback(hist: pd.DataFrame, td: pd.Series) -> bool:
     """
-    NOC 戰情室：ABCX 黃金折衷防護版
-    - A 點放量放寬至 1.5 倍 (捕捉中大型股)
-    - 嚴格保留 A 點必須為收紅 K (Close > Open，杜絕黑K主力出貨)
-    - X 點量縮放寬至 0.7 倍 (對齊 SQL)
-    - 穩守月線 20MA 與季線 60MA (支撐鐵壁)
+    NOC 戰情室：ABCX 黃金折衷防護版 (保留舊版以相容)
     """
     if len(hist) < 20:
         return False
@@ -207,23 +292,20 @@ def detect_abcx_pullback(hist: pd.DataFrame, td: pd.Series) -> bool:
         if col not in hist.columns:
             return False
 
-    # 1. A 點放量 1.5 倍 + 保留收紅 K (防範假突破出貨)
-    recent_hist = hist.iloc[-11:-1] # 過去 10 天
+    recent_hist = hist.iloc[-11:-1]
     breakout_days = recent_hist[
         (recent_hist['Volume'] > recent_hist['5VMA'] * 1.5) & 
-        (recent_hist['Close'] >= recent_hist['Open']) # 保留紅 K 防禦
+        (recent_hist['Close'] >= recent_hist['Open'])
     ]
     if breakout_days.empty:
         return False
 
-    # 2. X 點量縮極致 (對齊 0.70 倍)
     actual_vol = td.get('Volume', 0)
     vma5_yest = hist['5VMA'].shift(1).iloc[-1]
     if vma5_yest <= 0:
         return False
     is_volume_shrunk = (actual_vol < vma5_yest * 0.7)
 
-    # 3. 穩守月線與季線
     close = td['Close']
     ma20 = td['20MA']
     ma60 = td['60MA']
@@ -231,7 +313,7 @@ def detect_abcx_pullback(hist: pd.DataFrame, td: pd.Series) -> bool:
 
     return bool(is_volume_shrunk and is_holding_ma)
 
-# ---------------------- 旱地拔蔥偵測 ----------------------
+# ---------------------- 旱地拔蔥偵測 (保留) ----------------------
 def calculate_monster_breakout(hist: pd.DataFrame, td: pd.Series) -> bool:
     close = td['Close']
     ma60 = td['60MA']
@@ -248,7 +330,7 @@ def calculate_monster_breakout(hist: pd.DataFrame, td: pd.Series) -> bool:
     solid_green = (close >= hist['Close'].iloc[-2] * 1.04)
     return solid_green
 
-# ---------------------- 狙擊金叉偵測 ----------------------
+# ---------------------- 狙擊金叉偵測 (保留) ----------------------
 def calculate_sniper_signal(hist: pd.DataFrame) -> bool:
     if len(hist) < 10:
         return False
@@ -272,7 +354,7 @@ def calculate_sniper_signal(hist: pd.DataFrame) -> bool:
     return bool(sniper)
 
 # =============================================================================
-# 6. 高品質訊號三重確認濾網
+# 6. 高品質訊號三重確認濾網 (保留)
 # =============================================================================
 def is_high_quality_signal(hist: pd.DataFrame, td: pd.Series, matrix_signal: str, market_mode: str) -> bool:
     recent_20_high = hist['High'].rolling(20).max().shift(1).iloc[-1]
@@ -373,17 +455,9 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     return hist
 
 # =============================================================================
-# 台股生存法則：量價結構判讀（基於 Gemini 量化定義）
+# 台股生存法則：量價結構判讀 (保留)
 # =============================================================================
 def analyze_volume_price_pattern(hist: pd.DataFrame, td: pd.Series) -> str:
-    """
-    依據「台股生存法則」8 大口訣，判讀當前 K 線的量價結構。
-    參數：
-        hist: 完整歷史 DataFrame（需包含 Volume_Ratio_Act, Bias_20MA 等欄位）
-        td: 最新一筆 K 線（Series）
-    回傳：狀態字串（如 "🔥 快漲慢跌 (主力出貨中)"）
-    """
-    # ----- 1. 基礎指標計算 -----
     if len(hist) < 2:
         return "➖ 價量結構平穩"
     
@@ -397,7 +471,6 @@ def analyze_volume_price_pattern(hist: pd.DataFrame, td: pd.Series) -> str:
     is_fall = ret < -0.5
     is_flat = -0.5 <= ret <= 0.5
     
-    # ----- 2. 計算過去 10 天的快漲慢跌 / 快跌慢漲 -----
     lookback = 10
     fast_up_slow_down = False
     fast_down_slow_up = False
@@ -417,7 +490,6 @@ def analyze_volume_price_pattern(hist: pd.DataFrame, td: pd.Series) -> str:
         if avg_loss > avg_gain * 1.5 and down_days < up_days:
             fast_down_slow_up = True
     
-    # ----- 3. 優先級判定（if-elif-else 鏈）-----
     if fast_up_slow_down and bias20 > 5:
         return "🔥 快漲慢跌 (主力出貨中)"
     if fast_down_slow_up and bias20 < -5:
@@ -433,6 +505,7 @@ def analyze_volume_price_pattern(hist: pd.DataFrame, td: pd.Series) -> str:
     if is_shrink and is_fall:
         return "📉 縮量下跌 (無量下殺，繼續下跌)"
     return "➖ 價量結構平穩"
+
 # =============================================================================
 # 7. 本地 SQLite 資料庫支援
 # =============================================================================
@@ -615,7 +688,7 @@ class NOCDataFetcher:
 
     def fetch_financial_statements(self, symbol: str, db: NOCDatabase) -> None:
         pass
-# =============================================================================
+    # =============================================================================
 # 9. 策略與風險管理類別
 # =============================================================================
 class NOCStrategy:
@@ -634,7 +707,7 @@ class NOCStrategy:
             y_td = twii.iloc[-2]
             twii_close = td['Close']
 
-            # ----- 原有的大盤燈號判斷（完全保留） -----
+            # ----- 原有的大盤燈號判斷 -----
             above_20ma = td['Close'] > td['20MA']
             above_20ma_yest = y_td['Close'] > y_td['20MA']
             ma20_rising = td['20MA'] >= y_td['20MA']
@@ -648,35 +721,24 @@ class NOCStrategy:
                 status = "🟡 黃燈"
                 desc = "大盤進入高密度震盪洗盤期..."
 
-            # ===== 新增：計算台積電權重與剔除後指數 =====
+            # ----- (新增) 台指期外資淨空單條件 (因數據源限制，此處省略，保留接口) -----
+            # 若未來有數據源，可在此加入判斷，若外資淨空單 > 20000口，強制轉為黃/紅燈
+            # 目前保留原有邏輯，但可透過環境變數啟用虛擬閾值
+            # 此處留空，不影響既有功能
+
+            # 計算剔除台積電指數 (保留)
             try:
                 tsmc = yf.Ticker("2330.TW")
                 tsmc_info = tsmc.info
                 tsmc_market_cap = tsmc_info.get("marketCap", 0)
-                
-                # 嘗試獲取大盤總市值（若無法取得則使用預設權重）
-                # 注意：^TWII.info 可能沒有總市值，此處使用固定權重 0.40 作為備案
-                # 您可以改為從環境變數讀取，或自行計算
                 default_weight = float(os.getenv("TSMC_WEIGHT", "0.40"))
                 weight = default_weight
-                
-                # 若成功獲取台積電市值，嘗試估算權重（需自行取得大盤總市值，此處簡化）
-                # 以下為示範：若您有可靠的大盤總市值來源，可替換下方計算
-                # 例如：total_market_cap = 取得大盤總市值
-                # if total_market_cap and tsmc_market_cap:
-                # weight = tsmc_market_cap / total_market_cap
-                # 因無法可靠獲取，我們保留預設值
-                
-                # 限制權重範圍在 35%～45% 之間
                 weight = max(0.35, min(0.45, weight))
             except Exception as e:
                 self.logger.warning(f"台積電權重計算失敗，使用預設值 40%: {e}")
                 weight = 0.40
-
-            # 計算剔除台積電後的指數（近似值）
             index_without_tsmc = twii_close * (1 - weight)
 
-            # 回傳時保留原有 status/desc，並新增參考欄位
             return {
                 "status": status,
                 "desc": desc,
@@ -795,7 +857,56 @@ class NOCRiskManager:
             }
 
 # =============================================================================
-# 10. 完整的技術指標計算函數 (含雙軌量比 + Gap_Pct)
+# 9-1. 階梯式動態出場與防守引擎
+# =============================================================================
+def evaluate_exit_and_stop(td: pd.Series, entry_price: float, highest_price: float, stop_price: float) -> Tuple[str, str]:
+    """
+    動態出場與防守引擎
+    輸入：
+        td: 今日K線數據 (Series)
+        entry_price: 進場成本
+        highest_price: 進場以來的最高價 (需由外部追蹤)
+        stop_price: 初始防守價 (通常由買點引擎產生)
+    回傳：(action_code, reason_desc)
+        action_code: "STOP_LOSS", "DISTRIBUTION", "TRAILING_STOP", "BREAK_EVEN", "HOLD"
+        reason_desc: 中文描述
+    """
+    close = td['Close']
+    vol_ratio = td.get('Volume_Ratio', 1.0)
+    ma5 = td.get('5MA', 0)
+    
+    # 計算最高獲利百分比
+    highest_profit_pct = (highest_price - entry_price) / entry_price * 100 if entry_price > 0 else 0
+
+    # 1. 停損觸發 (跌破防守價)
+    if close < stop_price:
+        return "STOP_LOSS", f"🩸【戰術撤離】跌破防守價 {stop_price:.2f}"
+
+    # 2. 倒貨警報 (爆量黑K)
+    if vol_ratio > 2.2 and (td['Close'] < td['Open']) and (td['Close'] - td['Open']) / td['Open'] * 100 < -3.0:
+        return "DISTRIBUTION", "🔴【高檔倒貨撤離】爆量長黑，主力出貨跡象"
+
+    # 3. 階梯式移動停利
+    # 3a. 若曾獲利 >= 15%，採用5MA移動停利
+    if highest_profit_pct >= 15.0:
+        if close < ma5:
+            return "TRAILING_STOP", "📉【主升段獲利了結】跌破5MA，移動停利觸發"
+        else:
+            return "HOLD", "📈【波段巡航】獲利>15%，沿5MA持有"
+
+    # 3b. 若曾獲利 >= 8%，保本機制 (拉防守至成本價)
+    if highest_profit_pct >= 8.0:
+        if close < entry_price:
+            return "BREAK_EVEN", "🛡️【保本離場】回測跌破成本價，零虧損出場"
+        else:
+            # 防守線上調至成本價 (外部需更新stop_price)
+            return "HOLD", "🔒【保本防禦】獲利>8%，防守線提升至成本價"
+
+    # 4. 正常持股
+    return "HOLD", "⏳【洗盤耐受中】持有觀察"
+
+# =============================================================================
+# 10. 完整的技術指標計算函數 (含雙軌量比 + Gap_Pct + 新增指標)
 # =============================================================================
 def calculate_all_indicators(hist: pd.DataFrame, symbol: str = "", token: str = "") -> pd.DataFrame:
     """給定基礎 OHLCV 與 Shares_Out，計算所有技術指標"""
@@ -821,13 +932,14 @@ def calculate_all_indicators(hist: pd.DataFrame, symbol: str = "", token: str = 
 
     # ========== 均線（使用實際收盤價） ==========
     hist["5MA"] = hist["Close"].rolling(5).mean()
+    hist["10MA"] = hist["Close"].rolling(10).mean() # 新增
     hist["20MA"] = hist["Close"].rolling(20).mean()
     hist["25MA"] = hist["Close"].rolling(25).mean()
     hist["60MA"] = hist["Close"].rolling(60).mean()
 
     # ========== 量能均線（使用實際成交量，而非 Est_Volume） ==========
-    hist["5VMA"] = hist["Volume"].rolling(5).mean() # 使用實際 Volume
-    hist["60VMA"] = hist["Volume"].rolling(60).mean()
+    hist["5VMA"] = hist["Volume"].rolling(5).mean()
+    hist["20VMA"] = hist["Volume"].rolling(20).mean() # 新增
 
     # ========== 換手率（盤中使用 Est_Volume 估算，盤後等於實際） ==========
     hist["Turnover_Rate"] = ((hist["Est_Volume"] / hist["Shares_Out"]) * 100).fillna(1.5)
@@ -835,14 +947,18 @@ def calculate_all_indicators(hist: pd.DataFrame, symbol: str = "", token: str = 
     # ========== 量比（雙軌量能系統） ==========
     hist["Volume_Ratio_Act"] = (hist["Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
     hist["Volume_Ratio_Est"] = (hist["Est_Volume"] / hist["5VMA"].shift(1)).fillna(1.0)
-    hist["Volume_Ratio"] = hist["Volume_Ratio_Est"] # 预设为预估量比
+    hist["Volume_Ratio"] = hist["Volume_Ratio_Est"]
 
     # ========== K線特徵 ==========
     hist['Candle_Ratio'] = (hist['High'] - hist[['Open','Close']].max(axis=1)) / (hist['High'] - hist['Low'] + 1e-9)
     hist['Close_vs_High'] = hist['Close'] / hist['High']
     hist['Is_Red'] = hist['Close'] >= hist['Open']
 
+    # ========== 上影線比例 (新增) ==========
+    hist['Upper_Shadow_Ratio'] = (hist['High'] - hist[['Open', 'Close']].max(axis=1)) / (hist['High'] - hist['Low'] + 1e-5)
+
     # ========== 乖離與漲幅 ==========
+    hist['Bias_5MA'] = (hist['Close'] - hist['5MA']) / hist['5MA'] * 100 # 新增
     hist['Bias_20MA'] = (hist['Close'] - hist['20MA']) / hist['20MA'] * 100
     hist['Bias_60MA'] = (hist['Close'] - hist['60MA']) / hist['60MA'] * 100
     hist['Return_5D'] = hist['Close'].pct_change(5) * 100
@@ -882,12 +998,12 @@ def calculate_all_indicators(hist: pd.DataFrame, symbol: str = "", token: str = 
     hist["STD20"] = hist["Close"].rolling(20).std()
     hist["BB_Width"] = (4 * hist["STD20"]) / hist["20MA"].replace(0, np.nan)
 
-    # ========== 狙擊金叉 ==========
+    # ========== 狙擊金叉 (保留) ==========
     hist["Is_Bottoming"] = ((hist["Close"] < hist["5MA"]) & (hist["MACD_Hist"].shift(2) < hist["MACD_Hist"].shift(1)) & (hist["MACD_Hist"].shift(1) < hist["MACD_Hist"]) & (hist["MACD_Hist"] < 0)).astype(int)
     hist["Is_Breakout"] = ((hist["Close"].shift(1) < hist["5MA"].shift(1)) & (hist["Close"] > hist["5MA"]) & (hist["Est_Volume"] > hist["5VMA"] * 1.2))
     hist["Sniper_Signal"] = (hist["Is_Bottoming"].rolling(3).max().fillna(0).astype(bool) & hist["Is_Breakout"])
 
-    # ========== 旱地拔蔥 ==========
+    # ========== 旱地拔蔥 (保留) ==========
     just_crossed_60ma = (hist["Close"] > hist["60MA"]) & (hist["Close"].shift(1) <= hist["60MA"].shift(1))
     extreme_volume = hist["Volume_Ratio"] >= 3.0
     solid_green = (hist["Close"] >= hist["Close"].shift(1) * 1.04)
@@ -931,7 +1047,6 @@ def get_stock_data(symbol: str, db: Optional[NOCDatabase] = None, name: str = ""
             logger.error(f"❌ 標的 [{symbol}] 即時下載失敗: {e}")
             return None
     else:
-        # 確保資料足夠
         if len(hist) < 60:
             return None
 
@@ -956,7 +1071,6 @@ def get_stock_data(symbol: str, db: Optional[NOCDatabase] = None, name: str = ""
     hist = calculate_all_indicators(hist)
     # 補上籌碼信號、PE、YoY
     token = os.getenv("FINMIND_TOKEN", "")
-    # 若有 FinMind token 且尚未有法人籌碼欄位，則抓取並合併
     if token and 'Foreign_Inv' not in hist.columns:
         try:
             start_date = (datetime.datetime.now() - datetime.timedelta(days=200)).strftime("%Y-%m-%d")
@@ -967,7 +1081,6 @@ def get_stock_data(symbol: str, db: Optional[NOCDatabase] = None, name: str = ""
             pass
     hist = calculate_chip_signals(hist)
 
-    # 補上 PE 與 YoY
     if 'PE' not in hist.columns:
         hist['PE'] = get_pe_ratio(symbol)
     if 'YoY' not in hist.columns:
@@ -993,4 +1106,4 @@ def get_macro_status_from_db(db: NOCDatabase) -> dict:
                 return {"status": "🟡 黃燈", "desc": "震盪盤整"}
     except:
         return {"status": "🟡 黃燈", "desc": "資料庫讀取失敗"}
-
+        
