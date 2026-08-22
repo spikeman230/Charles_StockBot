@@ -16,6 +16,39 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 FINMIND_TOKEN = os.getenv("FINMIND_TOKEN")
 
+def fetch_stock_robust(sym: str, start_date: str, fetcher: NOCDataFetcher, db: NOCDatabase):
+    """
+    雙重保障抓取機制：
+    1. 嘗試使用 NOCDataFetcher (FinMind) 寫入
+    2. 若失敗或無數據，自動改用 yfinance 抓取並備援寫入 SQLite
+    """
+    # 防護 1: 嘗試透過預設流程抓取
+    try:
+        fetcher.fetch_and_store_stock_data(sym, start_date, db)
+    except Exception as e:
+        logger.warning(f"⚠️ {sym} 透過預設 Fetcher 抓取失敗: {e}")
+
+    # 防護 2: 驗證資料庫是否有資料，若無資料則調用 yfinance 強制補給
+    try:
+        df = db.get_stock_dataframe(sym, days=5)
+        if df is None or df.empty:
+            logger.info(f"🔄 觸發 yfinance 備援機制補給: {sym}")
+            ticker = yf.Ticker(sym)
+            hist = ticker.history(period="10d")
+            if not hist.empty:
+                import sqlite3
+                with sqlite3.connect(db.db_path) as conn:
+                    for idx, row in hist.iterrows():
+                        date_str = idx.strftime("%Y-%m-%d")
+                        conn.execute('''
+                            INSERT OR REPLACE INTO stock_prices (symbol, date, open, high, low, close, volume, adj_close)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (sym, date_str, row['Open'], row['High'], row['Low'], row['Close'], int(row['Volume']), row['Close']))
+                logger.info(f"✅ {sym} 透過 yfinance 成功補給寫入資料庫！")
+            else:
+                logger.error(f"❌ {sym} Yahoo Finance 亦無數據（可能代號不符或興櫃/暫停交易）")
+    except Exception as e:
+        logger.error(f"❌ 備援寫入 {sym} 時發生錯誤: {e}")
 
 # 掃描池（與您的雷達清單相同）
 SCAN_LIST : list = [
@@ -89,24 +122,35 @@ SCAN_LIST : list = [
 ]
 
 if __name__ == "__main__":
-    print("?? 開始執行 NOC 盤後戰情資料庫補給作業 (SQLite 增量版)...")
+    logger.info("🚀 開始執行 NOC 盤後戰情資料庫補給作業 (250 檔對齊版)...")
     db = NOCDatabase()
     fetcher = NOCDataFetcher(token=FINMIND_TOKEN)
 
-    start_date = (datetime.datetime.now() - datetime.timedelta(days=3)).strftime("%Y-%m-%d")
+    # 延長日期範圍至 10 天，防止連假或週末抓不到數據
+    start_date = (datetime.datetime.now() - datetime.timedelta(days=10)).strftime("%Y-%m-%d")
+
+    # 去重檢查 (維持 250 檔不重複標的)
+    target_stocks = list(dict.fromkeys(SCAN_LIST))
+    logger.info(f"📊 鎖定 {len(target_stocks)} 檔目標（不重複），準備開始日常補給！")
 
     try:
-        print("1?? 正在更新大盤指數與外資期貨空單數據...")
+        logger.info("1. 正在更新大盤指數與市場海象數據...")
         fetcher.fetch_market_health_data(start_date, db)
 
-        target_stocks = list(set([s for s in SCAN_LIST]))
-        print(f"?? 鎖定 {len(target_stocks)} 檔目標，準備開始日常補給！")
+        logger.info("2. 開始逐檔精算個股盤後數據...")
+        for idx, sym in enumerate(target_stocks, 1):
+            fetch_stock_robust(sym, start_date, fetcher, db)
+            time.sleep(0.3)  # 適當間隔，避免請求過快被 API Ban
 
-        for sym in target_stocks:
-            fetcher.fetch_and_store_stock_data(sym, start_date, db)
-            time.sleep(0.5)
+        # 計算資料庫中實際存有多少檔股票
+        import sqlite3
+        with sqlite3.connect(db.db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(DISTINCT symbol) FROM stock_prices")
+            distinct_count = cur.fetchone()[0]
 
-        print("\\\\n? 戰情資料庫補給完畢！雷達彈藥充足！")
+        logger.info(f"\n🎉 戰情資料庫補給完畢！資料庫目前實存不重複標的共：{distinct_count} 檔！")
+
     except Exception as e:
-        print(f"\\\\n?? 補給過程發生錯誤: {e}")
+        logger.error(f"\n❌ 補給過程發生未預期錯誤: {e}")
 
