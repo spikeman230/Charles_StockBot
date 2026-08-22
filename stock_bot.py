@@ -804,7 +804,7 @@ if MY_PORTFOLIO:
                 if sym_state.entry > 0:
                     profit_pct = (sym_state.highest_price - sym_state.entry) / sym_state.entry * 100
                     if profit_pct >= 8.0:
-                    noc_state[sym].trailing_stop = sym_state.entry
+                        noc_state[sym].trailing_stop = sym_state.entry
                     else:
                         noc_state[sym].trailing_stop = final_stop
                 else:
