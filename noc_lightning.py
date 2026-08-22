@@ -41,7 +41,7 @@ logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 class LightningConfig:
     MAX_WORKERS : int = int(os.environ.get("MAX_WORKERS", "5"))
     TARGET_FILE : str = "lightning_targets.json"
-SCAN_LIST: list = [
+    SCAN_LIST: list = [
     # =========================================================
     # 區塊 1：總司令旗艦權值股 (共 50 檔，保留 0050 作為大盤基準)
     # =========================================================
