@@ -1,6 +1,6 @@
 # =============================================================================
-# NOC 決策回顧引擎 (Decision Review Engine) v2.0 (SQLite 高速本地版)
-# 用途：驗證過去決策的準確性，統計各訊號的勝率與報酬
+# NOC 決策回顧引擎 (Decision Review Engine) v2.1 (精準過濾字串修正版)
+# 用途：驗證過去真實買進/建倉決策的準確性，排除「尚未觸發佈局點」與「停損防守」等雜訊
 # 執行方式：python noc_review_engine.py
 # 輸出：decision_review.csv + 統計報告（終端機顯示）
 # =============================================================================
@@ -8,7 +8,6 @@
 import pandas as pd
 import numpy as np
 import sqlite3
-from datetime import datetime, timedelta
 import os
 import sys
 import logging
@@ -21,7 +20,7 @@ DB_PATH = "noc_warroom.db"
 LOG_FILE = "noc_review.log"
 REVIEW_CSV = "decision_review.csv"
 N_DAYS_LIST = [1, 5, 10, 20]           # 檢視多個時間框架
-STOP_LOSS_PCT = 0.95                   # 假設停損為買入價的 -5%
+STOP_LOSS_PCT = 0.95                   # 假設硬性停損為買入價的 -5%
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,7 +82,6 @@ def analyze_decision_fast(row: pd.Series, df_prices: pd.DataFrame) -> Optional[D
     if pd.isna(entry_price) or entry_price <= 0:
         return None
 
-    # 抓取該標的在決策日之後的所有交易日
     stock_future = df_prices[
         (df_prices["symbol"] == symbol) & 
         (df_prices["date"] > decision_date)
@@ -103,7 +101,6 @@ def analyze_decision_fast(row: pd.Series, df_prices: pd.DataFrame) -> Optional[D
         "行動指令": row.get("行動指令", "未知"),
     }
 
-    # 計算各時間框架指標
     for n in N_DAYS_LIST:
         if len(stock_future) >= n:
             window = stock_future.iloc[:n]
@@ -127,22 +124,36 @@ def analyze_decision_fast(row: pd.Series, df_prices: pd.DataFrame) -> Optional[D
     return result
 
 # ============================================================================
-# 4. 主流程
+# 4. 主流程 (修復統計過濾關鍵字)
 # ============================================================================
 def main():
     start_time = time.time()
-    logger.info("🚀 啟動 NOC 決策回顧引擎 (SQLite 本地極速版)...")
+    logger.info("🚀 啟動 NOC 決策回顧引擎 (修復精確過濾版)...")
     
     df_decisions = load_decision_log()
     df_prices = preload_price_data()
 
-    # 過濾具操作意義的決策
-    interesting_actions = ["建倉", "試單", "波段", "佈局", "長線鎖籌", "加碼", "扣款", "獲利巡航", "浮虧防禦", "洗盤耐受", "戰術撤離"]
-    df_target = df_decisions[df_decisions["行動指令"].astype(str).str.contains("|".join(interesting_actions), na=False)]
-    logger.info(f"🎯 共篩選出 {len(df_target)} 筆具操作意義的決策，開始批次運算...")
+    # 🔥 核心修正 1：鎖定真實「買進/試單」指令，徹底排除觀望與停損
+    real_buy_keywords = [
+        "起漲", "試單", "建倉", "金叉", "旱地拔蔥", "妖股", 
+        "ABCX", "伏擊", "突破關鍵價位", "波段抱牢"
+    ]
+    
+    # 🔥 核心修正 2：明確排除觀望、防守與停損指令
+    exclude_keywords = [
+        "尚未觸發佈局點", "趨勢追蹤中", "戰術撤離", "洗盤耐受", 
+        "強制攔截", "禁止盲目開新倉", "停損變現"
+    ]
+
+    action_series = df_decisions["行動指令"].astype(str)
+    is_buy_signal = action_series.str.contains("|".join(real_buy_keywords), na=False)
+    is_excluded = action_series.str.contains("|".join(exclude_keywords), na=False)
+
+    df_target = df_decisions[is_buy_signal & ~is_excluded].copy()
+    logger.info(f"🎯 精準篩選出 {len(df_target)} 筆真實進場決策 (已剃除觀望/撤離/防守紀錄)，開始計算...")
 
     if len(df_target) == 0:
-        logger.warning("沒有符合條件的決策，結束")
+        logger.warning("沒有符合條件的真實進場決策，結束")
         return
 
     results = []
@@ -161,7 +172,7 @@ def main():
 
     # ============ 產生統計摘要 ============
     print("\n" + "="*60)
-    print("NOC 戰情室決策績效統計摘要")
+    print("NOC 戰情室【真實買進決策】績效統計摘要")
     print("="*60)
 
     # 依「戰場預判」分類統計
@@ -184,7 +195,7 @@ def main():
 
     # 總體統計
     print("\n" + "─"*40)
-    print("📈 總體績效（所有決策合併）")
+    print("📈 真實進場總體績效（排除觀望/防守/撤離）")
     for n in N_DAYS_LIST:
         col_final = f"{n}D_最終漲幅%"
         if col_final in df_results:
