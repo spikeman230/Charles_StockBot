@@ -2,12 +2,20 @@
 import datetime
 import os
 import time
+import re
+import logging
+import yfinance as yf
 from dotenv import load_dotenv
 
 from noc_core import NOCDatabase, NOCDataFetcher
+from radar_scan_list import SCAN_LIST
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 FINMIND_TOKEN = os.getenv("FINMIND_TOKEN")
+
 
 # 掃描池（與您的雷達清單相同）
 SCAN_LIST : list = [
