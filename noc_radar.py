@@ -1,9 +1,10 @@
 # =============================================================================
-# NOC 游擊隊雷達 (noc_radar.py) v17.3
+# NOC 游擊隊雷達 (noc_radar.py) v18.0
 # 整合：初升段突破、起漲攻擊區、旱地拔蔥、狙擊金叉、ABCX回踩
 # 新增：台股生存法則（量價結構判讀）
-# 採用與 stock_bot 完全相同的數據預處理（含動態量能、法人籌碼合併）
-# 紅燈模式：無視紅燈，強制執行掃描以提前捕捉上升股（先清空火種清單）
+# 採用 Hybrid Data Fetcher (SQLite 歷史底庫 + yfinance 當日即時拼接)
+# 獨立掃描清單：從 stock_scan_list.py 載入 SCAN_LIST
+# 紅燈模式：無視紅燈，強制掃描（先清空火種清單，最後強制輸出空清單）
 # =============================================================================
 
 import yfinance as yf
@@ -18,10 +19,30 @@ import re
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 from dotenv import load_dotenv
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List, Union
+
+# =============================================================================
+# 【修正 1】日誌設定必須在「匯入 SCAN_LIST」之前，確保 logger 已定義
+# =============================================================================
+load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+
+# ===== 現在才載入獨立掃描清單（logger 已可用） =====
+try:
+    from stock_scan_list import SCAN_LIST
+except ImportError:
+    logger.error("❌ 找不到 stock_scan_list.py，請確保該檔案存在於同目錄下。")
+    SCAN_LIST = [] # 空清單避免崩潰
 
 from noc_core import (
-    NOCStrategy, NOCDatabase,
+    NOCStrategy, NOCDatabase, NOCDataFetcher,
     assess_volume_turnover_signal,
     is_overheated,
     detect_initial_breakout,
@@ -33,91 +54,12 @@ from noc_core import (
     analyze_volume_price_pattern
 )
 
-load_dotenv()
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
-logging.getLogger('yfinance').setLevel(logging.CRITICAL)
-
 # 環境變數（與 stock_bot 共用）
 FINMIND_TOKEN = os.getenv("FINMIND_TOKEN")
 
 class RadarConfig:
     MAX_WORKERS : int = int(os.environ.get("MAX_WORKERS", "5"))
     TARGET_FILE : str = "radar_targets.json"
-    SCAN_LIST: list = [
-    # =========================================================
-    # 區塊 1：總司令旗艦權值股 (共 50 檔，保留 0050 作為大盤基準)
-    # =========================================================
-    "0050.TW", "2330.TW", "2317.TW", "2454.TW", "2382.TW", "2308.TW", "3231.TW", "3037.TW",
-    "2303.TW", "3008.TW", "3034.TW", "3711.TW", "2357.TW", "2395.TW", "2408.TW", "2353.TW",
-    "2379.TW", "4938.TW", "2301.TW", "2345.TW", "2324.TW", "3661.TW", "6669.TW", "3714.TW",
-    "2881.TW", "2882.TW", "2891.TW", "2886.TW", "2884.TW", "2892.TW", "2885.TW", "2880.TW",
-    "2883.TW", "2887.TW", "5871.TW", "2890.TW", "5880.TW", "2002.TW", "1216.TW", "1301.TW",
-    "1303.TW", "1326.TW", "2912.TW", "9904.TW", "2603.TW", "2609.TW", "2615.TW", "2207.TW",
-    "1101.TW", "1102.TW",
-
-    # =========================================================
-    # 區塊 2：高動能科技、AI、半導體、光通訊與機器人 (共 106 檔)
-    # =========================================================
-    "2356.TW", "3163.TWO", "5388.TW", "8299.TWO", "3260.TWO", "2377.TW", "2383.TW", "3017.TW",
-    "2352.TW", "3443.TW", "3529.TWO", "3293.TWO", "6488.TWO", "8069.TWO", "6274.TWO", "6239.TW",
-    "3044.TW", "2449.TW", "2344.TW", "2409.TW", "3481.TW", "6116.TW", "4958.TW", "6176.TW",
-    "3532.TW", "2371.TW", "2404.TW", "3702.TW", "8046.TW", "5483.TWO", "3105.TWO", "5347.TWO",
-    "6147.TWO", "6214.TW", "2313.TW", "2368.TW", "3013.TW", "3019.TW", "3042.TW", "3324.TWO",
-    "3533.TW", "3583.TW", "3653.TW", "4966.TWO", "5269.TW", "6269.TW", "6415.TW", "6531.TW",
-    "8016.TW", "8081.TW", "8150.TW", "3376.TW", "3035.TW", "3227.TWO", "3131.TWO", "2451.TW",
-    "5469.TW", "3413.TW", "3450.TW", "4919.TW",
-    # [散熱與 AI 機殼 6檔]
-    "2421.TW", "3483.TWO", "8996.TW", "8210.TW", "6117.TW", "5426.TWO",
-    # [半導體、矽智財與 CoWoS 設備 16檔]
-    "6643.TWO", "3228.TWO", "3014.TW", "4961.TW", "6799.TW", "3587.TWO", "3289.TWO", "6146.TWO", 
-    "6187.TWO", "6196.TW", "6640.TWO", "5443.TWO", "6139.TW", "2464.TW", "2388.TW", "2439.TW",
-    # [被動元件與 PCB 5檔]
-    "2327.TW", "2492.TW", "3026.TW", "6213.TW", "6153.TW",
-    # [網通與矽光子/光通訊 9檔 - 補入 3081.TWO 聯亞]
-    "3596.TW", "3380.TW", "6285.TW", "4979.TWO", "4908.TWO", "4977.TW", "6442.TW", "8114.TW", "3081.TWO",
-    # [機器人、智慧自動化與先進裝備 10檔]
-    "1590.TW", "2359.TW", "6188.TWO", "4583.TW", "8374.TW", "2365.TW", "4510.TWO", "3680.TWO", 
-    "6667.TWO", "3167.TW",
-
-    # =========================================================
-    # 區塊 3：重電、電纜與綠能 (共 27 檔)
-    # =========================================================
-    "1513.TW", "1514.TW", "1519.TW", "1605.TW", "1504.TW", "1503.TW", "1515.TW", 
-    "3708.TW", "1609.TW", "1608.TW", "1611.TW", "1612.TW", "1618.TW", "9958.TW", "3712.TW",
-    "6409.TW", "1582.TW", "1522.TW", "1532.TW", "4536.TW", "8926.TW", "6869.TW", "1537.TW",
-    # [太陽能與儲能政策概念股 4檔]
-    "6806.TW", "6443.TW", "3576.TW", "6477.TW",
-
-    # =========================================================
-    # 區塊 4：生技醫療與美容保健 (共 25 檔 - 補入順藥 6535.TWO)
-    # =========================================================
-    "6472.TW", "6446.TW", "1795.TW", "4142.TW", "1707.TW", "1720.TW", "4123.TWO", 
-    "1762.TW", "4104.TW", "3176.TWO", "4114.TWO", "4736.TW", "4162.TWO", "6547.TWO", "6561.TWO", 
-    "4128.TWO", "4105.TWO", "1736.TW", "8436.TWO", "6491.TW", "4137.TW", "6666.TW", "1733.TW", 
-    "4743.TWO", "6535.TWO",
-
-    # =========================================================
-    # 區塊 5：傳產塑化、汽車、軍工航太與航運觀光 (共 42 檔)
-    # =========================================================
-    # [汽車零組件 13 檔]
-    "1536.TW", "2231.TW", "1521.TW", "1525.TW", "2228.TW", "2115.TW", "2201.TW", "2204.TW",
-    "3346.TW", "1339.TW", "6279.TWO", "1524.TW", "1568.TW",
-    # [傳產塑化化學 16 檔 - 補入東聯 1711 與長興 1717]
-    "1314.TW", "1717.TW", "1304.TW", "1308.TW", "1309.TW", "1312.TW", "1305.TW", "1710.TW",
-    "1704.TW", "4722.TW", "4739.TW", "1718.TW", "1319.TW", "6605.TW", "7736.TW", "1711.TW",
-    # [造船與軍工航太 5 檔]
-    "2208.TW", "2634.TW", "4541.TWO", "8222.TW", "2646.TW",
-    # [軍工與強勢航太材料 4 檔]
-    "5009.TWO", "3005.TW", "1584.TWO", "3374.TWO",
-    # [航空、散裝航運與內需觀光 4 檔]
-    "2618.TW", "2610.TW", "2637.TW", "2731.TW"
-]
 
 cfg = RadarConfig()
 
@@ -170,53 +112,109 @@ def calculate_chip_signals(hist: pd.DataFrame) -> pd.DataFrame:
     hist["Chip_Status"] = np.select(conds, ["🤝 土洋齊買", "🏦 投信作帳", "📈 法人偏多"], default="➖ 中性/偏空")
     return hist
 
-def get_stock_data_for_radar(symbol: str) -> Optional[pd.DataFrame]:
+# =============================================================================
+# Hybrid Data Fetcher (SQLite 歷史底庫 + yfinance 當日即時拼接)
+# =============================================================================
+def get_hybrid_stock_data(symbol: str, db: NOCDatabase) -> Optional[pd.DataFrame]:
     """
-    與 stock_bot.get_stock_data 完全相同的實作，但無快取。
-    使用 calculate_all_indicators 統一生成所有指標（含 Volume_Ratio_Act、真實 5VMA 等）
+    混合數據獲取：
+    1. 從本地 SQLite 讀取歷史 K 線 (200天)
+    2. 從 yfinance 獲取最新 2 天即時數據
+    3. 按日期合併／覆蓋，確保最新
+    4. 補充股本並計算全部技術指標
     """
     try:
-        stock = yf.Ticker(symbol)
-        info = stock.info
-        shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
-        hist = stock.history(period="8mo").dropna(subset=["Close"])
-        if len(hist) < 60:
+        # ---- 1. 讀取本地歷史數據 ----
+        hist_local = db.get_stock_dataframe(symbol, days=200)
+        if hist_local is not None and len(hist_local) >= 60:
+            # 本地數據充足，僅獲取最新 2 天即時數據
+            try:
+                ticker = yf.Ticker(symbol)
+                hist_live = ticker.history(period="2d")
+                if hist_live.empty:
+                    # yfinance 無新數據，直接使用本地
+                    logger.debug(f"⚠️ {symbol} yfinance 無即時數據，使用本地底庫。")
+                    hist = hist_local.copy()
+                else:
+                    # 合併：以本地為基礎，用即時數據覆蓋/追加
+                    hist_local = hist_local.tz_localize(None) if hist_local.index.tz is not None else hist_local
+                    hist_live = hist_live.tz_localize(None) if hist_live.index.tz is not None else hist_live
+                    # 過濾掉本地已有日期的即時數據（避免重複）
+                    hist_live_new = hist_live[~hist_live.index.isin(hist_local.index)]
+                    # 若有相同日期，則以即時數據覆蓋（保留最新）
+                    hist_combined = hist_local.copy()
+                    for idx in hist_live.index:
+                        if idx in hist_combined.index:
+                            hist_combined.loc[idx] = hist_live.loc[idx]
+                        else:
+                            hist_combined = pd.concat([hist_combined, hist_live.loc[[idx]]])
+                    # 排序
+                    hist = hist_combined.sort_index()
+            except Exception as e:
+                logger.warning(f"⚠️ {symbol} yfinance 即時資料獲取失敗 ({e})，使用本地底庫。")
+                hist = hist_local.copy()
+        else:
+            # ---- 2. 本地數據不足，下載完整 8 個月數據 ----
+            logger.debug(f"⏳ {symbol} 本地數據不足 ({len(hist_local) if hist_local is not None else 0} 天)，下載完整歷史...")
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="8mo").dropna(subset=["Close"])
+            if hist.empty:
+                logger.debug(f"❌ {symbol} yfinance 無任何數據")
+                return None
+            # 存入資料庫（非同步，但此處直接存）
+            try:
+                start_date = (datetime.datetime.now() - datetime.timedelta(days=240)).strftime("%Y-%m-%d")
+                fetcher = NOCDataFetcher(token=FINMIND_TOKEN)
+                fetcher.fetch_and_store_stock_data(symbol, start_date, db)
+            except Exception as e:
+                logger.warning(f"⚠️ {symbol} 存入資料庫失敗: {e}")
+
+        # ---- 3. 數據有效性檢查 ----
+        if hist is None or len(hist) < 60:
+            logger.debug(f"❌ {symbol} 數據不足 60 天，無法分析")
             return None
 
-        hist["Shares_Out"] = shares_out if shares_out else np.nan
-        hist["Date_Key"] = hist.index.date
+        # ---- 4. 補齊股本資訊 ----
+        shares_out = db.get_shares_out(symbol)
+        if shares_out <= 0:
+            try:
+                ticker = yf.Ticker(symbol)
+                info = ticker.info
+                shares_out = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
+                if shares_out:
+                    db.save_shares_out(symbol, shares_out)
+                else:
+                    shares_out = np.nan
+            except:
+                shares_out = np.nan
+        hist['Shares_Out'] = shares_out if shares_out else np.nan
 
-        # 合併法人籌碼
+        # ---- 5. 法人籌碼合併 ----
+        hist['Date_Key'] = hist.index.date
         if FINMIND_TOKEN and (".TW" in symbol or ".TWO" in symbol):
             chip_df = get_finmind_chip_data(symbol, (datetime.datetime.now() - datetime.timedelta(days=200)).strftime("%Y-%m-%d"))
             if not chip_df.empty:
                 hist = hist.merge(chip_df, left_on="Date_Key", right_index=True, how="left").ffill().fillna(0)
 
-        # ========== 使用核心引擎的統一指標計算 ==========
+        # ---- 6. 計算全套技術指標 ----
         hist = calculate_all_indicators(hist, symbol=symbol, token=FINMIND_TOKEN)
-
-        # 補上籌碼信號
         hist = calculate_chip_signals(hist)
 
-        # 計算狙擊金叉與旱地拔蔥（calculate_all_indicators 未包含）
+        # ---- 7. 計算狙擊金叉與旱地拔蔥 ----
         sniper_val = calculate_sniper_signal(hist)
         hist['Sniper_Signal'] = sniper_val
-
         td_temp = hist.iloc[-1]
         monster_val = calculate_monster_breakout(hist, td_temp)
         hist['Monster_Breakout'] = monster_val
 
-        # 補充其他可能遺漏的指標（如 ATR、RSI 等，calculate_all_indicators 已包含 ATR）
-        # 此處不再重複計算
-
         return hist
     except Exception as e:
-        logger.debug(f"獲取 {symbol} 數據失敗: {e}")
+        logger.debug(f"❌ 獲取 {symbol} 數據異常: {e}")
         return None
 # ---------- 雷達掃描函數 ----------
-def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
+def scan_stock_for_wave(symbol: str, strategy: NOCStrategy, db: NOCDatabase) -> dict:
     try:
-        hist = get_stock_data_for_radar(symbol)
+        hist = get_hybrid_stock_data(symbol, db)
         if hist is None:
             return None
 
@@ -325,35 +323,71 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy) -> dict:
     except Exception as e:
         logger.debug(f"掃描 {symbol} 異常: {e}")
         return None
-
 # ---------- 主程式 ----------
 if __name__ == "__main__":
-    logger.info("⚡ NOC 游擊隊雷達 v17.2 (含 ABCX 回踩 + 量價口訣 + 紅燈無視) 啟動...")
+    logger.info("⚡ NOC 游擊隊雷達 v18.0 (Hybrid Data + 獨立 Scan List) 啟動...")
     start_time = time.time()
+    
+    # ---- 解析 SCAN_LIST ----
+    if isinstance(SCAN_LIST, dict):
+        # 字典格式：{"2330.TW": "台積電", ...}
+        symbols = list(SCAN_LIST.keys())
+        logger.info(f"📋 載入 {len(symbols)} 檔標的 (來自 dict)")
+    elif isinstance(SCAN_LIST, list):
+        symbols = SCAN_LIST
+        logger.info(f"📋 載入 {len(symbols)} 檔標的 (來自 list)")
+    else:
+        logger.error("❌ SCAN_LIST 格式錯誤，須為 dict 或 list")
+        symbols = []
+
+    if not symbols:
+        logger.warning("⚠️ SCAN_LIST 為空，結束程式")
+        exit(0)
+
     strategy = NOCStrategy()
+    db = NOCDatabase()
+
     macro = strategy.get_macro_status()
     
-    # ===== 紅燈處理：改為先清空檔案，再繼續掃描 =====
+    # ===== 【修正 2】紅燈處理：記錄旗標，清空檔案，但最後強制輸出空清單 =====
+    is_red_light = False
     if macro["status"] == "🔴 紅燈":
         logger.warning("🚨🚨🚨 警告：目前大盤處於 🔴 紅燈（空頭極端危險期）！已依據總司令作戰協議放寬防線限制，雷達將無視紅燈，強制執行掃描以提前捕捉上升股！")
-        # 先清空火種清單，確保無舊資料殘留，再繼續執行掃描
         with open(cfg.TARGET_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f)
+        is_red_light = True
         # 不 exit，繼續往下執行掃描
 
-    logger.info(f"📡 大盤{macro['status']}，開始掃描 {len(cfg.SCAN_LIST)} 檔")
+    logger.info(f"📡 大盤{macro['status']}，開始掃描 {len(symbols)} 檔")
     found = []
     with ThreadPoolExecutor(max_workers=cfg.MAX_WORKERS) as ex:
-        futures = {ex.submit(scan_stock_for_wave, sym, strategy): sym for sym in cfg.SCAN_LIST}
+        futures = {ex.submit(scan_stock_for_wave, sym, strategy, db): sym for sym in symbols}
         for future in as_completed(futures, timeout=300):
-            r = future.result()
-            if r:
-                found.append(r)
-                logger.info(f"🎯 火種: {r['symbol']} 收{r['close']} | {r['Signal']} | {r['trello_tip']}")
+            try:
+                r = future.result()
+                if r:
+                    found.append(r)
+                    logger.info(f"🎯 火種: {r['symbol']} 收{r['close']} | {r['Signal']} | {r['trello_tip']}")
+            except Exception as e:
+                logger.error(f"❌ 掃描 {futures[future]} 時發生例外: {e}")
 
     logger.info(f"掃描完成，耗時 {time.time()-start_time:.1f} 秒，共 {len(found)} 檔")
-    radar_dict = {t["symbol"]: {"name": t["name"], "tactics": t["Signal"], "trello_tip": t["trello_tip"]} for t in found}
+    
+    # ===== 【修正 2】寫入 JSON，若紅燈則強制寫入空字典 =====
+    if is_red_light:
+        radar_dict = {} # 強制清空
+        logger.info("🔴 紅燈模式：強制輸出空火種清單，確保無舊資料殘留。")
+    else:
+        radar_dict = {
+            t["symbol"]: {
+                "name": t["name"],
+                "tactics": t["Signal"],
+                "trello_tip": t["trello_tip"]
+            } for t in found
+        }
+    
     with open(cfg.TARGET_FILE, "w", encoding="utf-8") as f:
         json.dump(radar_dict, f, ensure_ascii=False, indent=4)
-    logger.info(f"✅ 火種已寫入 {cfg.TARGET_FILE}")
-
+    
+    if not is_red_light:
+        logger.info(f"✅ 火種已寫入 {cfg.TARGET_FILE}")
