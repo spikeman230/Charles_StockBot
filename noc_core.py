@@ -216,44 +216,6 @@ def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series, lookback: int = 2
     return False, "", 0
 
 # =============================================================================
-# 5-1. 精準買點判斷引擎 (ABCX回踩 + 起漲第一棒)
-# =============================================================================
-def detect_precision_buy_point(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool, str, float]:
-    """
-    精準買點偵測，回傳 (是否有效, 戰術名稱, 防守價)
-    戰術A: ABCX極致量縮回踩 (優先)
-    戰術B: 起漲第一棒 (旱地拔蔥)
-    """
-    # 基礎多頭架構：股價站上月線與季線
-    close = td['Close']
-    ma20 = td.get('20MA', 0)
-    ma60 = td.get('60MA', 0)
-    if pd.isna(ma20) or pd.isna(ma60):
-        return False, "", 0.0
-    if close <= ma20 or close <= ma60:
-        return False, "", 0.0
-
-    # 過熱過濾
-    overheated, reason = is_entry_overheated(td)
-    if overheated:
-        logger.debug(f"買點過熱過濾: {reason}")
-        return False, "", 0.0
-
-    vol_ratio = td.get('Volume_Ratio', 1.0)
-    bias_20ma = td.get('Bias_20MA', 0.0)
-
-    # ---------- 戰術A：ABCX極致量縮回踩 ----------
-    # A點條件：過去3~10天內有放量紅K (Volume > 1.5 * 5VMA 且 Close >= Open)
-    lookback_start = max(0, len(hist) - 10)
-    lookback_end = max(0, len(hist) - 3)
-    recent_hist = hist.iloc[lookback_start:lookback_end] if lookback_end > lookback_start else pd.DataFrame()
-    if not recent_hist.empty:
-        # 使用真實5VMA，注意計算移位
-        vma5_series = hist['5VMA'].rolling(5).mean() # 但我們直接用hist的5VMA
-        # 針對recent_hist中的每一日，判斷是否放量紅K
-        a_point = None
-        for idx in recent_hist.index:
-# =============================================================================
 # 5-1. 精準買點判斷引擎 (ABCX 3.0 真主力洗盤伏擊 + 起漲第一棒)
 # =============================================================================
 def detect_precision_buy_point(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool, str, float]:
