@@ -253,23 +253,101 @@ def detect_precision_buy_point(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool,
         # 針對recent_hist中的每一日，判斷是否放量紅K
         a_point = None
         for idx in recent_hist.index:
+# =============================================================================
+# 5-1. 精準買點判斷引擎 (ABCX 3.0 真主力洗盤伏擊 + 起漲第一棒)
+# =============================================================================
+def detect_precision_buy_point(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool, str, float]:
+    """
+    精準買點偵測，回傳 (是否有效, 戰術名稱, 防守價)
+    戰術A: ABCX 3.0 真主力洗盤伏擊 (優先) — 含三濾網
+    戰術B: 起漲第一棒 (旱地拔蔥)
+    """
+    # 基礎多頭架構：股價站上月線與季線
+    close = td['Close']
+    ma20 = td.get('20MA', 0)
+    ma60 = td.get('60MA', 0)
+    if pd.isna(ma20) or pd.isna(ma60):
+        return False, "", 0.0
+    if close <= ma20 or close <= ma60:
+        return False, "", 0.0
+
+    # 過熱過濾
+    overheated, reason = is_entry_overheated(td)
+    if overheated:
+        logger.debug(f"買點過熱過濾: {reason}")
+        return False, "", 0.0
+
+    vol_ratio = td.get('Volume_Ratio', 1.0)
+    bias_20ma = td.get('Bias_20MA', 0.0)
+
+    # ---------- 戰術A：ABCX 3.0 真主力洗盤伏擊 ----------
+    lookback_start = max(0, len(hist) - 10)
+    lookback_end = max(0, len(hist) - 3)
+    recent_hist = hist.iloc[lookback_start:lookback_end] if lookback_end > lookback_start else pd.DataFrame()
+    if not recent_hist.empty:
+        a_point = None
+        for idx in recent_hist.index:
             row = recent_hist.loc[idx]
-            # 找尋最近期的滿足條件
             if row['Volume'] > row['5VMA'] * 1.5 and row['Close'] >= row['Open']:
                 a_point = row
-                break # 取最近的一個
+                break
         if a_point is not None:
-            # X點條件：今日量縮 < 0.7 * 昨日5VMA
             vma5_yest = hist['5VMA'].shift(1).iloc[-1]
             if not pd.isna(vma5_yest) and td['Volume'] < vma5_yest * 0.7:
-                # 支撐條件：Bias_20MA 介於 0% ~ 3.5%
                 if 0 <= bias_20ma <= 3.5:
-                    # 防守價 = max(A點低點, 20MA * 0.985)
-                    stop_loss = max(a_point['Low'], ma20 * 0.985)
-                    return True, "🌀 ABCX極致量縮回踩", round(stop_loss, 2)
+                    # ===== ABCX 3.0 三道濾網 =====
+                    # 濾網1：右側止跌確認（拒絕左側接刀）
+                    is_red = td['Close'] >= td['Open']
+                    low = td['Low']
+                    high = td['High']
+                    open_price = td['Open']
+                    close_price = td['Close']
+                    lower_shadow = (min(open_price, close_price) - low) / (high - low + 1e-6)
+                    if not (is_red or lower_shadow >= 0.25):
+                        logger.debug(f"ABCX 3.0 濾網1失敗: 非紅K且下影線不足 {lower_shadow:.2f}")
+                        filter1_pass = False
+                    else:
+                        filter1_pass = True
+
+                    # 濾網2：主力籌碼未渙散（法人鎖籌）
+                    trust_streak = td.get('Trust_Streak', 0)
+                    chip_status = td.get('Chip_Status', '')
+                    is_bearish = "偏空" in chip_status or "空頭" in chip_status
+                    if trust_streak < -1 or is_bearish:
+                        logger.debug(f"ABCX 3.0 濾網2失敗: Trust_Streak={trust_streak}, Chip_Status={chip_status}")
+                        filter2_pass = False
+                    else:
+                        filter2_pass = True
+
+                    # 濾網3：實質基本面/題材後盾（業績動能）
+                    # 先解析 YoY（可能為字串 "-5.20%" 或 "15.30%" 或 "N/A"）
+                    yoy_raw = td.get('YoY', None)
+                    yoy_num = None
+                    if yoy_raw is not None:
+                        if isinstance(yoy_raw, (int, float)):
+                            yoy_num = yoy_raw
+                        elif isinstance(yoy_raw, str):
+                            # 嘗試解析字串中的數字
+                            import re
+                            cleaned = yoy_raw.strip()
+                            if cleaned.upper() != "N/A" and cleaned != "":
+                                match = re.search(r'([-+]?\\d*\\.?\\d+)', cleaned)
+                                if match:
+                                    yoy_num = float(match.group(1))
+                    # 若有明確數值且 <= 0 則攔截
+                    if yoy_num is not None and yoy_num <= 0:
+                        logger.debug(f"ABCX 3.0 濾網3失敗: YoY={yoy_raw} (解析為 {yoy_num}) 無正成長")
+                        filter3_pass = False
+                    else:
+                        # 無數據或正成長，放行
+                        filter3_pass = True
+
+                    # 三濾網全數通過才視為有效買點
+                    if filter1_pass and filter2_pass and filter3_pass:
+                        stop_loss = max(a_point['Low'], ma20 * 0.985)
+                        return True, "🌀 ABCX真主力洗盤 (籌碼鎖定+量縮止跌)", round(stop_loss, 2)
 
     # ---------- 戰術B：起漲第一棒 (旱地拔蔥) ----------
-    # 昨日收盤 < 昨日20MA，今日放量紅K突破20MA
     if len(hist) >= 2:
         prev_close = hist['Close'].iloc[-2]
         prev_ma20 = hist['20MA'].iloc[-2]
