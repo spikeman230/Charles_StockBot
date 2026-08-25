@@ -1,114 +1,128 @@
 # init_db.py
+# NOC 戰情室初始建庫腳本 v2.0
+# 功能：從 stock_scan_list 載入監控清單，抓取 400 天歷史 K 線與大盤數據至 noc_warroom.db
+# =============================================================================
 import datetime
 import os
 import time
+import logging
+import re
+from typing import List, Union, Dict
+
 from dotenv import load_dotenv
 
-# 引入 NOC 核心防禦與後勤模組
 from noc_core import NOCDatabase, NOCDataFetcher
+
+# ===== 日誌設定 =====
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+
+# ===== 從獨立設定檔載入監控清單 =====
+try:
+    from stock_scan_list import SCAN_LIST
+except ImportError:
+    logger.error("❌ 找不到 stock_scan_list.py，請確保該檔案存在於同目錄下。")
+    SCAN_LIST = []  # 避免崩潰
 
 load_dotenv()
 FINMIND_TOKEN = os.getenv("FINMIND_TOKEN")
 
-# === 1. 直接寫死掃描池 (200 檔旗艦級波段觀察池) ===
-SCAN_LIST : list = [
-    # =========================================================
-    # 區塊 1：總司令旗艦權值股 (共 50 檔，保留 0050 作為大盤基準)
-    # =========================================================
-    "0050.TW", "2330.TW", "2317.TW", "2454.TW", "2382.TW", "2308.TW", "3231.TW", "3037.TW",
-    "2303.TW", "3008.TW", "3034.TW", "3711.TW", "2357.TW", "2395.TW", "2408.TW", "2353.TW",
-    "2379.TW", "4938.TW", "2301.TW", "2345.TW", "2324.TW", "3661.TW", "6669.TW", "3714.TW",
-    "2881.TW", "2882.TW", "2891.TW", "2886.TW", "2884.TW", "2892.TW", "2885.TW", "2880.TW",
-    "2883.TW", "2887.TW", "5871.TW", "2890.TW", "5880.TW", "2002.TW", "1216.TW", "1301.TW",
-    "1303.TW", "1326.TW", "2912.TW", "9904.TW", "2603.TW", "2609.TW", "2615.TW", "2207.TW",
-    "1101.TW", "1102.TW",
+# ===== 相容 SCAN_LIST 格式 =====
+def parse_scan_list(source: Union[Dict, List]) -> List[str]:
+    """將 SCAN_LIST 轉為純股票代號列表，並過濾非法代號"""
+    if isinstance(source, dict):
+        symbols = list(source.keys())
+    elif isinstance(source, list):
+        symbols = source
+    else:
+        raise TypeError("SCAN_LIST 必須是 dict 或 list")
 
-    # =========================================================
-    # 區塊 2：高動能科技、AI、半導體、光通訊與機器人 (共 105 檔)
-    # =========================================================
-    "2356.TW", "3163.TWO", "5388.TW", "8299.TWO", "3260.TWO", "2377.TW", "2383.TW", "3017.TW",
-    "2352.TW", "3443.TW", "3529.TWO", "3293.TWO", "6488.TWO", "8069.TWO", "6274.TWO", "6239.TW",
-    "3044.TW", "2449.TW", "2344.TW", "2409.TW", "3481.TW", "6116.TW", "4958.TW", "6176.TW",
-    "3532.TW", "2371.TW", "2404.TW", "3702.TW", "8046.TW", "5483.TWO", "3105.TWO", "5347.TWO",
-    "6147.TWO", "6214.TW", "2313.TW", "2368.TW", "3013.TW", "3019.TW", "3042.TW", "3324.TWO",
-    "3533.TW", "3583.TW", "3653.TW", "4966.TWO", "5269.TW", "6269.TW", "6415.TW", "6531.TW",
-    "8016.TW", "8081.TW", "8150.TW", "3376.TW", "3035.TW", "3227.TWO", "3131.TWO", "2451.TW",
-    "5469.TW", "3413.TW", "3450.TW", "4919.TW",
-    # [散熱與 AI 機殼]
-    "2421.TW", "3483.TW", "8996.TW", "8210.TW", "6117.TW", "5426.TWO",
-    # [半導體、矽智財與 CoWoS 設備]
-    "6643.TW", "3228.TWO", "3014.TW", "4961.TW", "6799.TW", "3587.TWO", "3289.TWO", "6146.TWO", 
-    "6187.TWO", "6196.TW", "6640.TWO", "5443.TWO", "6139.TW", "2464.TW", "2388.TW", "2439.TW",
-    # [被動元件與 PCB (含國巨)]
-    "2327.TW", "2492.TW", "3026.TW", "6213.TW", "6153.TW",
-    # [網通與矽光子/光通訊]
-    "3596.TW", "3380.TW", "6285.TW", "4979.TW", "4908.TW", "4977.TW", "6442.TW", "8114.TWO",
-    # [機器人、智慧自動化與先進裝備]
-    "1590.TW", "2359.TW", "6188.TW", "4583.TW", "8374.TW", "2365.TW", "4510.TW", "3680.TW", 
-    "6667.TW", "3167.TW",
-
-    # =========================================================
-    # 區塊 3：重電、電纜與綠能 (共 28 檔)
-    # =========================================================
-    "1513.TW", "1514.TW", "1519.TW", "1605.TW", "1504.TW", "1503.TW", "1515.TW", "1520.TW",
-    "3708.TW", "1609.TW", "1608.TW", "1611.TW", "1612.TW", "1618.TW", "9958.TW", "3712.TW",
-    "6409.TW", "1582.TW", "1522.TW", "1532.TW", "4536.TW", "8926.TW", "6869.TW", "1537.TW",
-    # [太陽能與儲能政策概念股]
-    "6806.TW", "6443.TW", "3576.TW", "6477.TW",
-
-    # =========================================================
-    # 區塊 4：生技醫療與美容保健 (共 25 檔)
-    # =========================================================
-    "6472.TW", "6446.TWO", "1795.TW", "4142.TW", "1701.TW", "1707.TW", "1720.TW", "4123.TWO", 
-    "1762.TW", "4104.TW", "3176.TWO", "4114.TW", "4736.TWO", "4162.TWO", "6547.TWO", "6561.TWO", 
-    "4128.TWO", "4105.TWO", "1736.TW", "8436.TW", "6491.TW", "4137.TW", "6666.TW", "1733.TW", 
-    "4743.TWO",
-
-    # =========================================================
-    # 區塊 5：傳產塑化、汽車、軍工航太與航運觀光 (共 42 檔)
-    # =========================================================
-    # [汽車零組件 13 檔]
-    "1536.TW", "2231.TW", "1521.TW", "1525.TW", "2228.TW", "2115.TW", "2201.TW", "2204.TW",
-    "3346.TW", "1339.TW", "6279.TW", "1524.TW", "1568.TW",
-    # [傳產塑化化學 15 檔 - 已移去重複的 1522.TW，補入台勝科 3532 / 精材 3374]
-    "1314.TW", "1717.TW", "1304.TW", "1308.TW", "1309.TW", "1312.TW", "1305.TW", "1710.TW",
-    "1704.TW", "4722.TW", "4739.TW", "1718.TW", "1319.TW", "6605.TW", "7736.TW",
-    # [造船與軍工航太 5 檔]
-    "2208.TW", "2634.TW", "4541.TW", "8222.TW", "2646.TW",
-    # [軍工與強勢航太材料 5 檔 - 補入 3374.TW]
-    "5009.TW", "3005.TW", "1584.TWO", "8033.TWO", "3374.TW",
-    # [航空、散裝航運與內需觀光 4 檔]
-    "2618.TW", "2610.TW", "2637.TW", "2731.TW"
-]
+    # 過濾：只保留標準台股代號（含 .TW 或 .TWO，且數字部分為純數字）
+    valid_symbols = []
+    for sym in symbols:
+        if not isinstance(sym, str):
+            continue
+        # 若已包含 .TW 或 .TWO，直接保留；否則嘗試補充（但我們不自動補充，只保留已包含的）
+        # 標準台股代號範例：2330.TW, 5347.TWO
+        if '.' in sym:
+            parts = sym.split('.')
+            if len(parts) == 2 and parts[0].isdigit() and parts[1] in ('TW', 'TWO'):
+                valid_symbols.append(sym)
+            else:
+                logger.warning(f"⚠️ 跳過非標準代號: {sym}")
+        else:
+            # 若無後綴，假設為 TW（但原清單大多有後綴，此處保留但不自動添加）
+            logger.warning(f"⚠️ 跳過無後綴代號: {sym}，請補上 .TW 或 .TWO")
+            # 可選擇自動添加，但為嚴謹起見，跳過
+    return list(dict.fromkeys(valid_symbols))  # 去重保留順序
 
 if __name__ == "__main__":
-    print("🚀 啟動 NOC 戰情室「建庫大補丸」歷史資料載入作業 (鋼鐵直寫版)...")
+    logger.info("🚀 啟動 NOC 戰情室「建庫大補丸」歷史資料載入作業 (模組化版)...")
+    
+    # ---- 解析 SCAN_LIST ----
+    try:
+        target_stocks = parse_scan_list(SCAN_LIST)
+    except Exception as e:
+        logger.error(f"❌ SCAN_LIST 格式錯誤: {e}")
+        exit(1)
+
+    if not target_stocks:
+        logger.warning("⚠️ SCAN_LIST 為空或無效代號，結束程式")
+        exit(0)
+
+    logger.info(f"🎯 成功讀取監控清單！最終鎖定 {len(target_stocks)} 檔股票，準備進行 400 天歷史大補給！")
+    logger.info("⚠️ 預計耗時 15-25 分鐘，請耐心等候...")
+
     db = NOCDatabase()
     fetcher = NOCDataFetcher(token=FINMIND_TOKEN)
-    
-    # 建庫大補丸抓取 400 天
     start_date = (datetime.datetime.now() - datetime.timedelta(days=400)).strftime("%Y-%m-%d")
-    
-    try:
-        print("1️⃣ 正在下載大盤與防空歷史數據 (近400天)...")
-        fetcher.fetch_market_health_data(start_date, db)
-        
-        # 2. 自動清洗名單：去除 .TW 與 .TWO，保留純數字給 FinMind，並去重複
-        #target_stocks = list(set([s.split('.')[0] for s in SCAN_LIST if s.split('.')[0].isdigit()]))
-       
-        # 修正：保留完整代號（含 .TW / .TWO）
-        target_stocks = list(set([s for s in SCAN_LIST if s.split('.')[0].isdigit()]))
-        
-        print(f"🎯 成功讀取硬體編碼名單！最終鎖定 {len(target_stocks)} 檔股票，準備進行 400 天歷史大補給！")
-        print("⚠️ 預計耗時 15-25 分鐘，請耐心等候...")
 
-        # 3. 執行各股籌碼與 K 線歷史抓取
-        for i, sym in enumerate(target_stocks, 1):
-            print(f"[{i}/{len(target_stocks)}] 正在抓取 {sym} 的歷史戰情數據...")
-            fetcher.fetch_and_store_stock_data(sym, start_date, db)
-            time.sleep(1.0) # 確保 API 不塞車
-            
-        print("\n✅ 歷史戰情資料庫 (SQLite) 初始建置與灌水完成！")
-        
+    # ---- 1. 更新大盤指數 ----
+    try:
+        logger.info("📈 正在下載大盤與防空歷史數據 (近400天)...")
+        fetcher.fetch_market_health_data(start_date, db)
     except Exception as e:
-        print(f"\n⚠️ 建庫過程發生致命錯誤: {e}")
+        logger.error(f"大盤更新失敗: {e}")
+
+    # ---- 2. 逐檔下載個股歷史數據 ----
+    total = len(target_stocks)
+    success_count = 0
+    fail_list = []
+    start_time = time.time()
+
+    for i, sym in enumerate(target_stocks, 1):
+        try:
+            logger.info(f"[{i}/{total}] 正在抓取 {sym} 的歷史戰情數據...")
+            fetcher.fetch_and_store_stock_data(sym, start_date, db)
+            success_count += 1
+            # 間隔 0.8~1.0 秒，避免 API 限流
+            time.sleep(0.8 + 0.2 * (i % 3))  # 隨機延遲
+        except Exception as e:
+            fail_list.append(sym)
+            logger.error(f"[{i}/{total}] ❌ {sym} 下載失敗: {e}")
+            # 仍延遲，避免連續失敗
+            time.sleep(1.0)
+
+    elapsed = time.time() - start_time
+    logger.info("\\n✅ 歷史戰情資料庫 (SQLite) 初始建置與灌水完成！")
+    logger.info(f"   📊 總標的數: {total}")
+    logger.info(f"   ✅ 成功: {success_count}")
+    logger.info(f"   ❌ 失敗: {len(fail_list)}")
+    if fail_list:
+        logger.info(f"   📋 失敗清單: {', '.join(fail_list)}")
+    logger.info(f"   ⏱️ 總耗時: {elapsed:.1f} 秒")
+
+    # ---- 統計資料庫實存標的數 ----
+    try:
+        import sqlite3
+        with sqlite3.connect(db.db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(DISTINCT symbol) FROM stock_prices")
+            distinct_count = cur.fetchone()[0]
+        logger.info(f"   💾 資料庫目前實存不重複標的：{distinct_count} 檔")
+    except:
+        pass
