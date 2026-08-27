@@ -700,6 +700,11 @@ if __name__ == "__main__":
     twii_close = macro_info.get('twii_close', 0)
     tsmc_weight = macro_info.get('tsmc_weight', 0)
     index_ex_tsmc = macro_info.get('index_without_tsmc', 0)
+    
+    # 🔥 務必補上這兩行提取宣告：
+    breadth_desc = macro_info.get('market_breadth', '')
+    breadth_signal = macro_info.get('breadth_status', '')
+    
     macro_msg = f"🌐 【大盤風向儀】：{macro_info['status']} | {market_msg}\n"
     if twii_close and index_ex_tsmc:
         macro_msg += f" 📊 加權指數: {twii_close:.0f} ｜ 剔除台積電(權重{tsmc_weight:.1f}%)約: {index_ex_tsmc:.0f}\n"
