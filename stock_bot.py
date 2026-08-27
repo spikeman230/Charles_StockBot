@@ -703,6 +703,10 @@ if __name__ == "__main__":
     macro_msg = f"🌐 【大盤風向儀】：{macro_info['status']} | {market_msg}\n"
     if twii_close and index_ex_tsmc:
         macro_msg += f" 📊 加權指數: {twii_close:.0f} ｜ 剔除台積電(權重{tsmc_weight:.1f}%)約: {index_ex_tsmc:.0f}\n"
+    # 🔥 新增：輸出市場價量廣度診斷
+    if breadth_desc:
+        macro_msg += f" 🧭 市場廣度: {breadth_desc} ({breadth_signal})\n"
+        
     if is_yellow_light:
         macro_msg += "⚠️ 【黃燈防禦】總兵力天花板強制鎖定 50% 水位 (6.5萬) / 雷達新火種禁止開新倉 / 防守線緊縮至 2.0 ATR 或月線\n"
     if is_red_light:
