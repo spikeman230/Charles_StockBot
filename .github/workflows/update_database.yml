@@ -49,9 +49,15 @@ jobs:
           # 建立本地提交（紀錄今日更新）
           git commit -m "📦 自動更新每日戰情資料庫"
 
+          # 🛡️ 暫存所有未提交的變更（包括未追蹤檔案）
+          git stash push -u -m "stash before rebase"
+
           # 拉取遠端最新變更並進行變基（rebase）
           # 若發生二進制檔案（noc_warroom.db）衝突，使用 -X ours 自動保留「本機最新版本」
           git pull --rebase -X ours origin main
+
+          # 恢復先前暫存的變更
+          git stash pop || true  # 若無變更可恢復，忽略錯誤
 
           # 推送至遠端主分支
           git push origin main
