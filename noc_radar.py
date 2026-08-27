@@ -1,10 +1,10 @@
 # =============================================================================
-# NOC 游擊隊雷達 (noc_radar.py) v18.0
+# NOC 游擊隊雷達 (noc_radar.py) v18.1
 # 整合：初升段突破、起漲攻擊區、旱地拔蔥、狙擊金叉、ABCX回踩
-# 新增：台股生存法則（量價結構判讀）
+# 新增：市場廣度聯動（量價背離時提高門檻並過濾弱籌碼）
 # 採用 Hybrid Data Fetcher (SQLite 歷史底庫 + yfinance 當日即時拼接)
 # 獨立掃描清單：從 stock_scan_list.py 載入 SCAN_LIST
-# 紅燈模式：無視紅燈，強制掃描（先清空火種清單，最後強制輸出空清單）
+# 紅燈模式：無視紅燈，強制掃描（最後強制輸出空清單）
 # =============================================================================
 
 import yfinance as yf
@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 from typing import Optional, Dict, Any, Tuple, List, Union
 
 # =============================================================================
-# 【修正 1】日誌設定必須在「匯入 SCAN_LIST」之前，確保 logger 已定義
+# 日誌設定必須在「匯入 SCAN_LIST」之前，確保 logger 已定義
 # =============================================================================
 load_dotenv()
 
@@ -211,8 +211,13 @@ def get_hybrid_stock_data(symbol: str, db: NOCDatabase) -> Optional[pd.DataFrame
     except Exception as e:
         logger.debug(f"❌ 獲取 {symbol} 數據異常: {e}")
         return None
-# ---------- 雷達掃描函數 ----------
-def scan_stock_for_wave(symbol: str, strategy: NOCStrategy, db: NOCDatabase) -> dict:
+# ---------- 雷達掃描函數（整合市場廣度聯動） ----------
+def scan_stock_for_wave(symbol: str, strategy: NOCStrategy, db: NOCDatabase,
+                        breadth_status: str, divergence_ratio: float) -> dict:
+    """
+    掃描單一股票，回傳火種資訊。
+    若市場處於「量價背離」，則提高量比門檻，並要求投信買超（Trust_Streak > 0）。
+    """
     try:
         hist = get_hybrid_stock_data(symbol, db)
         if hist is None:
@@ -225,8 +230,9 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy, db: NOCDatabase) -> 
         vol_ratio = td['Volume_Ratio']
         turnover = td['Turnover_Rate']
         price_position = td['Price_Position'] if not pd.isna(td['Price_Position']) else 0.5
+        trust_streak = td.get('Trust_Streak', 0)
 
-        # 趨勢與基本面（與 stock_bot 相同）
+        # 趨勢與基本面
         trend_score = strategy.get_trend_score(hist)
         if trend_score < 0:
             return None
@@ -267,11 +273,51 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy, db: NOCDatabase) -> 
         monster = td.get('Monster_Breakout', False)
         sniper = td.get('Sniper_Signal', False)
 
-        # ✅ ABCX 回踩判定（需同時滿足站穩月季線）
+        # ABCX 回踩判定（需同時滿足站穩月季線）
         abcx = detect_abcx_pullback(hist, td)
         abcx_valid = abcx and (close > ma20) and (close > ma60)
 
-        # 任何一項成立即為有效火種
+        # ===== 市場廣度動態過濾 =====
+        is_divergence = (breadth_status == "量價背離" or divergence_ratio >= 60.0)
+        is_healthy = (breadth_status == "健康放量" or divergence_ratio <= 35.0)
+
+        # 定義動態門檻
+        if is_divergence:
+            # 嚴格防誘多模式：量比提高 15%~20%，且要求投信買超
+            min_vol_ratio = 1.5 # 原 1.3 提高約 15%
+            min_turn_threshold = 1.2 # 換手率可略提高，但此處主要檢查量比
+            require_trust_positive = True
+            market_tip = "🔴 大盤量價背離(誘多盤)，嚴格限制作戰規模，禁止追高！"
+        elif is_healthy:
+            min_vol_ratio = 1.3 # 正常門檻
+            require_trust_positive = False
+            market_tip = "🟢 大盤健康放量順風，符合波段攻擊試單條件。"
+        else:
+            min_vol_ratio = 1.3
+            require_trust_positive = False
+            market_tip = "➖ 市場動能持平，正常篩選。"
+
+        # 對 initial_break 進行額外過濾（若背離，則要求更嚴格的量比與投信買超）
+        if initial_break:
+            if is_divergence:
+                # 重新檢查 good_volume 條件：我們可以在外部檢查 vol_ratio >= min_vol_ratio 且 trust_streak > 0
+                # 由於 detect_initial_breakout 已經有 good_volume（基於 1.3 倍），若背離且 vol_ratio 不足，我們視為無效
+                if vol_ratio < min_vol_ratio:
+                    initial_break = False
+                if require_trust_positive and trust_streak <= 0:
+                    initial_break = False
+
+        # 對 abcx_valid 進行額外過濾
+        if abcx_valid and is_divergence:
+            # 背離時要求更高的量比（表示回踩時仍有基本量能）且投信買超
+            if vol_ratio < 1.2: # 額外檢查
+                abcx_valid = False
+            if require_trust_positive and trust_streak <= 0:
+                abcx_valid = False
+
+        # 對 monster 和 sniper 可考慮也加入過濾，但需求未指定，暫不處理
+
+        # 任何一項成立即為有效火種（但已受動態過濾影響）
         is_valid = initial_break or monster or sniper or (quadrant_signal == "🟢 起漲攻擊區") or abcx_valid
         if not is_valid:
             return None
@@ -301,8 +347,8 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy, db: NOCDatabase) -> 
         rsi = (100 - (100 / (1 + rs))).iloc[-1]
         bias_20 = ((close - ma20) / ma20) * 100 if ma20 else 0
 
-        # 組裝 trello_tip（含量價口訣，若有）
-        base_tip = "系統雷達自動篩選，等待總司令確認建倉。"
+        # 組裝 trello_tip，包含市場警語與量價口訣
+        base_tip = f"系統雷達自動篩選，等待總司令確認建倉。{market_tip}"
         if extra_tip:
             full_tip = f"{base_tip} ({extra_tip})"
         else:
@@ -325,12 +371,11 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy, db: NOCDatabase) -> 
         return None
 # ---------- 主程式 ----------
 if __name__ == "__main__":
-    logger.info("⚡ NOC 游擊隊雷達 v18.0 (Hybrid Data + 獨立 Scan List) 啟動...")
+    logger.info("⚡ NOC 游擊隊雷達 v18.1 (市場廣度聯動版) 啟動...")
     start_time = time.time()
-    
+
     # ---- 解析 SCAN_LIST ----
     if isinstance(SCAN_LIST, dict):
-        # 字典格式：{"2330.TW": "台積電", ...}
         symbols = list(SCAN_LIST.keys())
         logger.info(f"📋 載入 {len(symbols)} 檔標的 (來自 dict)")
     elif isinstance(SCAN_LIST, list):
@@ -347,9 +392,16 @@ if __name__ == "__main__":
     strategy = NOCStrategy()
     db = NOCDatabase()
 
+    # 獲取大盤狀態（包含市場廣度）
     macro = strategy.get_macro_status()
-    
-    # ===== 【修正 2】紅燈處理：記錄旗標，清空檔案，但最後強制輸出空清單 =====
+    # 提取市場廣度指標（若無則使用預設）
+    breadth_status = macro.get("breadth_status", "動能持平")
+    divergence_ratio = macro.get("divergence_ratio", 0.0)
+    breadth_summary = macro.get("market_breadth", "➖ 無廣度數據")
+
+    logger.info(f"📊 市場廣度: {breadth_summary}")
+
+    # ===== 紅燈處理：記錄旗標，清空檔案，最後強制輸出空清單 =====
     is_red_light = False
     if macro["status"] == "🔴 紅燈":
         logger.warning("🚨🚨🚨 警告：目前大盤處於 🔴 紅燈（空頭極端危險期）！已依據總司令作戰協議放寬防線限制，雷達將無視紅燈，強制執行掃描以提前捕捉上升股！")
@@ -361,7 +413,11 @@ if __name__ == "__main__":
     logger.info(f"📡 大盤{macro['status']}，開始掃描 {len(symbols)} 檔")
     found = []
     with ThreadPoolExecutor(max_workers=cfg.MAX_WORKERS) as ex:
-        futures = {ex.submit(scan_stock_for_wave, sym, strategy, db): sym for sym in symbols}
+        # 將廣度狀態傳入每個掃描任務
+        futures = {
+            ex.submit(scan_stock_for_wave, sym, strategy, db, breadth_status, divergence_ratio): sym
+            for sym in symbols
+        }
         for future in as_completed(futures, timeout=300):
             try:
                 r = future.result()
@@ -372,8 +428,8 @@ if __name__ == "__main__":
                 logger.error(f"❌ 掃描 {futures[future]} 時發生例外: {e}")
 
     logger.info(f"掃描完成，耗時 {time.time()-start_time:.1f} 秒，共 {len(found)} 檔")
-    
-    # ===== 【修正 2】寫入 JSON，若紅燈則強制寫入空字典 =====
+
+    # ===== 寫入 JSON，若紅燈則強制寫入空字典 =====
     if is_red_light:
         radar_dict = {} # 強制清空
         logger.info("🔴 紅燈模式：強制輸出空火種清單，確保無舊資料殘留。")
@@ -385,9 +441,9 @@ if __name__ == "__main__":
                 "trello_tip": t["trello_tip"]
             } for t in found
         }
-    
+
     with open(cfg.TARGET_FILE, "w", encoding="utf-8") as f:
         json.dump(radar_dict, f, ensure_ascii=False, indent=4)
-    
+
     if not is_red_light:
         logger.info(f"✅ 火種已寫入 {cfg.TARGET_FILE}")
