@@ -841,6 +841,114 @@ class NOCStrategy:
         except Exception as e:
             self.logger.error(f"❌ DEFCON 1 協議監測器異常: {e}")
             return False
+            
+    def analyze_market_breadth(self, days: int = 2) -> Dict[str, Any]:
+    """
+    從本地資料庫計算市場價量廣度
+    回傳：{
+        "divergence_ratio": float,   # 價漲量縮佔比 (0-100)
+        "breadth_status": str,       # "量價背離", "健康放量", "動能持平"
+        "summary": str,              # 詳細文字摘要
+        "total_up": int,
+        "divergence_count": int
+    }
+    """
+    default = {
+        "divergence_ratio": 0.0,
+        "breadth_status": "動能持平",
+        "summary": "? 市場數據不足，動能持平",
+        "total_up": 0,
+        "divergence_count": 0
+    }
+    if self.db is None:
+        self.logger.warning("資料庫未連線，無法計算市場廣度")
+        return default
+
+    try:
+        conn = sqlite3.connect(self.db.db_path)
+        # 查詢最近 days 個交易日的所有股票收盤價與成交量
+        query = """
+            SELECT symbol, date, close, volume
+            FROM stock_prices
+            WHERE date IN (
+                SELECT DISTINCT date
+                FROM stock_prices
+                ORDER BY date DESC
+                LIMIT ?
+            )
+            ORDER BY date DESC
+        """
+        df = pd.read_sql_query(query, conn, params=(days,))
+        conn.close()
+        if df.empty or len(df['date'].unique()) < 2:
+            self.logger.warning("資料不足 2 個交易日，無法計算廣度")
+            return default
+
+        # 將日期轉為日期型，並分組
+        df['date'] = pd.to_datetime(df['date']).dt.date
+        dates = sorted(df['date'].unique(), reverse=True)  # 最新在前
+        latest = dates[0]
+        prev = dates[1] if len(dates) > 1 else None
+
+        if prev is None:
+            return default
+
+        # 取出最新日與前一日數據
+        latest_df = df[df['date'] == latest].set_index('symbol')
+        prev_df = df[df['date'] == prev].set_index('symbol')
+
+        # 合併找出同時存在的股票
+        common_symbols = latest_df.index.intersection(prev_df.index)
+        if len(common_symbols) == 0:
+            return default
+
+        # 計算漲跌與量變化
+        merged = pd.DataFrame({
+            'close_latest': latest_df.loc[common_symbols, 'close'],
+            'close_prev': prev_df.loc[common_symbols, 'close'],
+            'vol_latest': latest_df.loc[common_symbols, 'volume'],
+            'vol_prev': prev_df.loc[common_symbols, 'volume']
+        })
+        merged['price_up'] = merged['close_latest'] > merged['close_prev']
+        merged['vol_up'] = merged['vol_latest'] > merged['vol_prev']
+
+        total_up = merged['price_up'].sum()
+        if total_up == 0:
+            divergence_ratio = 0.0
+            divergence_count = 0
+        else:
+            # 價漲量縮 = 價格上漲但成交量萎縮
+            divergence = merged[merged['price_up'] & ~merged['vol_up']]
+            divergence_count = len(divergence)
+            divergence_ratio = (divergence_count / total_up) * 100
+
+        # 總成交量變化
+        total_vol_latest = merged['vol_latest'].sum()
+        total_vol_prev = merged['vol_prev'].sum()
+        vol_change = total_vol_latest - total_vol_prev
+
+        # 產出摘要
+        if divergence_ratio >= 60.0:
+            breadth_status = "量價背離"
+            summary = f"?? 量價背離 (價漲量縮佔比 {divergence_ratio:.1f}%，市場追價動能衰退，誘多風險高)"
+        elif divergence_ratio <= 35.0 and vol_change > 0:
+            breadth_status = "健康放量"
+            summary = f"?? 健康放量 (價漲量縮佔比 {divergence_ratio:.1f}%，多方結構扎實)"
+        else:
+            breadth_status = "動能持平"
+            summary = f"? 動能持平 (價漲量縮佔比 {divergence_ratio:.1f}%)"
+
+        return {
+            "divergence_ratio": round(divergence_ratio, 1),
+            "breadth_status": breadth_status,
+            "summary": summary,
+            "total_up": int(total_up),
+            "divergence_count": int(divergence_count)
+        }
+    except Exception as e:
+        self.logger.error(f"市場廣度計算失敗: {e}")
+        return default
+    
 
 class NOCRiskManager:
     def __init__(self, total_capital: float = 130000.0):
@@ -1139,12 +1247,66 @@ def get_macro_status_from_db(db: NOCDatabase) -> dict:
             if df.empty:
                 return {"status": "🟡 黃燈", "desc": "無大盤資料"}
             row = df.iloc[-1]
-            if row['twii_close'] > row['twii_20ma']:
-                return {"status": "🟢 綠燈", "desc": "多頭格局"}
-            elif row['twii_close'] < row['twii_60ma']:
-                return {"status": "🔴 紅燈", "desc": "空頭格局"}
-            else:
-                return {"status": "🟡 黃燈", "desc": "震盪盤整"}
-    except:
-        return {"status": "🟡 黃燈", "desc": "資料庫讀取失敗"}
+            def get_macro_status(self) -> dict:
+    try:
+        twii = yf.Ticker("^TWII").history(period="6mo")
+        if twii.empty:
+            return {"status": "?? 黃燈", "desc": "無法取得台股加權指數資料，啟動震盪保護機制，請嚴控資金。"}
+        twii['20MA'] = twii['Close'].rolling(20).mean()
+        twii['60MA'] = twii['Close'].rolling(60).mean()
+        td = twii.iloc[-1]
+        y_td = twii.iloc[-2]
+        twii_close = td['Close']
+
+        # ----- 原有的大盤燈號判斷 -----
+        above_20ma = td['Close'] > td['20MA']
+        above_20ma_yest = y_td['Close'] > y_td['20MA']
+        ma20_rising = td['20MA'] >= y_td['20MA']
+        if above_20ma and above_20ma_yest and ma20_rising:
+            status = "?? 綠燈"
+            desc = "大盤多頭格局順風..."
+        elif td['Close'] < td['60MA']:
+            status = "?? 紅燈"
+            desc = "大盤崩盤警告..."
+        else:
+            status = "?? 黃燈"
+            desc = "大盤進入高密度震盪洗盤期..."
+
+        # ----- 計算市場廣度 -----
+        breadth_data = self.analyze_market_breadth(days=2)
+        divergence_ratio = breadth_data.get("divergence_ratio", 0.0)
+        breadth_status = breadth_data.get("breadth_status", "動能持平")
+        breadth_summary = breadth_data.get("summary", "")
+
+        # ----- 動態降級機制 -----
+        if status == "?? 綠燈" and breadth_status == "量價背離" and divergence_ratio >= 65.0:
+            status = "?? 黃燈"
+            desc = f"?? 量價背離防禦！原綠燈因市場廣度嚴重背離 (Divergence {divergence_ratio:.1f}%) 強制降級，建議減半倉位、嚴禁追高！"
+
+        # ----- 計算剔除台積電指數 (保留) -----
+        try:
+            tsmc = yf.Ticker("2330.TW")
+            tsmc_info = tsmc.info
+            tsmc_market_cap = tsmc_info.get("marketCap", 0)
+            default_weight = float(os.getenv("TSMC_WEIGHT", "0.40"))
+            weight = default_weight
+            weight = max(0.35, min(0.45, weight))
+        except Exception as e:
+            self.logger.warning(f"台積電權重計算失敗，使用預設值 40%: {e}")
+            weight = 0.40
+        index_without_tsmc = twii_close * (1 - weight)
+
+        return {
+            "status": status,
+            "desc": desc,
+            "twii_close": round(twii_close, 0),
+            "tsmc_weight": round(weight * 100, 1),
+            "index_without_tsmc": round(index_without_tsmc, 0),
+            "market_breadth": breadth_summary,
+            "divergence_ratio": divergence_ratio,
+            "breadth_status": breadth_status
+        }
+    except Exception as e:
+        self.logger.error(f"? 大盤風向儀運算異常: {e}")
+        return {"status": "?? 黃燈", "desc": "總體經濟風向引擎異常，強制啟動系統震盪保護機制。"}
         
