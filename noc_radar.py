@@ -310,8 +310,9 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy, db: NOCDatabase,
         # 對 abcx_valid 進行額外過濾
         if abcx_valid and is_divergence:
             # 背離時要求更高的量比（表示回踩時仍有基本量能）且投信買超
-            if vol_ratio < 1.2: # 額外檢查
-                abcx_valid = False
+            if abcx_valid and is_divergence:
+                if require_trust_positive and trust_streak <= 0:
+                    abcx_valid = False
             if require_trust_positive and trust_streak <= 0:
                 abcx_valid = False
 
@@ -389,8 +390,8 @@ if __name__ == "__main__":
         logger.warning("⚠️ SCAN_LIST 為空，結束程式")
         exit(0)
 
-    strategy = NOCStrategy()
     db = NOCDatabase()
+    strategy = NOCStrategy(db=db)
 
     # 獲取大盤狀態（包含市場廣度）
     macro = strategy.get_macro_status()
