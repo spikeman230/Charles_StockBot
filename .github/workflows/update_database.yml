@@ -1,40 +1,24 @@
-name: NOC 每日盤後資料庫補給
-
-on:
-  schedule:
-    # ⏰ 這是 UTC 時間。08:30 等於台灣時間下午 16:30 (每週一到週五執行)
-    - cron: '30 12 * * 1-5'
-  workflow_dispatch: # 保留手動按鈕以防萬一
-
-permissions:
-  contents: write
-
-jobs:
-  daily-update:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
+- name: Commit & Push updated database
+  run: |
+    git config --local user.email "action@github.com"
+    git config --local user.name "GitHub Action"
     
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install FinMind pandas yfinance python-dotenv tqdm
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        
-    - name: Run Database Update
-      env:
-        FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
-      run: python update_db.py
-      
-    - name: Commit & Push updated database
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add -f noc_warroom.db
-        git diff-index --quiet HEAD || git commit -m "📦 自動更新每日戰情資料庫"
-        git push
+    # 1. 強制加入更新後的資料庫（若檔案變更則進入暫存區）
+    git add -f noc_warroom.db
+    
+    # 2. 檢查是否有變更，若無則跳過
+    if git diff-index --quiet HEAD; then
+      echo "📭 資料庫無變更，跳過提交"
+      exit 0
+    fi
+    
+    # 3. 先在本地提交（產生一個本地的 commit）
+    git commit -m "📦 自動更新每日戰情資料庫 (本地生成)"
+    
+    # 4. 拉取遠端最新變更，並進行變基 (rebase)
+    #    若發生衝突（例如雙方都改了資料庫），使用 `-X ours` 策略強制保留「我們（本地）」的版本
+    #    這確保了剛剛算好的新數據不會被遠端舊檔案覆蓋
+    git pull --rebase -X ours origin main
+    
+    # 5. 推送到遠端
+    git push origin main
