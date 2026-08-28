@@ -1,27 +1,67 @@
 {
-    "META": {
-        "name": "META",
-        "tactics": "🔥 🔥 放量站上20MA",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "INTU": {
-        "name": "INTU",
+    "NVDA": {
+        "name": "NVDA",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "CRWD": {
-        "name": "CRWD",
+    "QCOM": {
+        "name": "QCOM",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "OKTA": {
-        "name": "OKTA",
+    "SNPS": {
+        "name": "SNPS",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "BSX": {
-        "name": "BSX",
+    "WDC": {
+        "name": "WDC",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "STX": {
+        "name": "STX",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "ADBE": {
+        "name": "ADBE",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "PLTR": {
+        "name": "PLTR",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "NOW": {
+        "name": "NOW",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "NET": {
+        "name": "NET",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "ZS": {
+        "name": "ZS",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "WDAY": {
+        "name": "WDAY",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "MDB": {
+        "name": "MDB",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "TTD": {
+        "name": "TTD",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
     "NKE": {
@@ -29,8 +69,8 @@
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "KHC": {
-        "name": "KHC",
+    "MPC": {
+        "name": "MPC",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     }
