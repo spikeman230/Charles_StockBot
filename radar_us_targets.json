@@ -4,23 +4,38 @@
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "AVGO": {
-        "name": "AVGO",
+    "AMD": {
+        "name": "AMD",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "ZS": {
-        "name": "ZS",
+    "MU": {
+        "name": "MU",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "KHC": {
-        "name": "KHC",
+    "KLAC": {
+        "name": "KLAC",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "INTC": {
+        "name": "INTC",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "GIS": {
-        "name": "GIS",
+    "ON": {
+        "name": "ON",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "ADBE": {
+        "name": "ADBE",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "DOCU": {
+        "name": "DOCU",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     }
