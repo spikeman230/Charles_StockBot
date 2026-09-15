@@ -1,47 +1,27 @@
 {
-    "WDC": {
-        "name": "WDC",
+    "CRWD": {
+        "name": "CRWD",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "NOW": {
-        "name": "NOW",
+    "HOOD": {
+        "name": "HOOD",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "PLTR": {
-        "name": "PLTR",
+    "SYY": {
+        "name": "SYY",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "PANW": {
-        "name": "PANW",
+    "HON": {
+        "name": "HON",
         "tactics": "🌟 狙擊金叉 (底部扭轉)",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "ZS": {
-        "name": "ZS",
-        "tactics": "🔥 🚀 首次突破20日高點",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "NET": {
-        "name": "NET",
-        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "OKTA": {
-        "name": "OKTA",
-        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "KHC": {
-        "name": "KHC",
-        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "MPC": {
-        "name": "MPC",
-        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+    "PSA": {
+        "name": "PSA",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     }
 }
