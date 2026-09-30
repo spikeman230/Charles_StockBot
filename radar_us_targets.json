@@ -1,27 +1,27 @@
 {
-    "MSFT": {
-        "name": "MSFT",
-        "tactics": "🌟 狙擊金叉 (底部扭轉)",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "TSLA": {
-        "name": "TSLA",
+    "MDB": {
+        "name": "MDB",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "PYPL": {
-        "name": "PYPL",
-        "tactics": "🌟 狙擊金叉 (底部扭轉)",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "CVS": {
-        "name": "CVS",
+    "HUBS": {
+        "name": "HUBS",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "COST": {
-        "name": "COST",
-        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+    "NFLX": {
+        "name": "NFLX",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "MDT": {
+        "name": "MDT",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "KR": {
+        "name": "KR",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     }
 }
