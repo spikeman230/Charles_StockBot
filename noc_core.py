@@ -73,7 +73,7 @@ class NOCChipMatrix:
                 volume_threshold = 1.5
                 high_lookback = 20
 
-            recent_high = df['High'].rolling(high_lookback).max().iloc[-1]
+            recent_high = df['High'].rolling(high_lookback).max().shift(1).iloc[-1]
 
             if (volume_ratio >= volume_threshold) and (latest['High'] >= recent_high) and (turnover_rate >= turnover_threshold):
                 return "🔥 主力點火 (籌碼突破)"
@@ -96,13 +96,13 @@ def assess_volume_turnover_signal(vol_ratio: float, turnover: float, shares_out:
     else:
         threshold = 5.0
 
-    if vol_ratio >= 1.5 and turnover >= threshold:
-        if (close_vs_high < 0.96 and not is_red) or candle_ratio > 0.5:
-            return "🔴 爆量長上影 (假突破/出貨)"
-        return "🟢 起漲攻擊區"
-
+    if vol_ratio >= 1.5 and turnover >= threshold and ((close_vs_high < 0.96 and not is_red) or candle_ratio > 0.5):
+        return "🔴 爆量長上影 (假突破/出貨)"
     if vol_ratio >= 2.0 and turnover >= threshold * 1.6 and price_position > 0.8:
         return "🔴 主力出貨區"
+
+    if vol_ratio >= 1.5 and turnover >= threshold:
+        return "🟢 起漲攻擊區"
 
     if vol_ratio >= 1.8 and turnover < threshold * 0.5:
         return "⚠️ 量價背離陷阱"
@@ -259,7 +259,7 @@ def detect_precision_buy_point(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool,
                     yoy_raw = td.get('YoY', None)
                     yoy_num = None
                     if yoy_raw is not None:
-                        if isinstance(yoy_raw, (int, float)):
+                        if isinstance(yoy_raw, (int, float, np.number)) and pd.notna(yoy_raw):
                             yoy_num = yoy_raw
                         elif isinstance(yoy_raw, str):
                             cleaned = yoy_raw.strip()
@@ -268,14 +268,14 @@ def detect_precision_buy_point(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool,
                                 if match:
                                     yoy_num = float(match.group(1))
                     
-                    if yoy_num is not None and yoy_num <= 0:
-                        filter3_pass = False
-                    else:
-                        filter3_pass = True
+                    filter3_pass = yoy_num is None or yoy_num > 0
 
                     if filter1_pass and filter2_pass and filter3_pass:
                         stop_loss = max(a_point['Low'], ma20 * 0.985)
-                        return True, "🌀 ABCX真主力洗盤 (籌碼鎖定+量縮止跌)", round(stop_loss, 2)
+                        tactic = "🌀 ABCX真主力洗盤 (籌碼鎖定+量縮止跌)"
+                        if yoy_num is None:
+                            tactic += " (YoY未取得，基本面未確認)"
+                        return True, tactic, round(stop_loss, 2)
 
     # ---------- 戰術B：起漲第一棒 (旱地拔蔥) ----------
     if len(hist) >= 2:
