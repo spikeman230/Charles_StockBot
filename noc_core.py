@@ -1,5 +1,5 @@
 # =============================================================================
-# NOC 戰情室核心引擎 v18.1 (ABCX 3.0 真主力洗盤伏擊 + 市場廣度價量背離判讀)
+# NOC 戰情室核心引擎 v18.2 (ABCX 3.0 + 市場廣度 + 修復高品質濾網/股本缺失)
 # 功能：籌碼矩陣、四象限量價、精準買點引擎（ABCX 3.0 + 起漲第一棒）
 # 嚴格過熱過濾、階梯式動態停損/停利、大盤海象判讀 (市場廣度背離防禦)
 # 本地 SQLite 資料庫支援
@@ -73,7 +73,7 @@ class NOCChipMatrix:
                 volume_threshold = 1.5
                 high_lookback = 20
 
-            recent_high = df['High'].rolling(high_lookback).max().shift(1).iloc[-1]
+            recent_high = df['High'].rolling(high_lookback).max().iloc[-1]
 
             if (volume_ratio >= volume_threshold) and (latest['High'] >= recent_high) and (turnover_rate >= turnover_threshold):
                 return "🔥 主力點火 (籌碼突破)"
@@ -96,13 +96,13 @@ def assess_volume_turnover_signal(vol_ratio: float, turnover: float, shares_out:
     else:
         threshold = 5.0
 
-    if vol_ratio >= 1.5 and turnover >= threshold and ((close_vs_high < 0.96 and not is_red) or candle_ratio > 0.5):
-        return "🔴 爆量長上影 (假突破/出貨)"
+    if vol_ratio >= 1.5 and turnover >= threshold:
+        if (close_vs_high < 0.96 and not is_red) or candle_ratio > 0.5:
+            return "🔴 爆量長上影 (假突破/出貨)"
+        return "🟢 起漲攻擊區"
+
     if vol_ratio >= 2.0 and turnover >= threshold * 1.6 and price_position > 0.8:
         return "🔴 主力出貨區"
-
-    if vol_ratio >= 1.5 and turnover >= threshold:
-        return "🟢 起漲攻擊區"
 
     if vol_ratio >= 1.8 and turnover < threshold * 0.5:
         return "⚠️ 量價背離陷阱"
@@ -161,9 +161,8 @@ def is_entry_overheated(td: pd.Series) -> Tuple[bool, str]:
     if reasons:
         return True, " | ".join(reasons)
     return False, ""
-
 # =============================================================================
-# 5. 初升段突破偵測
+# 5. 初升段突破偵測 (【修正】Shares_Out 缺失時跳過換手率檢查)
 # =============================================================================
 def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series, lookback: int = 20) -> Tuple[bool, str, int]:
     close = td['Close']
@@ -183,13 +182,20 @@ def detect_initial_breakout(hist: pd.DataFrame, td: pd.Series, lookback: int = 2
     vol_ratio = td.get('Volume_Ratio', 1.0)
     turnover = td.get('Turnover_Rate', 0.0)
     shares_out = td.get('Shares_Out', 0)
-    if shares_out >= 3_000_000_000:
-        turn_th = 1.0
-    elif shares_out >= 1_000_000_000:
-        turn_th = 1.5
+
+    # ===== 【修正】處理 Shares_Out 缺失情況 =====
+    if pd.isna(shares_out) or shares_out == 0:
+        # 無法判斷股本規模時，僅檢查量比，跳過換手率門檻，避免 good_volume 永遠為 False
+        good_volume = vol_ratio >= 1.3
     else:
-        turn_th = 3.0
-    good_volume = vol_ratio >= 1.3 and turnover >= turn_th
+        if shares_out >= 3_000_000_000:
+            turn_th = 1.0
+        elif shares_out >= 1_000_000_000:
+            turn_th = 1.5
+        else:
+            turn_th = 3.0
+        good_volume = vol_ratio >= 1.3 and turnover >= turn_th
+    # ============================================
 
     bias = (close - ma20) / ma20 * 100 if ma20 > 0 else 0
     if bias > 20:
@@ -259,7 +265,7 @@ def detect_precision_buy_point(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool,
                     yoy_raw = td.get('YoY', None)
                     yoy_num = None
                     if yoy_raw is not None:
-                        if isinstance(yoy_raw, (int, float, np.number)) and pd.notna(yoy_raw):
+                        if isinstance(yoy_raw, (int, float)):
                             yoy_num = yoy_raw
                         elif isinstance(yoy_raw, str):
                             cleaned = yoy_raw.strip()
@@ -267,15 +273,15 @@ def detect_precision_buy_point(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool,
                                 match = re.search(r'([-+]?\d*\.?\d+)', cleaned)
                                 if match:
                                     yoy_num = float(match.group(1))
-                    
-                    filter3_pass = yoy_num is None or yoy_num > 0
+
+                    if yoy_num is not None and yoy_num <= 0:
+                        filter3_pass = False
+                    else:
+                        filter3_pass = True
 
                     if filter1_pass and filter2_pass and filter3_pass:
                         stop_loss = max(a_point['Low'], ma20 * 0.985)
-                        tactic = "🌀 ABCX真主力洗盤 (籌碼鎖定+量縮止跌)"
-                        if yoy_num is None:
-                            tactic += " (YoY未取得，基本面未確認)"
-                        return True, tactic, round(stop_loss, 2)
+                        return True, "🌀 ABCX真主力洗盤 (籌碼鎖定+量縮止跌)", round(stop_loss, 2)
 
     # ---------- 戰術B：起漲第一棒 (旱地拔蔥) ----------
     if len(hist) >= 2:
@@ -349,6 +355,9 @@ def calculate_sniper_signal(hist: pd.DataFrame) -> bool:
     sniper = bottom_3d.iloc[-1] and hist['Is_Breakout'].iloc[-1]
     return bool(sniper)
 
+# =============================================================================
+# 6. 高品質訊號三重確認濾網 (【修正】strong_chip 與 good_trend)
+# =============================================================================
 def is_high_quality_signal(hist: pd.DataFrame, td: pd.Series, matrix_signal: str, market_mode: str) -> bool:
     recent_20_high = hist['High'].rolling(20).max().shift(1).iloc[-1]
     if pd.isna(recent_20_high):
@@ -356,11 +365,28 @@ def is_high_quality_signal(hist: pd.DataFrame, td: pd.Series, matrix_signal: str
     price_break = td['Close'] > recent_20_high
     vol_ratio = td.get('Volume_Ratio', 1.0)
     strong_volume = vol_ratio >= 2.0
-    strong_chip = any(key in matrix_signal for key in ["極速發動", "加速起漲"])
-    trend_score = td.get('Trend_Score', -1.0)
-    good_trend = trend_score > 0
-    return price_break and strong_volume and (strong_chip or good_trend)
 
+    # ===== 【修正】strong_chip 改為檢查 NOCChipMatrix 實際回傳值 =====
+    # NOCChipMatrix.analyze() 只會回傳 "🔥 主力點火 (籌碼突破)"、"➖ 無點火訊號"、"⚠️ 籌碼分析失敗"
+    strong_chip = ("主力點火" in matrix_signal) or ("籌碼突破" in matrix_signal)
+    # ==================================================================
+
+    # ===== 【修正】good_trend 備援判斷（當 Trend_Score 缺失時，改用均線關係） =====
+    trend_score = td.get('Trend_Score', None)
+    if trend_score is not None and isinstance(trend_score, (int, float)):
+        good_trend = trend_score > 0
+    else:
+        # 備援：直接用股價與均線關係判斷趨勢
+        ma20 = td.get('20MA', 0)
+        ma60 = td.get('60MA', 0)
+        close = td['Close']
+        good_trend = (
+            (not pd.isna(ma20) and ma20 > 0 and close > ma20) and
+            (not pd.isna(ma60) and ma60 > 0 and close > ma60)
+        )
+    # ==============================================================================
+
+    return price_break and strong_volume and (strong_chip or good_trend)
 # =============================================================================
 # 基本面輔助函數
 # =============================================================================
@@ -614,7 +640,6 @@ class NOCDatabase:
                              (symbol, shares_out, datetime.datetime.now().isoformat()))
         except:
             pass
-
 # =============================================================================
 # 8. 數據獲取器 (NOCDataFetcher)
 # =============================================================================
@@ -923,7 +948,6 @@ class NOCRiskManager:
                 "total_shares": int(fallback_shares * 2),
                 "risk_per_share": round(current_price - fallback_stop, 2)
             }
-
 # =============================================================================
 # 9-1. 階梯式動態出場與防守引擎
 # =============================================================================
@@ -1131,3 +1155,4 @@ def get_macro_status_from_db(db: NOCDatabase) -> dict:
                 return {"status": "🟡 黃燈", "desc": "震盪盤整"}
     except:
         return {"status": "🟡 黃燈", "desc": "資料庫讀取失敗"}
+
