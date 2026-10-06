@@ -1,36 +1,16 @@
 {
-    "MU": {
-        "name": "MU",
+    "SWKS": {
+        "name": "SWKS",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
-    "MRVL": {
-        "name": "MRVL",
+    "MELI": {
+        "name": "MELI",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     },
     "MDT": {
         "name": "MDT",
-        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "SPGI": {
-        "name": "SPGI",
-        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "CME": {
-        "name": "CME",
-        "tactics": "🌟 狙擊金叉 (底部扭轉)",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "NEE": {
-        "name": "NEE",
-        "tactics": "🌟 狙擊金叉 (底部扭轉)",
-        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
-    },
-    "ED": {
-        "name": "ED",
         "tactics": "🌟 狙擊金叉 (底部扭轉)",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     }
