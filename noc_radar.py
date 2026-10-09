@@ -1,7 +1,8 @@
 # =============================================================================
-# NOC 游擊隊雷達 (noc_radar.py) v18.1
+# NOC 游擊隊雷達 (noc_radar.py) v18.2
 # 整合：初升段突破、起漲攻擊區、旱地拔蔥、狙擊金叉、ABCX回踩
 # 新增：市場廣度聯動（量價背離時提高門檻並過濾弱籌碼）
+# 【修正】is_healthy 嚴格判斷、ABCX 註解矛盾、trust_streak 誤殺、死變數
 # 採用 Hybrid Data Fetcher (SQLite 歷史底庫 + yfinance 當日即時拼接)
 # 獨立掃描清單：從 stock_scan_list.py 載入 SCAN_LIST
 # 紅燈模式：無視紅燈，強制掃描（最後強制輸出空清單）
@@ -211,12 +212,18 @@ def get_hybrid_stock_data(symbol: str, db: NOCDatabase) -> Optional[pd.DataFrame
     except Exception as e:
         logger.debug(f"❌ 獲取 {symbol} 數據異常: {e}")
         return None
-# ---------- 雷達掃描函數（整合市場廣度聯動） ----------
+
+# ---------- 雷達掃描函數（整合市場廣度聯動，已修正嚴重與中等缺陷） ----------
 def scan_stock_for_wave(symbol: str, strategy: NOCStrategy, db: NOCDatabase,
                         breadth_status: str, divergence_ratio: float) -> dict:
     """
     掃描單一股票，回傳火種資訊。
     若市場處於「量價背離」，則提高量比門檻，並要求投信買超（Trust_Streak > 0）。
+    【修正】
+    - is_healthy 嚴格要求 breadth_status == "健康放量"，避免無資料時誤判
+    - ABCX 過濾移除矛盾的量比要求，只保留籌碼過濾
+    - 新增 has_chip_data 檢查，避免無籌碼資料時誤殺所有股票
+    - 移除死變數 min_turn_threshold，簡化 is_divergence 條件
     """
     try:
         hist = get_hybrid_stock_data(symbol, db)
@@ -277,19 +284,22 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy, db: NOCDatabase,
         abcx = detect_abcx_pullback(hist, td)
         abcx_valid = abcx and (close > ma20) and (close > ma60)
 
-        # ===== 市場廣度動態過濾 =====
-        is_divergence = (breadth_status == "量價背離" or divergence_ratio >= 60.0)
-        is_healthy = (breadth_status == "健康放量" or divergence_ratio <= 35.0)
+        # ===== 市場廣度動態過濾（【修正】嚴格判斷 + 防呆） =====
+        # 背離僅在 divergence_ratio >= 60 時成立（analyze_market_breadth 已保證此對應）
+        is_divergence = (divergence_ratio >= 60.0)
+        # 健康放量必須同時滿足 breadth_status 明確為「健康放量」且 divergence_ratio <= 35
+        is_healthy = (breadth_status == "健康放量" and divergence_ratio <= 35.0)
+
+        # 判斷個股是否有有效的籌碼資料（避免無 FinMind 資料時誤殺）
+        has_chip_data = (td.get('Chip_Status', '') != "➖ 中性/偏空")
 
         # 定義動態門檻
         if is_divergence:
-            # 嚴格防誘多模式：量比提高 15%~20%，且要求投信買超
             min_vol_ratio = 1.5 # 原 1.3 提高約 15%
-            min_turn_threshold = 1.2 # 換手率可略提高，但此處主要檢查量比
             require_trust_positive = True
             market_tip = "🔴 大盤量價背離(誘多盤)，嚴格限制作戰規模，禁止追高！"
         elif is_healthy:
-            min_vol_ratio = 1.3 # 正常門檻
+            min_vol_ratio = 1.3
             require_trust_positive = False
             market_tip = "🟢 大盤健康放量順風，符合波段攻擊試單條件。"
         else:
@@ -297,26 +307,17 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy, db: NOCDatabase,
             require_trust_positive = False
             market_tip = "➖ 市場動能持平，正常篩選。"
 
-        # 對 initial_break 進行額外過濾（若背離，則要求更嚴格的量比與投信買超）
-        if initial_break:
-            if is_divergence:
-                # 重新檢查 good_volume 條件：我們可以在外部檢查 vol_ratio >= min_vol_ratio 且 trust_streak > 0
-                # 由於 detect_initial_breakout 已經有 good_volume（基於 1.3 倍），若背離且 vol_ratio 不足，我們視為無效
-                if vol_ratio < min_vol_ratio:
-                    initial_break = False
-                if require_trust_positive and trust_streak <= 0:
-                    initial_break = False
+        # 對 initial_break 進行額外過濾（背離時要求更嚴格的量比與籌碼）
+        if initial_break and is_divergence:
+            if vol_ratio < min_vol_ratio:
+                initial_break = False
+            # 僅在有籌碼資料且明確為賣超時過濾
+            if require_trust_positive and has_chip_data and trust_streak <= 0:
+                initial_break = False
 
-        # 對 abcx_valid 進行額外過濾
-        if abcx_valid and is_divergence:
-            # 背離時要求更高的量比（表示回踩時仍有基本量能）且投信買超
-            if abcx_valid and is_divergence:
-                if require_trust_positive and trust_streak <= 0:
-                    abcx_valid = False
-            if require_trust_positive and trust_streak <= 0:
-                abcx_valid = False
-
-        # 對 monster 和 sniper 可考慮也加入過濾，但需求未指定，暫不處理
+        # 對 abcx_valid 進行額外過濾（【修正】移除矛盾的量比要求，只保留籌碼過濾）
+        if abcx_valid and is_divergence and require_trust_positive and has_chip_data and trust_streak <= 0:
+            abcx_valid = False
 
         # 任何一項成立即為有效火種（但已受動態過濾影響）
         is_valid = initial_break or monster or sniper or (quadrant_signal == "🟢 起漲攻擊區") or abcx_valid
@@ -372,7 +373,7 @@ def scan_stock_for_wave(symbol: str, strategy: NOCStrategy, db: NOCDatabase,
         return None
 # ---------- 主程式 ----------
 if __name__ == "__main__":
-    logger.info("⚡ NOC 游擊隊雷達 v18.1 (市場廣度聯動版) 啟動...")
+    logger.info("⚡ NOC 游擊隊雷達 v18.2 (市場廣度聯動版，已修正嚴重缺陷) 啟動...")
     start_time = time.time()
 
     # ---- 解析 SCAN_LIST ----
@@ -448,3 +449,4 @@ if __name__ == "__main__":
 
     if not is_red_light:
         logger.info(f"✅ 火種已寫入 {cfg.TARGET_FILE}")
+
