@@ -85,7 +85,16 @@ SCAN_LIST: list = [
     "8464.TW", "9907.TW", "9910.TW", "9914.TW", "9921.TW", "9933.TW",
     "9938.TW", "9939.TW", "9941.TW", "9945.TW"
 ]
-
+# ===== 新增：清單解析器 =====
+def parse_scan_list(source: Union[Dict, List]) -> List[str]:
+    """將 SCAN_LIST 轉為純股票代號列表"""
+    if isinstance(source, dict):
+        return list(source.keys())
+    elif isinstance(source, list):
+        return source
+    else:
+        raise TypeError("SCAN_LIST 必須是 dict 或 list")
+        
 def get_scan_list() -> dict:
     """取得完整監控標的字典 {symbol: name}"""
     return SCAN_LIST
