@@ -1,7 +1,92 @@
 {
+    "ADBE": {
+        "name": "ADBE",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "NOW": {
+        "name": "NOW",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "INTU": {
+        "name": "INTU",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "ZS": {
+        "name": "ZS",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "WDAY": {
+        "name": "WDAY",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
     "MDT": {
         "name": "MDT",
         "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "JPM": {
+        "name": "JPM",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "WFC": {
+        "name": "WFC",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "CME": {
+        "name": "CME",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "MCD": {
+        "name": "MCD",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "PEP": {
+        "name": "PEP",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "SBUX": {
+        "name": "SBUX",
+        "tactics": "🚀 中段加速 | 🟢 起漲攻擊區",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "LOW": {
+        "name": "LOW",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "GIS": {
+        "name": "GIS",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "KHC": {
+        "name": "KHC",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "SYY": {
+        "name": "SYY",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "UPS": {
+        "name": "UPS",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
+        "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
+    },
+    "O": {
+        "name": "O",
+        "tactics": "🌟 狙擊金叉 (底部扭轉)",
         "trello_tip": "美股雷達自動篩選，等待總司令確認建倉。"
     }
 }
