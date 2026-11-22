@@ -232,56 +232,56 @@ def detect_precision_buy_point(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool,
     bias_20ma = td.get('Bias_20MA', 0.0)
 
     # ---------- 戰術A：ABCX 3.0 真主力洗盤伏擊 ----------
-    lookback_start = max(0, len(hist) - 10)
-    lookback_end = max(0, len(hist) - 3)
-    recent_hist = hist.iloc[lookback_start:lookback_end] if lookback_end > lookback_start else pd.DataFrame()
-    if not recent_hist.empty:
-        a_point = None
-        for idx in recent_hist.index:
-            row = recent_hist.loc[idx]
-            if row['Volume'] > row['5VMA'] * 1.5 and row['Close'] >= row['Open']:
-                a_point = row
-                break
-        if a_point is not None:
-            vma5_yest = hist['5VMA'].shift(1).iloc[-1]
-            if not pd.isna(vma5_yest) and td['Volume'] < vma5_yest * 0.7:
-                if 0 <= bias_20ma <= 3.5:
-                    # 濾網1：右側止跌確認
-                    is_red = td['Close'] >= td['Open']
-                    low = td['Low']
-                    high = td['High']
-                    open_price = td['Open']
-                    close_price = td['Close']
-                    lower_shadow = (min(open_price, close_price) - low) / (high - low + 1e-6)
-                    filter1_pass = (is_red or lower_shadow >= 0.25)
+    #lookback_start = max(0, len(hist) - 10)
+    #lookback_end = max(0, len(hist) - 3)
+    #recent_hist = hist.iloc[lookback_start:lookback_end] if lookback_end > lookback_start else pd.DataFrame()
+    #if not recent_hist.empty:
+    #    a_point = None
+    #    for idx in recent_hist.index:
+    #        row = recent_hist.loc[idx]
+    #        if row['Volume'] > row['5VMA'] * 1.5 and row['Close'] >= row['Open']:
+    #            a_point = row
+    #            break
+    #    if a_point is not None:
+    #        vma5_yest = hist['5VMA'].shift(1).iloc[-1]
+    #        if not pd.isna(vma5_yest) and td['Volume'] < vma5_yest * 0.7:
+    #            if 0 <= bias_20ma <= 3.5:
+    #                # 濾網1：右側止跌確認
+    #                is_red = td['Close'] >= td['Open']
+    #                low = td['Low']
+    #                high = td['High']
+    #                open_price = td['Open']
+    #                close_price = td['Close']
+    #                lower_shadow = (min(open_price, close_price) - low) / (high - low + 1e-6)
+    #                filter1_pass = (is_red or lower_shadow >= 0.25)
 
-                    # 濾網2：主力籌碼未渙散
-                    trust_streak = td.get('Trust_Streak', 0)
-                    chip_status = td.get('Chip_Status', '')
-                    is_bearish = "偏空" in chip_status or "空頭" in chip_status
-                    filter2_pass = not (trust_streak < -1 or is_bearish)
+    #               # 濾網2：主力籌碼未渙散
+    #                trust_streak = td.get('Trust_Streak', 0)
+    #                chip_status = td.get('Chip_Status', '')
+    #                is_bearish = "偏空" in chip_status or "空頭" in chip_status
+    #                filter2_pass = not (trust_streak < -1 or is_bearish)
 
-                    # 濾網3：實質基本面/題材動能 (相容字串與數值)
-                    yoy_raw = td.get('YoY', None)
-                    yoy_num = None
-                    if yoy_raw is not None:
-                        if isinstance(yoy_raw, (int, float)):
-                            yoy_num = yoy_raw
-                        elif isinstance(yoy_raw, str):
-                            cleaned = yoy_raw.strip()
-                            if cleaned.upper() != "N/A" and cleaned != "":
-                                match = re.search(r'([-+]?\d*\.?\d+)', cleaned)
-                                if match:
-                                    yoy_num = float(match.group(1))
+    #                # 濾網3：實質基本面/題材動能 (相容字串與數值)
+    #                yoy_raw = td.get('YoY', None)
+    #                yoy_num = None
+    #                if yoy_raw is not None:
+    #                    if isinstance(yoy_raw, (int, float)):
+    #                        yoy_num = yoy_raw
+    #                    elif isinstance(yoy_raw, str):
+    #                        cleaned = yoy_raw.strip()
+    #                        if cleaned.upper() != "N/A" and cleaned != "":
+    #                            match = re.search(r'([-+]?\d*\.?\d+)', cleaned)
+    #                            if match:
+    #                                yoy_num = float(match.group(1))
 
-                    if yoy_num is not None and yoy_num <= 0:
-                        filter3_pass = False
-                    else:
-                        filter3_pass = True
+    #                if yoy_num is not None and yoy_num <= 0:
+    #                    filter3_pass = False
+    #                else:
+    #                    filter3_pass = True
 
-                    if filter1_pass and filter2_pass and filter3_pass:
-                        stop_loss = max(a_point['Low'], ma20 * 0.985)
-                        return True, "🌀 ABCX真主力洗盤 (籌碼鎖定+量縮止跌)", round(stop_loss, 2)
+    #               if filter1_pass and filter2_pass and filter3_pass:
+    #                   stop_loss = max(a_point['Low'], ma20 * 0.985)
+    #                   return True, "🌀 ABCX真主力洗盤 (籌碼鎖定+量縮止跌)", round(stop_loss, 2)
 
     # ---------- 戰術B：起漲第一棒 (旱地拔蔥) ----------
     if len(hist) >= 2:
