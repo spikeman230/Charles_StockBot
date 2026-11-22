@@ -294,8 +294,9 @@ def detect_precision_buy_point(hist: pd.DataFrame, td: pd.Series) -> Tuple[bool,
     return False, "", 0.0
 
 def detect_abcx_pullback(hist: pd.DataFrame, td: pd.Series) -> bool:
-    if len(hist) < 20:
-        return False
+    #if len(hist) < 20:
+    #    return False
+    return False # 移除ABCX 判定#
     required_cols = ['5VMA', '20MA', '60MA']
     for col in required_cols:
         if col not in hist.columns:
